@@ -220,8 +220,10 @@ in Prompt 02):
   - Functions: typecheck, lint, build, test;
   - Security Rules emulator tests;
   - gitleaks full-history scan.
-- Android CI installs the NDK Flutter pins (`28.2.13676358`) explicitly. The
-  first run failed when Gradle auto-installed it and the download was corrupt.
+- Android CI runs one job per flavor (matrix). The second run showed that
+  three Gradle builds in one job exhaust the runner's disk. Each job
+  installs the NDK Flutter pins (`28.2.13676358`) explicitly; the first run
+  failed when Gradle auto-installed it and the download was corrupt.
 
 ## Deploy identities (Workload Identity Federation)
 

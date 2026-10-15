@@ -280,6 +280,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 ### D-040 — Pinned Android NDK in CI
 - **Decision:** The Android CI job installs NDK `28.2.13676358` (pinned by Flutter 3.41.5) with `sdkmanager`, with retries, before building.
 - **Reason:** The first CI run failed when Gradle auto-installed the NDK during configuration and got a corrupt archive. Explicit installation is deterministic and observable.
+- **Also:** Android CI builds one flavor per job (matrix). Building three flavors plus the NDK in a single job ran out of runner disk on the second CI run.
 - **Status:** Accepted · 2026-10-15. Update together with `FLUTTER_VERSION`.
 
 ### D-041 — Line endings
