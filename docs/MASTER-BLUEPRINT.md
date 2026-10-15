@@ -3,7 +3,7 @@
 The index of record. Each section summarises what is **decided** and links
 to the detailed source of truth. Updated at the end of every phase.
 
-Last updated: **Prompt 02 — 2026-10-15**.
+Last updated: **Prompt 03 — 2026-10-15**.
 
 ## 1. Vision
 
@@ -100,8 +100,19 @@ CI validates without secrets:
 - a gitleaks history scan.
 
 Deploys are manual per environment through GitHub Environments with
-Workload Identity Federation. Production requires reviewers, `main` and an
-explicit confirmation. Locally, use `tool/deploy.sh <env>`.
+Workload Identity Federation (one keyless deployer per project, bound to this
+repository's numeric ID and environment). Production requires `main`, a
+typed confirmation and production-only credentials. **Required reviewers
+and branch protection are unavailable on the current free GitHub plan**
+(D-038). Locally, use `tool/deploy.sh <env>`.
+
+**Source control (Prompt 03):**
+- Private repository `codex-warrior/sirf-hum`; `main` plus
+  `feature/`, `fix/`, `chore/` and `security/` branches merged by PR.
+- First CI run executed on GitHub: iOS compiled for all three schemes on
+  macOS.
+- Ownership is currently personal on both Google and GitHub; the target
+  structure is in [ACCOUNT-OWNERSHIP](architecture/ACCOUNT-OWNERSHIP.md).
 
 ### 10c. App Check, crash reporting, logging
 
@@ -170,7 +181,8 @@ designed with privacy — all **post-V1** and individually reviewed.
 
 | # | Decision | Needed before |
 | --- | --- | --- |
-| 1 | Project ownership account and Blaze billing (D-025) | Storage, Functions, staging use |
+| 1 | Account ownership (Google + GitHub) and Blaze billing (D-025, ACCOUNT-OWNERSHIP.md) | Storage, Functions, staging use, launch |
+| 1a | GitHub plan upgrade for branch protection + production reviewers (D-038) | Second contributor / first production deploy |
 | 2 | Release signing (Android upload key, Apple team) and store accounts | First store build |
 | 3 | Initial market, languages (Hindi/English/other), and segments | Visual identity, copy, localisation |
 | 4 | Sign-in methods (baseline email link or email/password; phone optional) | Identity phase |

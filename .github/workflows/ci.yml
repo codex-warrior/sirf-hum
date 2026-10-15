@@ -55,6 +55,19 @@ jobs:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
+      # Flutter 3.41.5 pins NDK 28.2.13676358 (FlutterExtension.ndkVersion),
+      # which the runner image lacks. Install it explicitly (with retries)
+      # instead of letting Gradle auto-install it mid-configuration, which
+      # failed on the first CI run with a corrupt download.
+      - name: Install pinned Android NDK
+        run: |
+          for attempt in 1 2 3; do
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;28.2.13676358" > /dev/null \
+              && test -f "$ANDROID_HOME/ndk/28.2.13676358/source.properties" && exit 0
+            echo "NDK install attempt $attempt failed; retrying"
+            rm -rf "$ANDROID_HOME/ndk/28.2.13676358"
+          done
+          exit 1
       - run: flutter build apk --debug --flavor development --dart-define=SH_ENV=development
       - run: flutter build apk --debug --flavor staging --dart-define=SH_ENV=staging
       # Release compile (R8) for the production identity; unsigned for store
@@ -84,14 +97,24 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
-      - run: flutter build ios --debug --no-codesign --flavor development --dart-define=SH_ENV=development
-      - run: flutter build ios --debug --no-codesign --flavor staging --dart-define=SH_ENV=staging
-      - run: flutter build ios --release --no-codesign --flavor production --dart-define=SH_ENV=production
-      - name: Verify production bundle identifier
+      # Each build overwrites build/ios/iphoneos/Runner.app, so the bundle ID
+      # is checked right after each scheme is built.
+      - name: Development scheme
         run: |
+          flutter build ios --debug --no-codesign --flavor development --dart-define=SH_ENV=development
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' build/ios/iphoneos/Runner.app/Info.plist)" = com.sirfhum.app.dev
+      - name: Staging scheme
+        run: |
+          flutter build ios --debug --no-codesign --flavor staging --dart-define=SH_ENV=staging
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' build/ios/iphoneos/Runner.app/Info.plist)" = com.sirfhum.app.staging
+      - name: Production scheme (release)
+        run: |
+          flutter build ios --release --no-codesign --flavor production --dart-define=SH_ENV=production
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' build/ios/iphoneos/Runner.app/Info.plist)" = com.sirfhum.app
       - name: Build native test target (RunnerTests)
         run: |
+          # pipefail: without it, `| tail` would hide an xcodebuild failure.
+          set -o pipefail
           xcodebuild build-for-testing \
             -workspace ios/Runner.xcworkspace \
             -scheme Development \

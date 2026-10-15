@@ -12,7 +12,7 @@ Web), module boundaries, design-token foundation, Firebase boundaries
 (default-deny rules, emulator tests, Functions skeleton), environments
 pattern, quality tooling and CI. **No product features.**
 
-## Phase 02 — Environments & infrastructure ✅ (iOS pending CI)
+## Phase 02 — Environments & infrastructure ✅
 
 - Three Firebase projects (`asia-south1` Firestore).
 - App identity `com.sirfhum.app`.
@@ -27,6 +27,16 @@ pattern, quality tooling and CI. **No product features.**
 
 Blocked on billing: Storage bucket, Functions deploy.
 See [ENVIRONMENTS](../architecture/ENVIRONMENTS.md).
+
+## Phase 03 — Source control & CI ✅
+
+- Private GitHub repo `codex-warrior/sirf-hum`.
+- First real CI run, with iOS compiled for all schemes on macOS.
+- Workload Identity Federation deployers.
+- Production deploy gates.
+- Ownership plan ([ACCOUNT-OWNERSHIP](../architecture/ACCOUNT-OWNERSHIP.md)).
+
+Branch protection and production reviewers are blocked by the GitHub plan.
 
 ## Proposed sequence
 

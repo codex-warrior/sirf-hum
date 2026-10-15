@@ -24,7 +24,7 @@ credentials.
 | Client config | `config/env/development.json` | `config/env/staging.json` | `config/env/production.json` |
 | App Check provider | Debug | Attestation | Attestation |
 | Crash reporting | Off (opt-in) | On | On |
-| Deploys | Local script or workflow | Workflow (or clean local tree) | Workflow, reviewer-approved, `main` only |
+| Deploys | Local script or workflow | Workflow (or clean local tree) | Workflow only, `main` only, typed confirmation |
 
 Non-production IDs carry a suffix so all three apps can be installed side by
 side on one device. The production identity is the unsuffixed
@@ -59,9 +59,12 @@ Defence in depth: each layer independently prevents cross-environment use.
    - explicit environment argument;
    - Security Rules tests before every deploy;
    - staging and production require a clean tree;
-   - production requires `main`, a typed confirmation of the project ID,
-     and, in CI, approval through the protected `production` GitHub
-     Environment.
+   - production requires `main` and a typed confirmation of the project ID.
+     In CI, the `production` GitHub Environment accepts only `main`, and
+     Workload Identity Federation only mints production credentials for this
+     repository + `production` environment + `main`. See "Production deploy
+     gates" below; required reviewers are not available on the current
+     GitHub plan.
 
 ## Region and data residency
 
@@ -198,25 +201,100 @@ in Prompt 02):
   provisioned. When created, choose `asia-south1`.
 - **Cloud Functions:** require Blaze (Cloud Build, Artifact Registry). The
   code skeleton and region are ready; nothing is deployed.
-- `storage` deploy targets fail until a bucket exists.
+- The `storage` deploy target fails until a bucket exists, so it is a
+  separate workflow option and not part of `rules`.
+- These stay **intentionally unavailable** until the phase that needs them,
+  when billing is deliberately enabled. Prompt 03 did not enable billing.
 
-## CI secrets
+## GitHub repository and CI (Prompt 03)
 
-CI validation (`ci.yml`) uses **no secrets**. Deploys (`deploy.yml`) use
-GitHub **Environments** named `development`, `staging`, `production`, each
-with its own secrets:
+- Repository: private `codex-warrior/sirf-hum` (personal account, free
+  plan), default branch `main`.
+- `ci.yml` runs on every push to `main` and every pull request, with no
+  secrets. Jobs:
+  - Flutter: format, analyze, test, three web builds;
+  - Android: development/staging debug and production release, with
+    application IDs verified;
+  - iOS on macOS: all three schemes, each bundle ID checked,
+    RunnerTests build;
+  - Functions: typecheck, lint, build, test;
+  - Security Rules emulator tests;
+  - gitleaks full-history scan.
+- Android CI installs the NDK Flutter pins (`28.2.13676358`) explicitly. The
+  first run failed when Gradle auto-installed it and the download was corrupt.
 
-| Secret (per environment) | Purpose |
+## Deploy identities (Workload Identity Federation)
+
+Set up by `tool/setup_github_wif.sh <env>` in each project (Prompt 03). No
+service-account keys exist.
+
+| Environment | Service account | Who can impersonate it |
+| --- | --- | --- |
+| development | `github-deployer@sirf-hum-dev.iam.gserviceaccount.com` | GitHub OIDC tokens from repo ID 1420599703, owner ID 148367546, `environment == development` |
+| staging | `github-deployer@sirf-hum-staging.iam.gserviceaccount.com` | same repo/owner, `environment == staging` |
+| production | `github-deployer@sirf-hum-prod.iam.gserviceaccount.com` | same repo/owner, `environment == production` **and** `ref == refs/heads/main` |
+
+Each service account lives in its own project and has roles only there, so
+development and staging identities cannot touch production.
+
+Project roles granted to each deployer (no Owner/Editor anywhere):
+
+| Role | Why |
 | --- | --- |
-| `GCP_WORKLOAD_IDENTITY_PROVIDER` | Workload Identity Federation provider resource name for that project |
-| `GCP_DEPLOY_SERVICE_ACCOUNT` | Deploy service account email in that project (least privilege: Firebase Rules Admin, Cloud Functions Developer, Firebase Hosting Admin, Service Account User) |
-| `SH_ENV_CONFIG_JSON` | Contents of `config/env/<env>.json` (client identifiers) for hosting builds |
+| `roles/firebaserules.admin` | Release Firestore and Storage rules |
+| `roles/datastore.indexAdmin` | Deploy Firestore indexes |
+| `roles/firebasehosting.admin` | Release the web app to Hosting |
+| `roles/serviceusage.serviceUsageConsumer`, `roles/serviceusage.serviceUsageViewer` | Firebase CLI checks that APIs are enabled |
+
+Functions deploy roles (`roles/cloudfunctions.developer`,
+`roles/iam.serviceAccountUser` on the runtime service account, Artifact
+Registry/Cloud Build access) are **not** granted until the Functions phase.
+Production's extra restriction is the `main` condition plus the deploy gates
+below; its roles match the other environments because there is no narrower
+role that still deploys rules and hosting.
+
+Conditions bind to the repository's **numeric** IDs, so a different
+repository later created with the same name cannot obtain credentials. If the
+repository moves to an organization, re-run the script with the new IDs (see
+[ACCOUNT-OWNERSHIP.md](ACCOUNT-OWNERSHIP.md)).
+
+## GitHub Environments
+
+| Environment | Variables | Protection |
+| --- | --- | --- |
+| `development` | `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_DEPLOY_SERVICE_ACCOUNT` | none |
+| `staging` | same | none |
+| `production` | same | deployment branch policy: `main` only |
+
+- The provider and service-account values are identifiers, not secrets, so
+  they are environment **variables**.
+- `SH_ENV_CONFIG_JSON` (an environment **secret**: the contents of
+  `config/env/<env>.json`) is only needed for `hosting` deploys and is
+  **not yet set** in any environment.
+- **Not available on the current plan:** required reviewers on environments,
+  and branch protection/rulesets on `main`. The GitHub API answers
+  "Upgrade to GitHub Pro or make this repository public".
+
+### Production deploy gates
+
+All of these must hold for a production deploy:
+
+1. The Deploy workflow is started manually. Only users with write access can
+   do this.
+2. The run is on `main`: the environment's branch policy enforces this, and
+   the job re-checks it.
+3. The `confirm` input equals `sirf-hum-prod`.
+4. Google issues credentials only for repo + `production` environment +
+   `refs/heads/main`.
+5. `tool/deploy.sh` re-checks for a clean tree, `main` and the confirmation,
+   and runs the rules tests first.
+
+When the account moves to a plan that supports them, add required reviewers
+on `production` and branch protection on `main` (D-038).
 
 Rules:
 - Use **Workload Identity Federation**, never service-account JSON keys.
 - Never put credentials in workflow YAML.
-- The `production` environment has required reviewers and is restricted to
-  the `main` branch.
 - Production secrets exist only in the `production` environment.
 - Future secrets (Android upload keystore, App Store Connect API key, LiveKit
   API secret for Functions) follow the same per-environment pattern;
