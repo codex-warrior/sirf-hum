@@ -1,0 +1,91 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# --- Sirf Hum ---------------------------------------------------------------
+# Environment config: only the example is committed (see config/env/README.md).
+/config/env/*.json
+!/config/env/*.example.json
+
+# Firebase / platform credentials. Never commit these.
+google-services.json
+GoogleService-Info.plist
+firebase_options*.dart
+*-service-account*.json
+service-account*.json
+.runtimeconfig.json
+.env
+.env.*
+# Functions per-environment params hold no secrets (SH_ENV only); secrets
+# use Secret Manager. Local overrides (*.local) stay ignored.
+!/functions/.env.development
+!/functions/.env.staging
+!/functions/.env.production
+*.p8
+*.pem
+*.key
+*.keystore
+*.jks
+key.properties
+# Google Cloud credentials under common names (gitleaks also scans content).
+*credentials*.json
+gcp-*.json
+*-sa-key*.json
+# Local-only secret material, e.g. App Check debug tokens copied from device
+# logs (they belong in the Firebase console, never in config or code).
+/.secrets/
+*appcheck-debug-token*
+*.p12
+*.mobileprovision
+
+# Firebase tooling
+firebase-debug.log
+firestore-debug.log
+storage-debug.log
+ui-debug.log
+database-debug.log
+pubsub-debug.log
+.firebase/
+node_modules/

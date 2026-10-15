@@ -1,0 +1,14 @@
+rules_version = '2';
+
+// Sirf Hum Cloud Storage rules.
+//
+// Default: deny everything. Private media will only ever be stored as
+// client-side ciphertext (docs/security/E2EE-REQUIREMENTS.md); rules control
+// who may fetch ciphertext, they do not provide confidentiality.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

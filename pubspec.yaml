@@ -1,0 +1,29 @@
+name: sirf_hum
+description: "Sirf Hum — the private digital home for two people."
+publish_to: 'none'
+
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.3
+
+# Every dependency needs a reason; record significant ones in
+# docs/decisions/DECISION-LOG.md.
+dependencies:
+  flutter:
+    sdk: flutter
+  firebase_core: ^4.15.0
+  flutter_riverpod: ^3.3.2
+  go_router: ^17.5.0
+  firebase_app_check: ^0.4.8
+  firebase_crashlytics: ^5.4.0
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true

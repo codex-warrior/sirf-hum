@@ -1,0 +1,25 @@
+{
+  "projects": {
+    "development": "sirf-hum-dev",
+    "staging": "sirf-hum-staging",
+    "production": "sirf-hum-prod"
+  },
+  "targets": {
+    "sirf-hum-dev": {
+      "hosting": {
+        "app": ["sirf-hum-dev"]
+      }
+    },
+    "sirf-hum-staging": {
+      "hosting": {
+        "app": ["sirf-hum-staging"]
+      }
+    },
+    "sirf-hum-prod": {
+      "hosting": {
+        "app": ["sirf-hum-prod"]
+      }
+    }
+  },
+  "etags": {}
+}

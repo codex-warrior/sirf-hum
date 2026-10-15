@@ -1,0 +1,109 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:sirf_hum/app/app_config.dart';
+import 'package:sirf_hum/app/environment_guard.dart';
+import 'package:sirf_hum/core/config/app_environment.dart';
+import 'package:sirf_hum/infrastructure/firebase/app_check_config.dart';
+import 'package:sirf_hum/infrastructure/firebase/firebase_config.dart';
+
+FirebaseConfig _firebase(String projectId) => FirebaseConfig(
+  projectId: projectId,
+  messagingSenderId: '1',
+  platform: FirebasePlatform.android,
+  apps: const {
+    FirebasePlatform.android: FirebaseAppCredentials(appId: 'a', apiKey: 'k'),
+  },
+);
+
+const _unconfigured = FirebaseConfig(
+  projectId: '',
+  messagingSenderId: '',
+  apps: {},
+  platform: FirebasePlatform.android,
+);
+
+AppConfig _config(
+  AppEnvironment env, {
+  FirebaseConfig? firebase,
+  AppCheckProvider appCheck = AppCheckProvider.attestation,
+}) => AppConfig(
+  environment: env,
+  firebase: firebase ?? _firebase(env.firebaseProjectId),
+  appCheck: AppCheckConfig(provider: appCheck),
+  crashReportingEnabled: false,
+);
+
+void main() {
+  test('each environment is consistent with its own project and flavor', () {
+    for (final env in AppEnvironment.values) {
+      expect(
+        environmentViolations(_config(env), nativeFlavor: env.name),
+        isEmpty,
+      );
+    }
+  });
+
+  test('rejects a flavor that disagrees with SH_ENV', () {
+    expect(
+      environmentViolations(
+        _config(AppEnvironment.production),
+        nativeFlavor: 'development',
+      ),
+      hasLength(1),
+    );
+  });
+
+  test('a development build can never use the production project', () {
+    final config = _config(
+      AppEnvironment.development,
+      firebase: _firebase('sirf-hum-prod'),
+    );
+    expect(environmentViolations(config), hasLength(1));
+    expect(
+      () => ensureEnvironmentIsConsistent(config),
+      throwsA(isA<EnvironmentMismatchError>()),
+    );
+  });
+
+  test('staging cannot silently use production resources', () {
+    expect(
+      environmentViolations(
+        _config(AppEnvironment.staging, firebase: _firebase('sirf-hum-prod')),
+      ),
+      isNotEmpty,
+    );
+  });
+
+  test('production forbids the App Check debug provider', () {
+    expect(
+      environmentViolations(
+        _config(AppEnvironment.production, appCheck: AppCheckProvider.debug),
+      ),
+      hasLength(1),
+    );
+  });
+
+  test('production requires Firebase configuration; development does not', () {
+    expect(
+      environmentViolations(
+        _config(AppEnvironment.production, firebase: _unconfigured),
+      ),
+      hasLength(1),
+    );
+    expect(
+      environmentViolations(
+        _config(AppEnvironment.development, firebase: _unconfigured),
+      ),
+      isEmpty,
+    );
+  });
+
+  test('web builds (no native flavor) are checked by SH_ENV alone', () {
+    expect(
+      environmentViolations(
+        _config(AppEnvironment.staging),
+        nativeFlavor: null,
+      ),
+      isEmpty,
+    );
+  });
+}

@@ -1,0 +1,14 @@
+# Normalize to LF everywhere (dart format, shell scripts and CI on Linux/macOS
+# all expect LF; Windows checkouts with core.autocrlf=true would otherwise get
+# CRLF and break `tool/*.sh`).
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.otf binary
+*.ttf binary
+*.jar binary

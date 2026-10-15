@@ -1,0 +1,35 @@
+{
+    "name": "Sirf Hum",
+    "short_name": "Sirf Hum",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#FBF7F2",
+    "theme_color": "#FBF7F2",
+    "description": "Sirf Hum — the private digital home for two people.",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}

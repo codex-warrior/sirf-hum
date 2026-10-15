@@ -1,0 +1,17 @@
+{
+  "SH_ENV": "production",
+  "SH_FIREBASE_PROJECT_ID": "sirf-hum-prod",
+  "SH_FIREBASE_MESSAGING_SENDER_ID": "<generated>",
+  "SH_FIREBASE_STORAGE_BUCKET": "sirf-hum-prod.firebasestorage.app",
+  "SH_FIREBASE_AUTH_DOMAIN": "sirf-hum-prod.firebaseapp.com",
+  "SH_FIREBASE_IOS_BUNDLE_ID": "com.sirfhum.app",
+  "SH_FIREBASE_ANDROID_APP_ID": "<generated>",
+  "SH_FIREBASE_ANDROID_API_KEY": "<generated>",
+  "SH_FIREBASE_IOS_APP_ID": "<generated>",
+  "SH_FIREBASE_IOS_API_KEY": "<generated>",
+  "SH_FIREBASE_WEB_APP_ID": "<generated>",
+  "SH_FIREBASE_WEB_API_KEY": "<generated>",
+  "SH_APPCHECK_PROVIDER": "attestation",
+  "SH_APPCHECK_WEB_RECAPTCHA_SITE_KEY": "<reCAPTCHA Enterprise site key>",
+  "SH_CRASH_REPORTING": "true"
+}

@@ -1,0 +1,16 @@
+rules_version = '2';
+
+// Sirf Hum Firestore rules.
+//
+// Default: deny everything. Access is opened per collection, in the phase
+// that introduces it, together with emulator tests in firebase/tests/.
+// Never widen these rules to make a client feature work; fix the data model
+// or move the operation to a Cloud Function.
+// See docs/architecture/FIREBASE-ARCHITECTURE.md.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
