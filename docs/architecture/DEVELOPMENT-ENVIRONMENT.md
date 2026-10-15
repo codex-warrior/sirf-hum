@@ -90,6 +90,43 @@ Staging and production go through **Actions → Deploy** (environment
 selection, protected `production` environment). Never use `firebase use`,
 and never run a bare `firebase deploy`.
 
+## 9. Source control
+
+Repository: `https://github.com/codex-warrior/sirf-hum` (private).
+
+```sh
+git clone https://github.com/codex-warrior/sirf-hum.git
+```
+
+On Windows, Git Credential Manager handles sign-in. If several GitHub
+accounts are stored, pin the right one for this repository:
+`git config credential.https://github.com/.username <your-github-user>`.
+Never put tokens in remotes, scripts or files.
+
+### Branch strategy
+
+`main` is the production branch: always releasable, and the only branch that
+can deploy to production. Work happens on short-lived branches merged back
+through pull requests:
+
+| Prefix | For |
+| --- | --- |
+| `feature/*` | New product work (one phase or slice) |
+| `fix/*` | Bug fixes |
+| `chore/*` | Tooling, CI, dependencies, docs |
+| `security/*` | Security fixes and hardening |
+
+- Open a PR into `main` and wait for all CI jobs to pass before merging
+  (squash or rebase; merge commits are disabled).
+- Never force-push or delete `main`.
+- **Enforcement gap:** GitHub's free plan cannot enforce these rules on a
+  private repo (no branch protection, no rulesets). Until the plan changes,
+  they're a team convention backed by the production deploy gates
+  (ENVIRONMENTS.md).
+
+`.gitattributes` normalizes line endings to LF. Windows editors must keep LF
+(`tool/*.sh` breaks with CRLF).
+
 ## OneDrive caveat
 
 This repository currently lives in a OneDrive-synchronized folder. OneDrive

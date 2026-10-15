@@ -13,7 +13,7 @@ the task — they replace restating the spec in prompts:
 | Any feature | `docs/product/PRODUCT-CONSTITUTION.md`, `docs/product/UX-PRINCIPLES.md`, `docs/phases/ROADMAP.md` |
 | UI | `docs/design/DESIGN-CONSTITUTION.md`, `docs/design/DESIGN-TOKENS.md` |
 | Code structure | `docs/architecture/ARCHITECTURE.md` |
-| Environments, deploys, App Check, CI secrets | `docs/architecture/ENVIRONMENTS.md`, `docs/architecture/DEVELOPMENT-ENVIRONMENT.md` |
+| Environments, deploys, App Check, CI, branches | `docs/architecture/ENVIRONMENTS.md`, `docs/architecture/DEVELOPMENT-ENVIRONMENT.md`, `docs/architecture/ACCOUNT-OWNERSHIP.md` |
 | Firebase, rules, functions, notifications | `docs/architecture/FIREBASE-ARCHITECTURE.md` |
 | Private content, keys, devices | `docs/security/E2EE-REQUIREMENTS.md`, `docs/security/THREAT-MODEL.md`, `docs/security/PRIVACY-CONSTITUTION.md` |
 | Analytics | `docs/security/ANALYTICS-POLICY.md` |
@@ -29,6 +29,7 @@ the task — they replace restating the spec in prompts:
 5. Report failures honestly. Never disable tests or weaken Security Rules to make things pass.
 6. Never commit secrets. Client config lives in git-ignored `config/env/*.json`.
 7. Never run a bare `firebase deploy` or `firebase use production`. Deploy with `tool/deploy.sh <env>`; production only via the Deploy workflow.
+8. Work on `feature/`, `fix/`, `chore/` or `security/` branches and merge via PR after CI passes; never push directly to or force-push `main` (not enforced by GitHub on the current plan, so it is on us).
 
 ## Security non-negotiables
 
