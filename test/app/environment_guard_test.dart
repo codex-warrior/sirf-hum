@@ -64,6 +64,34 @@ void main() {
     );
   });
 
+  test('every environment fails closed with every other project', () {
+    // Covers e.g. development+production, staging+development,
+    // production+staging config.
+    for (final env in AppEnvironment.values) {
+      for (final other in AppEnvironment.values.where((e) => e != env)) {
+        expect(
+          () => ensureEnvironmentIsConsistent(
+            _config(env, firebase: _firebase(other.firebaseProjectId)),
+          ),
+          throwsA(isA<EnvironmentMismatchError>()),
+          reason: '${env.name} build with ${other.name} config',
+        );
+      }
+    }
+  });
+
+  test('a native flavor never runs with another environment\'s SH_ENV', () {
+    for (final env in AppEnvironment.values) {
+      for (final flavor in AppEnvironment.values.where((e) => e != env)) {
+        expect(
+          environmentViolations(_config(env), nativeFlavor: flavor.name),
+          isNotEmpty,
+          reason: '${flavor.name} flavor with SH_ENV=${env.name}',
+        );
+      }
+    }
+  });
+
   test('staging cannot silently use production resources', () {
     expect(
       environmentViolations(

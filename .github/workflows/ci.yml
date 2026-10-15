@@ -60,11 +60,17 @@ jobs:
       # Release compile (R8) for the production identity; unsigned for store
       # purposes (debug-signed fallback) since CI holds no signing key.
       - run: flutter build apk --release --flavor production --dart-define=SH_ENV=production
-      - name: Verify production application ID
+      - name: Verify application ID per flavor
         run: |
-          "$ANDROID_HOME"/build-tools/*/aapt2 dump badging \
-            build/app/outputs/flutter-apk/app-production-release.apk \
-            | grep -q "package: name='com.sirfhum.app'"
+          aapt2="$(ls -d "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -n 1)"
+          check() {
+            "$aapt2" dump badging "build/app/outputs/flutter-apk/app-$1.apk" \
+              | grep -q "package: name='$2'" \
+              || { echo "::error::app-$1.apk is not $2"; exit 1; }
+          }
+          check development-debug com.sirfhum.app.dev
+          check staging-debug com.sirfhum.app.staging
+          check production-release com.sirfhum.app
 
   ios:
     name: iOS (all schemes compile, tests build)
