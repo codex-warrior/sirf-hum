@@ -48,6 +48,7 @@ jobs:
       - name: FFI crate with the mls-rs backend
         run: cargo test --locked -p sh-crypto-ffi-spike --no-default-features --features mlsrs
       - name: Benchmarks (release)
+        if: always()
         run: |
           cargo run --locked --release -q -p backend-openmls --example bench
           cargo run --locked --release -q -p backend-mlsrs --example bench

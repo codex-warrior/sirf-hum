@@ -8,7 +8,8 @@ use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
 
 use harness::{Backend, Bytes};
-use mls_rs::client_builder::{BaseConfig, WithCryptoProvider, WithGroupStateStorage, WithIdentityProvider};
+use mls_rs::client_builder::{BaseConfig, PaddingMode, WithCryptoProvider, WithGroupStateStorage, WithIdentityProvider};
+use mls_rs::mls_rules::{DefaultMlsRules, EncryptionOptions};
 use mls_rs::group::ReceivedMessage;
 use mls_rs::identity::basic::{BasicCredential, BasicIdentityProvider};
 use mls_rs::identity::SigningIdentity;
@@ -89,7 +90,13 @@ pub struct MlsRs;
 
 fn build_client(label: &str, store: SnapStore, secret: SignatureSecretKey, public: SignaturePublicKey) -> Client<Config> {
     let identity = SigningIdentity::new(BasicCredential::new(label.as_bytes().to_vec()).into_credential(), public);
+    // Handshake messages (commits/proposals) are sent as PrivateMessage, like
+    // OpenMLS' default policy: membership changes stay hidden from the
+    // delivery service (metadata minimization) and the two libraries interop.
+    let rules = DefaultMlsRules::new()
+        .with_encryption_options(EncryptionOptions::new(true, PaddingMode::StepFunction));
     Client::builder()
+        .mls_rules(rules)
         .group_state_storage(store)
         .identity_provider(BasicIdentityProvider)
         .crypto_provider(RustCryptoProvider::default())
