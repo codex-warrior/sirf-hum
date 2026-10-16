@@ -22,7 +22,7 @@ env:
 jobs:
   flutter:
     name: Flutter (format, analyze, test, web build)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -42,7 +42,7 @@ jobs:
 
   android:
     name: Android (${{ matrix.flavor }} ${{ matrix.mode }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: flutter
     # One flavor per job: three Gradle builds plus the NDK in a single job
     # exhausted the runner's disk on the second CI run.
@@ -130,7 +130,7 @@ jobs:
 
   functions:
     name: Cloud Functions (typecheck, lint, build, test)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: functions
@@ -149,7 +149,7 @@ jobs:
 
   security-rules:
     name: Security Rules (emulator tests)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: firebase
@@ -170,7 +170,7 @@ jobs:
 
   secrets-scan:
     name: Secret scan (gitleaks CLI)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       GITLEAKS_VERSION: 8.30.1
     steps:
