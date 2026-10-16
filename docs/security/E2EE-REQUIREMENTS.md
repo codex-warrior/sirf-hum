@@ -1,6 +1,6 @@
 # End-to-End Encryption Requirements
 
-Status: **Requirements only (Prompt 01). No cryptography is implemented.**
+Status: **Requirements (Prompt 01); design proposed in Prompt 04: [E2EE-ARCHITECTURE](E2EE-ARCHITECTURE.md). No cryptography is implemented in the app.**
 Sirf Hum is **not** end-to-end encrypted today and must not say it is.
 
 ## Goal
