@@ -49,6 +49,18 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-039 | One Workload Identity deployer per project, bound to repo/owner IDs and GitHub Environment; least-privilege roles | Accepted | 2026-10-15 |
 | D-040 | CI installs Flutter's pinned Android NDK explicitly | Accepted | 2026-10-15 |
 | D-041 | LF line endings enforced by `.gitattributes` | Accepted | 2026-10-15 |
+| D-042 | E2EE protocol: MLS (RFC 9420), one couple group of devices | **Proposed (RECOMMENDED)** | 2026-10-16 |
+| D-043 | MLS library: OpenMLS leading, mls-rs alternative | **Open (UNRESOLVED)**: independent review needed | 2026-10-16 |
+| D-044 | Couple group + per-person personal group | Proposed (RECOMMENDED) | 2026-10-16 |
+| D-045 | Person Identity Key (PIK) + PIK-signed device certificates; roster acceptance policy | Proposed (RECOMMENDED) | 2026-10-16 |
+| D-046 | Web v1 carries no end-to-end-encrypted private content | **Proposed: needs product approval** | 2026-10-16 |
+| D-047 | Recovery: device-to-device default, opt-in recovery key, no escrow | Proposed (RECOMMENDED) | 2026-10-16 |
+| D-048 | Media: per-object keys, libsodium secretstream; key inside MLS message | Proposed; binding Open | 2026-10-16 |
+| D-049 | Content-free notifications; previews off by default | Proposed (RECOMMENDED) | 2026-10-16 |
+| D-050 | Post-quantum gap in standard MLS ciphersuites | **Open (owner decision)** | 2026-10-16 |
+| D-051 | Rejected E2EE candidates: libsignal (AGPL, unsupported outside Signal, no web), Dart Signal port, Wire core-crypto (GPL), custom protocol | Accepted (rejection) | 2026-10-16 |
+| D-052 | Experimental prototypes live in `prototypes/`, isolated, path-filtered CI | Accepted | 2026-10-16 |
+| D-053 | gitleaks exceptions must be rule + path + exact match, with negative controls | Accepted | 2026-10-16 |
 
 ---
 
@@ -116,7 +128,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Decision:** Private content is architected toward genuine end-to-end encryption using established protocols and libraries. No custom cryptography. No E2EE claims before implementation and review.
 - **Reason:** Privacy is the core promise; the operator must not be a plaintext repository.
 - **Alternatives considered:** Server-side encryption at rest only (operator can read content — rejected for private content).
-- **Status:** Accepted · 2026-10-15. Protocol and library: **Open** (dedicated E2EE phase).
+- **Status:** Accepted · 2026-10-15. Protocol proposed in Prompt 04 (D-042); library still open (D-043).
 
 ### D-012 — Subscription monetization
 - **Decision:** Primary business model hypothesis is a per-couple subscription (Sirf Hum Plus) on top of a useful free tier. Pricing not locked.
@@ -287,3 +299,82 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Decision:** `.gitattributes` sets `* text=auto eol=lf` (binaries excluded).
 - **Reason:** Windows checkouts with `core.autocrlf=true` produced CRLF files, which break `tool/*.sh` and diverge from `dart format`.
 - **Status:** Accepted · 2026-10-15
+
+### D-042 — E2EE protocol: MLS (RFC 9420)
+- **Decision (proposed):** Use MLS (RFC 9420) with ciphersuite `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`. One MLS group per couple whose members are the devices of both people.
+- **Reason:**
+  - an IETF standard with formal analyses of its core;
+  - forward secrecy and post-compromise security;
+  - the device roster is part of authenticated group state, so a malicious server can't show different rosters to different devices undetected. This addresses the failure class in Albrecht et al. (2022) against Matrix.
+- **Alternatives considered:**
+  - Signal protocol family: strongest deployed protocol and has post-quantum, but no usable non-AGPL, supported, browser-capable implementation, and multi-device roster agreement would be custom (D-051);
+  - Olm/Megolm via vodozemac: audited and runs in browsers, but Megolm lacks PCS and device trust lives in Matrix-specific code.
+- **Evidence and status:** see [E2EE-ARCHITECTURE §4](../security/E2EE-ARCHITECTURE.md#4-candidate-evaluation). The Prompt 04 spike (OpenMLS 0.9.1) passed 6/6 natively and 6/6 on wasm32 under Node: GitHub Actions run 38870995297, commit `a308745`.
+- **Status:** Proposed · 2026-10-16. Awaiting owner approval and D-043.
+
+### D-043 — MLS library
+- **Leading candidate:** OpenMLS (MIT, active, wasm32 tests in its CI, production use through Wire's fork, public advisories handled).
+- **Alternative:** mls-rs (Apache-2.0/MIT; lib.rs states no third-party audit yet).
+- **Blocker:** no public independent audit of either was found. Before implementation:
+  - commission or locate a review of the pinned version + crypto provider;
+  - prototype through flutter_rust_bridge on Android, iOS and Web;
+  - decide the storage provider.
+- **Status:** Open · 2026-10-16
+
+### D-044 — Group topology
+- **Decision (proposed):** a couple group (both people's devices) for shared content; a personal group per person (own devices only) for private-to-self data. A new group for every pairing; never reused.
+- **Status:** Proposed · 2026-10-16
+
+### D-045 — Person identity and device certificates
+- **Decision (proposed):**
+  - each person has an Ed25519 Person Identity Key (PIK) that signs a certificate for each device;
+  - every device accepts an MLS member only if the credential chains to one of the two verified PIKs and is not revoked;
+  - Firestore device records are a directory, never trust.
+- **Open:** credential format (X.509 vs Basic credential + certificate) and fingerprint format.
+- **Status:** Proposed · 2026-10-16
+
+### D-046 — Web v1 capability
+- **Decision (proposed):** Web v1 offers no end-to-end-encrypted private content (account, device management, support only). An ephemeral linked-session design is a later, separately reviewed phase.
+- **Reason:** the web delivers code on every load, so a compromised hosting/deploy path, XSS or extensions would expose plaintext and keys. See [WEB-SECURITY](../security/WEB-SECURITY.md).
+- **Status:** Proposed — **requires product-owner approval** (it changes what web offers) · 2026-10-16
+
+### D-047 — Recovery
+- **Decision (proposed):** add devices from an existing device by default; an opt-in high-entropy recovery key that decrypts a user-held encrypted backup of the PIK; no Sirf Hum escrow; no partner-vouched recovery. Without device or key, a new identity, visible to the partner.
+- **Open:** whether to offer an encrypted history archive.
+- **Status:** Proposed · 2026-10-16
+
+### D-048 — Media encryption
+- **Decision (proposed):** random per-object key; libsodium `crypto_secretstream_xchacha20poly1305` for chunked media; key and header delivered inside an MLS application message; thumbnails encrypted separately on device.
+- **Open:** binding (Dart libsodium vs Rust), chunk size, size padding.
+- **Status:** Proposed · 2026-10-16
+
+### D-049 — Notifications
+- **Decision (proposed):** data-only, content-free FCM payloads; generic local text; previews off by default (on-device decryption only, if ever enabled).
+- **Status:** Proposed · 2026-10-16
+
+### D-050 — Post-quantum
+- **Open:** Standard MLS ciphersuites are not post-quantum, so content could be recorded now and decrypted later by a quantum-capable adversary. Signal already ships PQXDH + SPQR. The owner must decide whether to accept this for v1 and adopt PQ MLS ciphersuites when standardized and implemented.
+- **Status:** Open · 2026-10-16
+
+### D-051 — Rejected E2EE options
+- **libsignal:**
+  - AGPL-3.0;
+  - README: "Use outside of Signal is unsupported"; APIs change without notice;
+  - TypeScript is a Node add-on; no browser support documented.
+- **libsignal_protocol_dart:** unofficial port, GPL-3.0, no review found.
+- **Wire core-crypto:** GPL-3.0; Wire-specific.
+- **Building from primitives:** a custom protocol.
+- **Status:** Accepted (rejection) · 2026-10-16. Revisit libsignal only if the owner chooses an AGPL client and drops web.
+
+### D-052 — Prototype policy
+- **Decision:**
+  - experiments live in `prototypes/<name>/`, marked EXPERIMENTAL;
+  - never imported by the app;
+  - no credentials;
+  - focused tests;
+  - CI only via the path-filtered `prototypes.yml`.
+- **Status:** Accepted · 2026-10-16
+
+### D-053 — Secret-scanner exceptions
+- **Decision:** every gitleaks exception is scoped to a rule AND a path AND an exact match, documented in `.gitleaks.toml`, and verified with negative controls. First case: the public crate name `libcrux-secrets` in Cargo.lock. Local commits are gated on the scanner's exit code, never on piped output (a piped run let one flagged commit through in Prompt 04; it was a false positive).
+- **Status:** Accepted · 2026-10-16

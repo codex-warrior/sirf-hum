@@ -1,0 +1,21 @@
+# gitleaks configuration: all default rules, plus narrowly scoped,
+# documented false-positive exceptions. Every exception must name the rule,
+# the file pattern and the exact matched text, and say why it is not a secret.
+title = "Sirf Hum gitleaks config"
+
+[extend]
+useDefault = true
+
+# In Cargo.lock dependency lists, the public crate name `libcrux-secrets`
+# (pulled in by OpenMLS) is followed by `"libcrux-sha3"`. `generic-api-key`
+# reads "secrets" as a keyword and the next crate name as its value.
+# Lockfiles hold only names, versions and public registry checksums.
+# Scope: this rule AND Cargo.lock AND this exact two-line match.
+[[allowlists]]
+description = "Public crate name libcrux-secrets in Cargo.lock"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(^|/)Cargo\.lock$''']
+regexTarget = "match"
+# gitleaks' "match" text begins at the keyword, after the opening quote.
+regexes = ['''libcrux-secrets",\s+"libcrux-sha3''']

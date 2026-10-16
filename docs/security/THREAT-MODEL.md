@@ -1,6 +1,6 @@
 # Threat Model
 
-Status: **Foundation (Prompt 01).** A living document. Each phase that adds
+Status: **Foundation (Prompt 01); E2EE analysis added (Prompt 04).** A living document. Each phase that adds
 data, endpoints or devices must update it. Not every threat can be
 eliminated; the goal is that each one is *explicit*.
 
@@ -65,6 +65,42 @@ leakage (no secrets in repo, separate prod access); logging/crash-report
 leakage (`AppLogger` enforces typed fields and redacts raw strings; Crashlytics receives error types only); OS cloud backups of local databases
 (exclude or encrypt local stores).
 
+## E2EE threat analysis (Prompt 04)
+
+Against the recommended design in [E2EE-ARCHITECTURE](E2EE-ARCHITECTURE.md):
+MLS couple group of devices, Person Identity Keys (PIK), web v1 without
+private content. "Not implemented" applies to every mitigation below.
+
+**What E2EE cannot protect against:**
+- a compromised endpoint (malware, a malicious OS, a modified app) sees
+  plaintext while the user reads it;
+- a recipient can always copy what they can read;
+- metadata (who, when, how often, how big, from where) remains visible to
+  the server and Google;
+- a malicious *code update* is a compromised endpoint.
+
+| # | Threat | Security objective | Mitigations | Residual risk | Assumptions |
+| --- | --- | --- | --- | --- | --- |
+| E1 | Compromised Firebase project | Server can't read content or impersonate devices | MLS ciphertext only; PIK-signed device certificates validated by every device; partner verification; key-change warnings | Metadata exposure; denial of service; withholding/reordering messages; tricking unverified (TOFU) pairs at first contact | Users verify or heed key-change warnings |
+| E2 | Database / Storage leak | Leak reveals no content | Ciphertext only; opaque IDs; padded sizes; no plaintext thumbnails | Relationship graph, timing, sizes | Crypto primitives sound |
+| E3 | Malicious administrator | Same as E1 | Same as E1; least-privilege IAM; WIF deploys; audit logs | Same as E1; an admin could ship malicious **web** code (hence web v1 has no private content) | Mobile binaries are store-signed and not replaceable by an admin alone |
+| E4 | Compromised Cloud Function | Function can't decrypt or add members | Functions never hold keys; membership changes require Commits signed by member devices with valid certificates | Can disrupt invites/fan-out; can leak metadata | — |
+| E5 | Man-in-the-middle | No interception or key substitution | TLS; end-to-end authenticated MLS; out-of-band PIK verification | First-contact TOFU if users never verify | — |
+| E6 | Stolen unlocked device | Limit exposure; enable remote cut-off | OS lock; optional app lock (auth-bound key); remote Remove from another device | Content readable until removal is synced; previously displayed content | Owner notices and revokes |
+| E7 | Compromised user account (Firebase) | Account takeover ≠ content access | New devices need PIK certification (existing device or recovery key); partner sees key changes | Metadata access; social engineering of the partner | Recovery key kept secret |
+| E8 | Malicious / compromised partner device | Limit to what that partner legitimately sees | Partner can only read shared content; can't add devices for you (needs your PIK); roster changes visible; instant unpair | Partner can copy shared content; a compromised partner device leaks shared content until revoked | — |
+| E9 | Revoked / obsolete device | No future content | MLS Remove → new epoch (spike-verified online/offline); server denies; tokens/KeyPackages deleted; Updates for PCS | Already-decrypted content stays | Remove commit reaches the group |
+| E10 | Replay, reorder, duplication | Accept each message once, authentically | MLS generation keys deleted after use (spike-verified replay rejection); `clientMessageId` dedupe; per-epoch commit ordering | Message *withholding* by the server is undetectable without extra mechanisms (gap detection **UNRESOLVED**) | — |
+| E11 | Push notification leakage | No content to push providers or lock screens | Data-only, content-free payloads; generic local text; previews off | Notification timing reveals activity | — |
+| E12 | Metadata exposure | Minimize | Opaque IDs, padding, short retention, minimal AAD | Inherent: timing, sizes (bucketed), device counts, pairing | — |
+| E13 | Account recovery abuse | Recovery can't be hijacked | No escrow; recovery key required; new-device notifications to all devices and the partner; re-auth | Stolen recovery key + account = takeover | User stores the key safely |
+| E14 | Malicious application update | Detect/limit | Store signing; reproducible builds (future); minimal dependencies in the crypto core; protected CI/deploy | A malicious signed update is a compromised endpoint: E2EE can't stop it | Store accounts and signing keys protected (ACCOUNT-OWNERSHIP) |
+| E15 | Compromised browser | — | Web v1: no private content | Account/settings session exposure | — |
+| E16 | Malicious browser extension | — | Web v1: no private content | Same | — |
+| E17 | XSS / browser storage compromise | — | Web v1: no private content; CSP/Trusted Types before any future web E2EE | Same | — |
+| E18 | Loss of all trusted devices | Honest outcome | Recovery key (opt-in); otherwise new identity, visible to the partner | Without recovery, history is lost; this must be stated plainly | — |
+| E19 | Abusive partner seeking access after unpairing | No access after unpairing | Unilateral instant unpair; partner leaves removed; rules cut access; new group on re-pair; roster changes visible while paired | Content already received by the abuser stays with them; coercion with physical access can't be solved technically | — |
+
 ## Assumptions
 
 - Device OS and hardware keystores are not compromised (outside T4).
@@ -74,9 +110,12 @@ leakage (`AppLogger` enforces typed fields and redacts raw strings; Crashlytics 
 
 ## Unresolved risks (tracked)
 
-1. Account recovery vs. E2EE trade-off — undecided (E2EE phase).
-2. Web as a device class — key storage weaker; role undecided.
+1. Account recovery vs. E2EE trade-off. Designed in Prompt 04 (recovery key opt-in, no escrow; RECOVERY-AND-REVOCATION); offering a history archive is still undecided.
+2. Web as a device class. Prompt 04 recommends no private content on web v1 (WEB-SECURITY); needs product approval.
 3. Shared history after unpairing — product/legal decision pending.
 4. Metadata minimisation — schema-level decisions pending.
 5. Abuse/safety design for presence and location-like features — per-feature.
 6. No independent security review has been performed.
+7. MLS library choice (OpenMLS vs mls-rs): no public independent audit found for either (E2EE-ARCHITECTURE §4).
+8. No post-quantum protection in standard MLS ciphersuites ("harvest now, decrypt later").
+9. Server message *withholding* detection (gap detection) not designed.

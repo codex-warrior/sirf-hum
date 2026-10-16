@@ -1,0 +1,25 @@
+[package]
+name = "sirf-hum-mls-device-roster-spike"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "EXPERIMENTAL, NOT PRODUCTION: answers whether OpenMLS fits the Sirf Hum couple/device model."
+license = "UNLICENSED"
+rust-version = "1.91"
+
+# Exact pins: a spike must be reproducible. openmls 0.9.1 is released together
+# with the 0.6.0 companion crates (openmls workspace Cargo.toml at tag v0.9.1).
+# NEVER enable openmls' `crypto-debug` or `content-debug` features: they log
+# secret keys and message plaintext.
+[dependencies]
+openmls = "=0.9.1"
+openmls_traits = "=0.6.0"
+openmls_rust_crypto = "=0.6.0"
+openmls_basic_credential = "=0.6.0"
+
+# Browser builds: same randomness wiring OpenMLS uses in its own wasm32 CI.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+openmls = { version = "=0.9.1", features = ["js", "js-test"] }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3.50"

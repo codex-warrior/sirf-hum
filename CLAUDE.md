@@ -15,7 +15,8 @@ the task — they replace restating the spec in prompts:
 | Code structure | `docs/architecture/ARCHITECTURE.md` |
 | Environments, deploys, App Check, CI, branches | `docs/architecture/ENVIRONMENTS.md`, `docs/architecture/DEVELOPMENT-ENVIRONMENT.md`, `docs/architecture/ACCOUNT-OWNERSHIP.md` |
 | Firebase, rules, functions, notifications | `docs/architecture/FIREBASE-ARCHITECTURE.md` |
-| Private content, keys, devices | `docs/security/E2EE-REQUIREMENTS.md`, `docs/security/THREAT-MODEL.md`, `docs/security/PRIVACY-CONSTITUTION.md` |
+| Private content, keys, devices | `docs/security/E2EE-ARCHITECTURE.md` (start here), `KEY-MANAGEMENT.md`, `PAIRING-AND-DEVICE-TRUST.md`, `RECOVERY-AND-REVOCATION.md`, `WEB-SECURITY.md` (all in `docs/security/`), `docs/architecture/CRYPTOGRAPHIC-BOUNDARIES.md`, `docs/security/THREAT-MODEL.md` |
+| Experiments | `prototypes/` is isolated and never imported by the app (D-052) |
 | Analytics | `docs/security/ANALYTICS-POLICY.md` |
 | Tests | `docs/testing/TESTING-STRATEGY.md` |
 | Past decisions | `docs/decisions/DECISION-LOG.md` |

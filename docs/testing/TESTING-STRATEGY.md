@@ -14,7 +14,7 @@ the product is minimal. No coverage claims are made.
 | Cloud Functions | `node --test` on compiled output (+ `firebase-functions-test` later) | `functions/test/` | Environment/project guard; later server logic and authorization | ✅ environment guard tests |
 | Environment safety | `flutter_test` | `test/app/environment_guard_test.dart` | Builds cannot cross environments | ✅ |
 | Logging privacy | `flutter_test` | `test/core/logging/` | Redaction, error-type-only, sink isolation | ✅ |
-| E2EE | Known-answer vectors, cross-platform interop, negative tests | `test/security/` + platform tests | Cryptographic correctness | E2EE phase |
+| E2EE | Known-answer vectors, cross-platform interop, negative tests ([E2EE-TEST-PLAN](E2EE-TEST-PLAN.md)) | Rust crypto core + `test/security/` | Cryptographic correctness | Planned; experimental spike tests only (`prototypes/`) |
 | End-to-end | TBD (Patrol / integration_test on device farms) | — | Critical cross-platform flows (pair, message, call) | Future |
 
 ## Conventions

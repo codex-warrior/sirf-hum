@@ -187,4 +187,4 @@ jobs:
           grep "linux_x64.tar.gz" "gitleaks_${GITLEAKS_VERSION}_checksums.txt" | sha256sum -c -
           tar -xzf "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" gitleaks
       - name: Scan full git history
-        run: ./gitleaks git . --redact --no-banner --exit-code 1
+        run: ./gitleaks git . --config .gitleaks.toml --redact --no-banner --exit-code 1
