@@ -14,7 +14,6 @@
 use openmls::prelude::{tls_codec::*, *};
 use openmls_basic_credential::SignatureKeyPair;
 use openmls_rust_crypto::OpenMlsRustCrypto;
-use openmls_traits::OpenMlsProvider as _;
 
 /// MLS mandatory-to-implement ciphersuite (RFC 9420 §17.1).
 pub const CIPHERSUITE: Ciphersuite =
@@ -62,10 +61,11 @@ impl Device {
     }
 
     pub fn join(&self, welcome: &MlsMessageOut) -> MlsGroup {
-        let welcome = MlsMessageIn::tls_deserialize_exact(welcome.to_bytes().expect("ser"))
-            .expect("deserialize welcome")
-            .into_welcome()
-            .expect("welcome message");
+        let message = MlsMessageIn::tls_deserialize_exact(welcome.to_bytes().expect("ser"))
+            .expect("deserialize welcome");
+        let MlsMessageBodyIn::Welcome(welcome) = message.extract() else {
+            panic!("expected a Welcome message");
+        };
         let config = MlsGroupJoinConfig::builder()
             .use_ratchet_tree_extension(true)
             .build();
