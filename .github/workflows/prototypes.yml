@@ -44,7 +44,7 @@ jobs:
       - name: Scenario + interop tests (both backends)
         run: |
           set -o pipefail
-          cargo test --locked --workspace --no-fail-fast -- --nocapture --test-threads=1 2>&1 | tee test.log | grep -E "^test |test result|OBSERVATION|panicked|^error"
+          cargo test --locked --workspace --no-fail-fast -- --nocapture --test-threads=1 2>&1 | tee test.log | grep -E "^test |test result|OBSERVATION|INTEROP|panicked|^error"
       - name: FFI crate with the mls-rs backend
         run: cargo test --locked -p sh-crypto-ffi-spike --no-default-features --features mlsrs
       - name: Benchmarks (release)

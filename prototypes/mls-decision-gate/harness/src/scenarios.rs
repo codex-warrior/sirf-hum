@@ -289,6 +289,27 @@ pub fn persistence_round_trip<B: Backend>() {
     assert_eq!(a1.open(&reply).unwrap(), b"reply after restart");
 }
 
+/// Mitigation for the forgery-poisoning observation: the application
+/// persists a checkpoint before processing an untrusted message and rolls
+/// back if MLS rejects it. Only *failed* processing is rolled back, so
+/// replay protection (keys consumed by successful decryption) is unchanged.
+pub fn rollback_on_rejection_preserves_genuine_message<B: Backend>() {
+    let mut a1 = Member::<B>::founder("a/1");
+    let mut b1 = add_device(&mut a1, &mut [], "b/1");
+    let ct = b1.send(b"genuine");
+    for pos in tamper_positions(ct.len()) {
+        let checkpoint = B::snapshot(&a1.device, &mut a1.group);
+        let mut forged = ct.clone();
+        forged[pos] ^= 0x01;
+        assert!(a1.open(&forged).is_err());
+        let (device, group) = B::restore(&checkpoint); // roll back
+        a1.device = device;
+        a1.group = group;
+    }
+    assert_eq!(a1.open(&ct).unwrap(), b"genuine", "[{}] rollback did not preserve the genuine message", B::NAME);
+    assert!(a1.open(&ct).is_err(), "[{}] replay protection lost after rollback", B::NAME);
+}
+
 /// Observation (no single correct answer in RFC 9420): a message from epoch
 /// N delivered *after* the receiver merged the commit to N+1. Allowed
 /// outcomes: correct plaintext (prior-epoch secrets retained) or rejection.
@@ -329,6 +350,7 @@ macro_rules! scenario_tests {
         t!(tampering_is_rejected);
         t!(outsider_is_rejected);
         t!(persistence_round_trip);
+        t!(rollback_on_rejection_preserves_genuine_message);
 
         #[cfg_attr(not(target_arch = "wasm32"), test)]
         #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
