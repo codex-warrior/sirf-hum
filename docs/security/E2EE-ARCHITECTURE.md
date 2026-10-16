@@ -30,15 +30,15 @@ are marked *unverified*.
 | Layer | Conclusion | Label |
 | --- | --- | --- |
 | Goal | Private content encrypted on the sender's device and readable only by authorized devices; the server never holds plaintext or content keys | **APPROVED** (Prompt 01) |
-| Protocol specification | **MLS, RFC 9420**: one MLS group per couple whose members are *devices* | **RECOMMENDED** |
+| Protocol specification | **MLS, RFC 9420**: one MLS group per couple whose members are *devices* | **APPROVED direction** (product owner, Prompt 05; D-042) |
 | Ciphersuite | `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519` (RFC 9420 mandatory-to-implement) | **RECOMMENDED** |
-| Post-quantum | Not available in standard MLS ciphersuites; Signal has it (PQXDH + SPQR) | **UNRESOLVED** (accept the gap for v1, or not) |
-| Library | **OpenMLS** is the leading candidate; mls-rs is the alternative | **UNRESOLVED**: no public independent audit of either was found |
+| Post-quantum | Not available in standard MLS ciphersuites; Signal has it (PQXDH + SPQR) | **APPROVED**: not a V1 launch blocker; crypto agility + migration path required (D-050) |
+| Library | **OpenMLS 0.9.1** selected for development, **medium confidence**; mls-rs 0.56.0 kept as tested fallback ([MLS-DECISION](MLS-DECISION.md)) | **RECOMMENDED (D-054)**; production conditional on the review gates |
 | Platform integration | One small Rust crate wrapping OpenMLS, bridged to Dart with flutter_rust_bridge; built for Android, iOS and wasm32 | **RECOMMENDED**, not yet prototyped through Flutter |
 | Key storage (mobile) | Encrypted local store whose wrapping key is non-exportable in Android Keystore / iOS Keychain | **RECOMMENDED** ([KEY-MANAGEMENT](KEY-MANAGEMENT.md)) |
 | Key distribution | Device KeyPackages in Firestore, authenticated by a per-person identity key; partner identity verified out of band | **RECOMMENDED** ([PAIRING](PAIRING-AND-DEVICE-TRUST.md)) |
 | Backend authorization | Firestore/Storage rules and Functions authorize *access to ciphertext*; they never decrypt | **APPROVED** principle; rules **UNRESOLVED** until designed per feature |
-| Web | **No private content on web in the first release** (restricted capability) | **RECOMMENDED**, needs product approval ([WEB-SECURITY](WEB-SECURITY.md)) |
+| Web | **No private content on web in the first release** (restricted capability) | **APPROVED direction** (Prompt 05; D-046) ([WEB-SECURITY](WEB-SECURITY.md)) |
 | Recovery | Add a device from an existing device; optional user-held recovery key; no Sirf Hum escrow | **RECOMMENDED** ([RECOVERY](RECOVERY-AND-REVOCATION.md)) |
 | Media | Random per-object key; libsodium `crypto_secretstream_xchacha20poly1305`; key sent inside an MLS message | **RECOMMENDED**, library binding **UNRESOLVED** |
 | Independent review | Required before any E2EE claim | **APPROVED** (Prompt 01) |
@@ -143,7 +143,7 @@ custom protocol layer, which our rules forbid.
 | **libsignal** (Signal) | Signal | **AGPL-3.0** | Very active; v0.105.1 released 2026-10-15 | Signal's own; formal work cited for SPQR | Java/Android, Swift (official) | **No**: TypeScript is a Node add-on; no browser/wasm in README | Would need platform channels to Java/Swift; no web | **Rejected for v1**: README says "use outside of Signal is unsupported"; "APIs subject to change without notice"; AGPL would require open-sourcing the app (licensing **UNRESOLVED** only if the owner wants an AGPL client); no web |
 | libsignal_protocol_dart (Mixin) | Signal (unofficial Dart port) | GPL-3.0 | Last push 2026-06-21; no releases | **None found** | Dart | Dart | Direct | **Rejected**: unofficial re-implementation, no review found, GPL |
 | **vodozemac** (Matrix) | Olm + Megolm | Apache-2.0 | Active; 0.11.1 released 2026-09-30 | **Least Authority audit (report dated 2022-03-30)**: 10 issues (A–J) + suggestions, fixed per Matrix; 2024 low-severity timing fix (<0.7.0) | Rust; used by Element mobile via matrix-rust-sdk | **Yes**: Element Web uses it via wasm (matrix-sdk-crypto-wasm) | flutter_rust_bridge, or famedly's Dart binding (AGPL-3.0) | **Fallback candidate**: audited and deployed on web, but device trust/roster lives in matrix-sdk-crypto (Matrix-specific); using vodozemac alone means designing our own roster protocol |
-| **OpenMLS** | MLS | **MIT** | Active; 0.9.1 on crates.io 2026-10-07; CI runs **native and wasm32 tests**, fuzzing and an interop job | **No public full audit found** (*unverified*). Indirect: NCC Group's public review of libxmtp (built on OpenMLS, 2024). Security advisories published and fixed (2025: secret-tree persistence; tag length) | Rust; production use via **Wire core-crypto (pinned OpenMLS fork)** | **Yes in CI** (`tests.yml` wasm job; `openmls-wasm` crate) | flutter_rust_bridge (own crate) | **Leading candidate**, audit **UNRESOLVED** |
+| **OpenMLS** | MLS | **MIT** | Active; 0.9.1 on crates.io 2026-10-07; CI runs **native and wasm32 tests**, fuzzing and an interop job | **SRLabs Security Assurance Assessment v1.2 (2026-03-11)** of core crates at commit `a3402f2`; providers out of scope (*Prompt 04 wrongly said none was found; corrected in Prompt 05*). Indirect: NCC Group review of libxmtp. 5 advisories, all fixed by 0.9.1 | Rust; production use via **Wire core-crypto (pinned OpenMLS fork)** | **Yes in CI** (`tests.yml` wasm job; `openmls-wasm` crate) | flutter_rust_bridge or own C ABI | **Selected for development (D-054)** |
 | **mls-rs** (AWS Labs) | MLS | Apache-2.0 / MIT | Active (pushed 2026-10-15); releases via crates.io | lib.rs listing: conformance-validated but **"not yet received a full security audit by a 3rd party"** | Rust; has FFI bindings (*unverified* for our targets) | *unverified* | flutter_rust_bridge | **Alternative candidate** |
 | Wire core-crypto | MLS (OpenMLS fork) + Proteus | **GPL-3.0** | Active | Wire's own; *unverified* | Yes (Wire apps) | Yes (Wire web) | Kotlin/Swift/TS bindings | **Rejected**: GPL; tightly coupled to Wire (X.509/E2EI, Proteus) |
 | Build from primitives (libsodium, Web Crypto) | — | — | — | — | — | — | — | **Rejected**: would be a custom protocol |
@@ -163,7 +163,7 @@ custom protocol layer, which our rules forbid.
   ("harvest now, decrypt later"). Signal is ahead here. Whether to accept this
   for v1 is **UNRESOLVED (owner decision)**, with a tracked plan to adopt PQ
   ciphersuites when they are standardized and implemented.
-- **Library: OpenMLS leading, UNRESOLVED.** Reasons it leads:
+- **Library: OpenMLS selected in Prompt 05 (D-054, medium confidence); see [MLS-DECISION](MLS-DECISION.md).** Prompt 04 reasons it led:
   - permissive license;
   - active maintenance;
   - wasm32 tests in its own CI;
@@ -409,7 +409,7 @@ OpenMLS API (`into_welcome`); it was fixed to use the public `extract()`.
 
 ## 14. Unresolved decisions (summary)
 
-1. MLS library (OpenMLS vs mls-rs) and independent review: **blocking for implementation**.
+1. ~~MLS library~~: OpenMLS selected (D-054); the **independent delta review of OpenMLS + our crypto core** remains blocking for production.
 2. Accept no post-quantum protection in v1, or wait/choose differently.
 3. Web capability in v1 (recommended: no private content). Needs product approval.
 4. Credential format binding devices to PIKs (X.509 vs Basic credential + PIK-signed certificate extension).

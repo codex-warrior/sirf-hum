@@ -39,16 +39,18 @@ evidence comes from:
    Rust core.
 4. Threat model and these docs updated to match what was built.
 
-## Spike tests (exist; experimental)
+## Decision-gate tests (exist; experimental)
 
-`prototypes/mls-device-roster/tests/roster.rs` (OpenMLS 0.9.1), run natively
-and on wasm32 by `.github/workflows/prototypes.yml`:
-- roster convergence;
-- the sender device is named;
-- a removed device can't read (offline and online);
-- replay rejected;
-- tamper rejected;
-- an outsider can't read.
+`prototypes/mls-decision-gate` (`.github/workflows/prototypes.yml`), run
+against OpenMLS 0.9.1 **and** mls-rs 0.56.0, natively and on wasm32:
+- 11 scenarios: lifecycle, 6-device couple, revocation (incl. retained
+  plaintext), epoch rotation + stale state, replay, tamper sweep, outsider,
+  persistence, rollback mitigation, plus two measured observations
+  (forgery poisoning, late cross-epoch message);
+- interop (15 steps);
+- Dart FFI (3 tests);
+- upstream test-vector suites at the pinned tags (OpenMLS 356 / mls-rs 437
+  passed).
 
-These probe library behaviour in our model; they are not cryptographic
-validation.
+They probe library behaviour in our model. Cryptographic correctness comes
+from the upstream vectors and independent review.

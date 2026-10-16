@@ -102,3 +102,21 @@ An attacker who takes the **Firebase account** (e.g. email takeover) but has
 
 Defence: the UI blocks sending to an unverified, changed identity until the
 partner re-verifies.
+
+## Part 3: Prompt 05 refinement (direction)
+
+| Option | Description | Verdict |
+| --- | --- | --- |
+| **A. Trusted-device recovery** | An approved device adds and certifies the new device (QR) | **Default.** No server knowledge; works whenever any device survives |
+| **B. User-controlled recovery key** | High-entropy key held by the user decrypts their own backup of the Person Identity Key | **Opt-in.** Restores identity (no partner key-change warning) when all devices are lost |
+| **C. Encrypted recovery archive** | Message/media history encrypted under keys from the recovery backup | **Deferred.** A long-lived target; needs its own design and review. MLS gives new devices no history by design |
+| **D. Combination** | A + B now; C only after separate review | **RECOMMENDED direction** |
+
+**Explicitly rejected:** a server master decryption key, or any form of key
+escrow with Sirf Hum or Google, as a recovery mechanism. It would make the
+operator able to read content, contradicting the core promise (D-011).
+
+Interaction with the MLS core (D-054):
+- Recovery restores the **identity** (PIK), never MLS group secrets.
+- A recovered device joins groups as a *new* member via Add/Welcome, so
+  removal and rotation guarantees are unchanged.

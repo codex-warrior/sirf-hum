@@ -49,18 +49,28 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-039 | One Workload Identity deployer per project, bound to repo/owner IDs and GitHub Environment; least-privilege roles | Accepted | 2026-10-15 |
 | D-040 | CI installs Flutter's pinned Android NDK explicitly | Accepted | 2026-10-15 |
 | D-041 | LF line endings enforced by `.gitattributes` | Accepted | 2026-10-15 |
-| D-042 | E2EE protocol: MLS (RFC 9420), one couple group of devices | **Proposed (RECOMMENDED)** | 2026-10-16 |
-| D-043 | MLS library: OpenMLS leading, mls-rs alternative | **Open (UNRESOLVED)**: independent review needed | 2026-10-16 |
+| D-042 | E2EE protocol: MLS (RFC 9420), one couple group of devices | **Accepted** (owner direction, Prompt 05) | 2026-10-16 |
+| D-043 | MLS library: OpenMLS leading, mls-rs alternative | **Superseded by D-054** | 2026-10-16 |
 | D-044 | Couple group + per-person personal group | Proposed (RECOMMENDED) | 2026-10-16 |
 | D-045 | Person Identity Key (PIK) + PIK-signed device certificates; roster acceptance policy | Proposed (RECOMMENDED) | 2026-10-16 |
-| D-046 | Web v1 carries no end-to-end-encrypted private content | **Proposed: needs product approval** | 2026-10-16 |
+| D-046 | Web v1 carries no end-to-end-encrypted private content | **Accepted** (owner direction, Prompt 05) | 2026-10-16 |
 | D-047 | Recovery: device-to-device default, opt-in recovery key, no escrow | Proposed (RECOMMENDED) | 2026-10-16 |
 | D-048 | Media: per-object keys, libsodium secretstream; key inside MLS message | Proposed; binding Open | 2026-10-16 |
 | D-049 | Content-free notifications; previews off by default | Proposed (RECOMMENDED) | 2026-10-16 |
-| D-050 | Post-quantum gap in standard MLS ciphersuites | **Open (owner decision)** | 2026-10-16 |
+| D-050 | Post-quantum not a V1 launch blocker; crypto agility required | **Accepted** (owner, Prompt 05) | 2026-10-16 |
 | D-051 | Rejected E2EE candidates: libsignal (AGPL, unsupported outside Signal, no web), Dart Signal port, Wire core-crypto (GPL), custom protocol | Accepted (rejection) | 2026-10-16 |
 | D-052 | Experimental prototypes live in `prototypes/`, isolated, path-filtered CI | Accepted | 2026-10-16 |
 | D-053 | gitleaks exceptions must be rule + path + exact match, with negative controls | Accepted | 2026-10-16 |
+| D-054 | Cryptographic core: **OpenMLS 0.9.1** (dev); mls-rs 0.56.0 tested fallback | **Accepted for development — medium confidence; production conditional** | 2026-10-16 |
+| D-055 | Handshake messages sent as PrivateMessage (encrypted commits/proposals) | Accepted | 2026-10-16 |
+| D-056 | Process untrusted MLS input inside a checkpoint; roll back on rejection | Accepted | 2026-10-16 |
+| D-057 | Crypto core validates every credential before merge (OpenMLS has no identity-provider hook) | Accepted | 2026-10-16 |
+| D-058 | Transactional local storage provider (one atomic write per operation) | Accepted | 2026-10-16 |
+| D-059 | Size/structure limits on MLS input before parsing | Accepted | 2026-10-16 |
+| D-060 | Past-epoch key retention window | **Open** | 2026-10-16 |
+| D-061 | Crypto agility: explicit protocol/ciphersuite/implementation/schema versions on every record | Accepted | 2026-10-16 |
+| D-062 | Keep the backend-neutral harness + interop suite as a library-switch safety net | Accepted | 2026-10-16 |
+| D-063 | Flutter bridge: own C ABI + native assets vs flutter_rust_bridge | **Open** (Prompt 06) | 2026-10-16 |
 
 ---
 
@@ -311,6 +321,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
   - Olm/Megolm via vodozemac: audited and runs in browsers, but Megolm lacks PCS and device trust lives in Matrix-specific code.
 - **Evidence and status:** see [E2EE-ARCHITECTURE §4](../security/E2EE-ARCHITECTURE.md#4-candidate-evaluation). The Prompt 04 spike (OpenMLS 0.9.1) passed 6/6 natively and 6/6 on wasm32 under Node: GitHub Actions run 38870995297, commit `a308745`.
 - **Status:** Proposed · 2026-10-16. Awaiting owner approval and D-043.
+- **Update (Prompt 05):** Accepted as the protocol direction by the product owner; reconfirmed by the decision gate (no flaw found). Library: D-054.
 
 ### D-043 — MLS library
 - **Leading candidate:** OpenMLS (MIT, active, wasm32 tests in its CI, production use through Wire's fork, public advisories handled).
@@ -320,6 +331,8 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
   - prototype through flutter_rust_bridge on Android, iOS and Web;
   - decide the storage provider.
 - **Status:** Open · 2026-10-16
+- **Correction (Prompt 05):** A public independent review of OpenMLS exists (SRLabs Security Assurance Assessment v1.2, 2026-03-11, core crates at commit a3402f2); Prompt 04 missed it. mls-rs still has none.
+- **Superseded by D-054** (2026-10-16).
 
 ### D-044 — Group topology
 - **Decision (proposed):** a couple group (both people's devices) for shared content; a personal group per person (own devices only) for private-to-self data. A new group for every pairing; never reused.
@@ -337,6 +350,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Decision (proposed):** Web v1 offers no end-to-end-encrypted private content (account, device management, support only). An ephemeral linked-session design is a later, separately reviewed phase.
 - **Reason:** the web delivers code on every load, so a compromised hosting/deploy path, XSS or extensions would expose plaintext and keys. See [WEB-SECURITY](../security/WEB-SECURITY.md).
 - **Status:** Proposed — **requires product-owner approval** (it changes what web offers) · 2026-10-16
+- **Update (Prompt 05):** Accepted by the product owner. Web V1 offers no private E2EE content. Prompt 05 showed the MLS core *runs* on wasm32; that is technical feasibility, not security acceptance.
 
 ### D-047 — Recovery
 - **Decision (proposed):** add devices from an existing device by default; an opt-in high-entropy recovery key that decrypts a user-held encrypted backup of the PIK; no Sirf Hum escrow; no partner-vouched recovery. Without device or key, a new identity, visible to the partner.
@@ -355,6 +369,12 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 ### D-050 — Post-quantum
 - **Open:** Standard MLS ciphersuites are not post-quantum, so content could be recorded now and decrypted later by a quantum-capable adversary. Signal already ships PQXDH + SPQR. The owner must decide whether to accept this for v1 and adopt PQ MLS ciphersuites when standardized and implemented.
 - **Status:** Open · 2026-10-16
+- **Update (Prompt 05):** Decided by the product owner: *Sirf Hum V1 does not require post-quantum MLS as a launch blocker.* Required instead:
+  - crypto agility (D-061);
+  - versioned protocol metadata;
+  - a documented migration path via MLS ReInit when a standardized PQ ciphersuite is implementable.
+
+  No claim is made about future PQ support in either library.
 
 ### D-051 — Rejected E2EE options
 - **libsignal:**
@@ -378,3 +398,67 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 ### D-053 — Secret-scanner exceptions
 - **Decision:** every gitleaks exception is scoped to a rule AND a path AND an exact match, documented in `.gitleaks.toml`, and verified with negative controls. First case: the public crate name `libcrux-secrets` in Cargo.lock. Local commits are gated on the scanner's exit code, never on piped output (a piped run let one flagged commit through in Prompt 04; it was a false positive).
 - **Status:** Accepted · 2026-10-16
+
+### D-054 — Cryptographic core selection (Prompt 05 decision gate)
+- **Decision:** OpenMLS **0.9.1** (`openmls_rust_crypto` 0.6.0, `openmls_basic_credential` 0.6.0, `openmls_traits` 0.6.0; tag `v0.9.1` = `1762090a…`) is the development cryptographic core. mls-rs **0.56.0** (`8f1b43f4…`) stays a tested, wire-interoperable fallback.
+- **Confidence:** medium.
+- **Reason:**
+  - the only candidate with a public independent review (SRLabs v1.2, 2026-03);
+  - a visible advisory process;
+  - production use through Wire, XMTP and White Noise;
+  - upstream wasm32 CI.
+- **Measured in Prompt 05:** both libraries passed every scenario natively and on wasm32, interoperated on all 15 steps, and passed their upstream test vectors (OpenMLS 356/0 failed; mls-rs 437/0 failed). GitHub Actions run 38887400583.
+- **Why not high:**
+  - the audit covered commit `a3402f2` (2025-10), not 0.9.1;
+  - providers and storage were out of scope;
+  - finding S1-3 (storage desync) is unfixed;
+  - three parser advisories appeared after the audit.
+- **Conditions:** see [MLS-DECISION](../security/MLS-DECISION.md): delta review, provider review, D-056–D-059, CI bans on secret-logging features, RustSec monitoring, platform tests, pen test, and design review.
+- **Status:** Accepted for development · 2026-10-16. Supersedes the open D-043.
+
+### D-055 — Encrypted handshake messages
+- **Decision:** Commits and proposals are sent as MLS PrivateMessage (OpenMLS default policy; mls-rs `encrypt_control_messages = true`).
+- **Reason:** hides membership changes from the delivery service. Interop showed the policy must be identical on all clients: mismatched defaults produced `IncompatibleWireFormat`.
+- **Status:** Accepted · 2026-10-16
+
+### D-056 — Rollback on rejected input
+- **Decision:** Every untrusted MLS input is processed inside a local checkpoint; any rejection rolls back state.
+- **Reason:** Prompt 05 measured that a rejected forged copy consumes the message key in **both** libraries (OpenMLS 20/52, mls-rs 28/65 tested byte positions), letting an injector make a genuine message undecryptable. The rollback scenario preserves the genuine message and keeps replay protection.
+- **Status:** Accepted · 2026-10-16
+
+### D-057 — Credential validation inside the crypto core
+- **Decision:** The crypto core applies the PIK certificate policy (D-045) to every Add/Welcome/leaf update before any merge. Basic credentials are never trusted in production.
+- **Reason:** OpenMLS leaves credential validation to the application (no identity-provider hook, unlike mls-rs).
+- **Status:** Accepted · 2026-10-16
+
+### D-058 — Transactional storage provider
+- **Decision:** The OpenMLS storage provider is backed by an encrypted local database with one atomic transaction per operation.
+- **Reason:** SRLabs S1-3 (acknowledged): OpenMLS storage writes during commit processing are not atomic. Also required by D-056.
+- **Status:** Accepted · 2026-10-16
+
+### D-059 — Input limits
+- **Decision:** Bound message size, extension counts and nesting before handing bytes to MLS parsing.
+- **Reason:** SRLabs S0-1 (unbounded allocations, risk-accepted upstream) and the 2026 OpenMLS parser advisories (quadratic decoding, OOB panic, unbounded recursion).
+- **Status:** Accepted · 2026-10-16
+
+### D-060 — Past-epoch window
+- **Open:** OpenMLS defaults to keeping 0 past epochs, so late messages after a commit are rejected (measured); mls-rs keeps prior epochs. Choose a small window that balances delivery reliability against forward secrecy. Decide with the messaging design.
+- **Status:** Open · 2026-10-16
+
+### D-061 — Crypto agility
+- **Decision:** Every protocol record carries explicit versions:
+  - `EncryptedEnvelope.protocolVersion`;
+  - MLS protocol version and ciphersuite;
+  - the implementation identifier (`openmls/0.9.1`) in non-secret device capabilities;
+  - the payload `schemaVersion`.
+
+  Unknown versions fail closed; ciphersuite changes go through MLS ReInit.
+- **Status:** Accepted · 2026-10-16
+
+### D-062 — Library-switch safety net
+- **Decision:** Keep `prototypes/mls-decision-gate` (backend-neutral scenarios, OpenMLS↔mls-rs interop, upstream test vectors) running in CI while the core is built, so switching implementations remains practical.
+- **Status:** Accepted · 2026-10-16
+
+### D-063 — Flutter bridge mechanism
+- **Open:** Our narrow C ABI + `dart:ffi` packaged with Flutter native assets (enabled by default on Flutter 3.41), vs flutter_rust_bridge 2.13.0. The `dart:ffi` path is proven on Linux/macOS hosts. The Android `.so` and iOS XCFramework builds are proven; app packaging is not yet.
+- **Status:** Open · 2026-10-16. Decide in Prompt 06.
