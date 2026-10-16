@@ -1,7 +1,8 @@
 name: Prototypes
 
-# Experimental spikes only (prototypes/**). Never part of the app build.
-# Runs only when a prototype or this workflow changes.
+# Experimental spikes only (prototypes/**). Never part of the app build (D-052).
+# Prompt 05 MLS decision gate: same scenarios against OpenMLS and mls-rs,
+# interop, wasm32, Dart FFI, Android/iOS packaging, upstream test vectors.
 
 on:
   push:
@@ -17,33 +18,194 @@ concurrency:
   group: prototypes-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  RUST_TOOLCHAIN: 1.96.0
+  WASM_BINDGEN: 0.2.129
+  NDK_VERSION: 28.2.13676358
+  CARGO_TERM_COLOR: never
+
 defaults:
   run:
-    working-directory: prototypes/mls-device-roster
+    working-directory: prototypes/mls-decision-gate
 
 jobs:
-  mls-native:
-    name: MLS device-roster spike (native)
+  native:
+    name: Scenarios + interop + benchmarks (native)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --locked
-
-  mls-wasm:
-    name: MLS device-roster spike (wasm32 under Node)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
-          targets: wasm32-unknown-unknown
-      # The test runner must match the wasm-bindgen version in Cargo.lock.
-      - name: Install wasm-bindgen test runner
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - name: Runner
         run: |
-          version="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p')"
-          cargo install --locked wasm-bindgen-cli --version "$version"
-      - name: Run the spike tests on wasm32
+          echo "cpu: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2) x$(nproc)"
+          rustc --version
+      - name: Scenario + interop tests (both backends)
+        run: |
+          set -o pipefail
+          cargo test --locked --workspace -- --nocapture --test-threads=1 2>&1 | tee test.log | grep -E "^test |test result|OBSERVATION|panicked|^error"
+      - name: FFI crate with the mls-rs backend
+        run: cargo test --locked -p sh-crypto-ffi-spike --no-default-features --features mlsrs
+      - name: Benchmarks (release)
+        run: |
+          cargo run --locked --release -q -p backend-openmls --example bench
+          cargo run --locked --release -q -p backend-mlsrs --example bench
+
+  wasm:
+    name: Scenarios on wasm32 (Node) + wasm size
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-bindgen test runner (matches Cargo.lock)
+        run: cargo install --locked wasm-bindgen-cli --version "$WASM_BINDGEN"
+      - name: Scenarios on wasm32
         env:
           CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
-        run: cargo test --locked --target wasm32-unknown-unknown
+        run: cargo test --locked --target wasm32-unknown-unknown -p backend-openmls -p backend-mlsrs
+      - name: Release wasm size per backend
+        run: |
+          for b in openmls mlsrs; do
+            cargo build --locked --release --target wasm32-unknown-unknown -p sh-crypto-ffi-spike --no-default-features --features $b
+            echo "WASM_SIZE $b $(stat -c %s target/wasm32-unknown-unknown/release/sh_crypto_ffi_spike.wasm) bytes"
+          done
+
+  dart-ffi:
+    name: Dart FFI → Rust (${{ matrix.backend }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [openmls, mlsrs]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.11.3
+      - run: cargo build --locked --release -p sh-crypto-ffi-spike --no-default-features --features ${{ matrix.backend }}
+      - name: dart test through FFI
+        working-directory: prototypes/mls-decision-gate/ffi/dart
+        env:
+          SH_FFI_LIB: ${{ github.workspace }}/prototypes/mls-decision-gate/target/release/libsh_crypto_ffi_spike.so
+        run: |
+          dart pub get
+          dart analyze --fatal-infos
+          dart test --reporter expanded
+
+  android:
+    name: Android packaging (${{ matrix.backend }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [openmls, mlsrs]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - name: Install the NDK the app already pins (D-040)
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" > /dev/null
+          echo "NDK=$ANDROID_HOME/ndk/$NDK_VERSION/toolchains/llvm/prebuilt/linux-x86_64" >> "$GITHUB_ENV"
+      - name: Build .so for each Flutter Android ABI (API 24)
+        run: |
+          set -euo pipefail
+          for pair in aarch64-linux-android:aarch64-linux-android24 armv7-linux-androideabi:armv7a-linux-androideabi24 x86_64-linux-android:x86_64-linux-android24; do
+            target="${pair%%:*}"; clang="${pair##*:}"
+            upper="$(echo "$target" | tr 'a-z-' 'A-Z_')"
+            export "CARGO_TARGET_${upper}_LINKER=$NDK/bin/${clang}-clang"
+            export "CC_${target//-/_}=$NDK/bin/${clang}-clang"
+            export "AR_${target//-/_}=$NDK/bin/llvm-ar"
+            cargo build --locked --release --target "$target" -p sh-crypto-ffi-spike --no-default-features --features ${{ matrix.backend }}
+            so="target/$target/release/libsh_crypto_ffi_spike.so"
+            "$NDK/bin/llvm-strip" "$so"
+            echo "ANDROID_SIZE ${{ matrix.backend }} $target $(stat -c %s "$so") bytes (stripped)"
+            "$NDK/bin/llvm-readelf" -h "$so" | grep -E "Machine|Class"
+          done
+
+  ios:
+    name: iOS packaging (${{ matrix.backend }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [openmls, mlsrs]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+      - name: Static libraries for device and simulators
+        run: |
+          set -euo pipefail
+          for target in aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios; do
+            cargo build --locked --release --target "$target" -p sh-crypto-ffi-spike --no-default-features --features ${{ matrix.backend }}
+            echo "IOS_STATICLIB ${{ matrix.backend }} $target $(stat -f %z target/$target/release/libsh_crypto_ffi_spike.a) bytes"
+          done
+      - name: Package an XCFramework (device + universal simulator)
+        run: |
+          set -euo pipefail
+          mkdir -p out/sim
+          lipo -create target/aarch64-apple-ios-sim/release/libsh_crypto_ffi_spike.a \
+                       target/x86_64-apple-ios/release/libsh_crypto_ffi_spike.a \
+               -output out/sim/libsh_crypto_ffi_spike.a
+          xcodebuild -create-xcframework \
+            -library target/aarch64-apple-ios/release/libsh_crypto_ffi_spike.a \
+            -library out/sim/libsh_crypto_ffi_spike.a \
+            -output out/ShCryptoSpike.xcframework
+          ls out/ShCryptoSpike.xcframework
+          echo "XCFRAMEWORK ${{ matrix.backend }} $(du -sk out/ShCryptoSpike.xcframework | cut -f1) KiB (unstripped static archives)"
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.11.3
+      - name: Dart FFI on the macOS host (same C ABI)
+        run: |
+          cargo build --locked --release -p sh-crypto-ffi-spike --no-default-features --features ${{ matrix.backend }}
+          cd ffi/dart && dart pub get && SH_FFI_LIB="$PWD/../../target/release/libsh_crypto_ffi_spike.dylib" dart test
+
+  upstream-kats:
+    name: Upstream test vectors (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: openmls v0.9.1, repo: openmls/openmls, ref: v0.9.1, cmd: 'cargo test -p openmls --release' }
+          - { name: mls-rs 0.56.0, repo: awslabs/mls-rs, ref: 0.56.0, cmd: 'cargo test -p mls-rs --release' }
+    defaults:
+      run:
+        working-directory: upstream
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repo }}
+          ref: ${{ matrix.ref }}
+          path: upstream
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - name: Record the exact upstream commit
+        run: git rev-parse HEAD
+      - name: Run the pinned release's own test suite (includes IETF MLS test vectors)
+        run: |
+          set +e
+          ${{ matrix.cmd }} > ../kat.log 2>&1
+          rc=$?
+          set -e
+          grep -E "test result|FAILED|panicked" ../kat.log || true
+          echo "--- tests touching test vectors:"
+          grep -E "^test .*(kat|test_vector|interop|tree_math|key_schedule|secret_tree|treekem|transcript|passive|welcome|message_protection|crypto_basics|psk|serialization|deserialization).* \.\.\. " ../kat.log | sort | uniq -c | sort -rn | head -60 || true
+          grep -cE "^test .* \.\.\. ok$" ../kat.log | sed 's/^/TOTAL_OK /'
+          echo "cargo exit code: $rc"
+          exit $rc

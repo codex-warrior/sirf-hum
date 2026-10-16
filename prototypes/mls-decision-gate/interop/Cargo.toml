@@ -1,0 +1,13 @@
+[package]
+name = "interop"
+version = "0.0.0"
+description = "EXPERIMENTAL: OpenMLS <-> mls-rs wire interoperability (Prompt 05 §11)."
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+harness.workspace = true
+backend-openmls.workspace = true
+backend-mlsrs.workspace = true

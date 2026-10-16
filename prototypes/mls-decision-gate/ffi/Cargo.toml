@@ -1,0 +1,23 @@
+[package]
+name = "sh-crypto-ffi-spike"
+version = "0.0.0"
+description = "EXPERIMENTAL, NOT FOR PRODUCTION: minimal C ABI over an MLS backend (Prompt 05 §13)."
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "sh_crypto_ffi_spike"
+# cdylib: Android .so / desktop test; staticlib: iOS XCFramework.
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[features]
+default = ["openmls"]
+openmls = ["dep:backend-openmls"]
+mlsrs = ["dep:backend-mlsrs"]
+
+[dependencies]
+harness.workspace = true
+backend-openmls = { workspace = true, optional = true }
+backend-mlsrs = { workspace = true, optional = true }
