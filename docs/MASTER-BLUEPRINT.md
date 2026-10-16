@@ -3,7 +3,7 @@
 The index of record. Each section summarises what is **decided** and links
 to the detailed source of truth. Updated at the end of every phase.
 
-Last updated: **Prompt 03 — 2026-10-15**.
+Last updated: **Prompt 04 — 2026-10-16**.
 
 ## 1. Vision
 
@@ -49,12 +49,44 @@ area. → [ARCHITECTURE](architecture/ARCHITECTURE.md)
 Clients untrusted; server-side authorization; default-deny rules; explicit
 trust boundaries and threat actors. → [THREAT-MODEL](security/THREAT-MODEL.md)
 
-## 8. E2EE architecture requirements
+## 8. E2EE architecture
 
-Private content encrypted on device; server never holds content keys;
-established protocols only; versioned envelopes; person → account → devices
-→ cryptographic identity → couple. **Not implemented.** Protocol choice:
-**open**. → [E2EE-REQUIREMENTS](security/E2EE-REQUIREMENTS.md)
+Requirements: private content is encrypted on the device; the server never
+holds content keys; established protocols only; versioned envelopes; the
+person → account → devices → cryptographic identity → couple model.
+**Not implemented. Sirf Hum is not E2EE today.**
+
+Prompt 04 design (labels: APPROVED / RECOMMENDED / UNRESOLVED):
+
+- **RECOMMENDED: protocol MLS (RFC 9420).**
+  - One couple group whose members are devices, plus a personal group per
+    person.
+  - Each person has a Person Identity Key that signs their device
+    certificates.
+  - Every device validates the roster itself.
+- **UNRESOLVED: library.** OpenMLS is the leading candidate and mls-rs the
+  alternative; no public independent audit was found for either.
+  - The isolated spike (OpenMLS 0.9.1) passed 6/6 natively and on wasm32.
+- **UNRESOLVED: post-quantum.** Standard MLS has no post-quantum protection
+  (owner decision).
+- **RECOMMENDED (needs product approval): web v1 carries no private
+  content.**
+- **RECOMMENDED: recovery.**
+  - Add devices from an existing device by default.
+  - Opt-in recovery key.
+  - No escrow.
+- **RECOMMENDED: media and notifications.**
+  - Media: libsodium secretstream with a key per object.
+  - Notifications are content-free.
+
+→ [E2EE-ARCHITECTURE](security/E2EE-ARCHITECTURE.md) ·
+[KEY-MANAGEMENT](security/KEY-MANAGEMENT.md) ·
+[PAIRING-AND-DEVICE-TRUST](security/PAIRING-AND-DEVICE-TRUST.md) ·
+[RECOVERY-AND-REVOCATION](security/RECOVERY-AND-REVOCATION.md) ·
+[WEB-SECURITY](security/WEB-SECURITY.md) ·
+[CRYPTOGRAPHIC-BOUNDARIES](architecture/CRYPTOGRAPHIC-BOUNDARIES.md) ·
+[E2EE-TEST-PLAN](testing/E2EE-TEST-PLAN.md) ·
+[E2EE-REQUIREMENTS](security/E2EE-REQUIREMENTS.md)
 
 ## 9. Data architecture
 
@@ -186,7 +218,7 @@ designed with privacy — all **post-V1** and individually reviewed.
 | 2 | Release signing (Android upload key, Apple team) and store accounts | First store build |
 | 3 | Initial market, languages (Hindi/English/other), and segments | Visual identity, copy, localisation |
 | 4 | Sign-in methods (baseline email link or email/password; phone optional) | Identity phase |
-| 5 | E2EE protocol and library; web device role; recovery model | E2EE phase |
+| 5 | Approve D-042 (MLS), D-046 (web v1 no private content), D-050 (post-quantum gap); resolve D-043 (library + independent review) | Before any E2EE implementation |
 | 6 | Shared history after unpairing | Pairing phase (product + legal) |
 | 7 | LiveKit Cloud vs. self-hosted | Calls phase |
 | 8 | Analytics vendor and consent posture | First analytics event |

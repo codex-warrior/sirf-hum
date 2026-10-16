@@ -38,6 +38,15 @@ See [ENVIRONMENTS](../architecture/ENVIRONMENTS.md).
 
 Branch protection and production reviewers are blocked by the GitHub plan.
 
+## Phase 04 — E2EE architecture (design) ✅
+
+- MLS-based design, key management, pairing/device trust, recovery and
+  revocation, web decision, crypto boundaries, test plan, threat-model
+  extension.
+- Isolated OpenMLS spike passed natively and on wasm32.
+- **Blocking before implementation:** owner approvals (D-042, D-046, D-050)
+  and the library decision with independent review (D-043).
+
 ## Proposed sequence
 
 Ordering principle: identity and cryptography come **before** any feature
@@ -48,7 +57,7 @@ that must later be migrated.
 | --- | --- | --- | --- |
 | 02 | ~~Environments & Firebase projects~~ (done) | 01 | — |
 | 03 | Visual identity v1: typeface, palette, iconography, core components | 01 | Can run parallel to 02 |
-| 04 | E2EE architecture design (document + decisions; prototype on all three platforms) | 02 | No product UI |
+| 04 | ~~E2EE architecture design~~ (done; Flutter-bridge prototype still pending) | 02 | No product UI |
 | 05 | Identity: accounts, sign-in, device registration, device keys | 02, 04 | |
 | 06 | Pairing: invite, accept, couple record, unpairing | 05 | Abusive-partner review |
 | 07 | Messaging (E2EE) + privacy-safe notifications | 04–06 | First private content |
