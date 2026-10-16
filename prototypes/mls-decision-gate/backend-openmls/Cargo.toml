@@ -1,0 +1,25 @@
+[package]
+name = "backend-openmls"
+version = "0.0.0"
+description = "EXPERIMENTAL: OpenMLS adapter for the Prompt 05 decision gate."
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+harness.workspace = true
+openmls.workspace = true
+openmls_traits.workspace = true
+openmls_rust_crypto.workspace = true
+openmls_basic_credential.workspace = true
+
+# Browser randomness, as in OpenMLS' own wasm32 CI.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+openmls = { workspace = true, features = ["js", "js-test"] }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test.workspace = true
+
+[[example]]
+name = "bench"

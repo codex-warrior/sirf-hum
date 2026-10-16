@@ -47,6 +47,16 @@ Branch protection and production reviewers are blocked by the GitHub plan.
 - **Blocking before implementation:** owner approvals (D-042, D-046, D-050)
   and the library decision with independent review (D-043).
 
+## Phase 05 — MLS decision gate ✅
+
+- OpenMLS 0.9.1 selected (medium confidence); mls-rs 0.56.0 fallback.
+- Both libraries passed identical scenarios natively and on wasm32,
+  interoperated, and passed their upstream test vectors.
+- Android/iOS/wasm packaging and Dart FFI proven in the prototype.
+- New mandatory behaviours: D-055–D-061.
+
+[MLS-DECISION](../security/MLS-DECISION.md)
+
 ## Proposed sequence
 
 Ordering principle: identity and cryptography come **before** any feature

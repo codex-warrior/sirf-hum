@@ -1,0 +1,22 @@
+[package]
+name = "backend-mlsrs"
+version = "0.0.0"
+description = "EXPERIMENTAL: mls-rs adapter for the Prompt 05 decision gate."
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+harness.workspace = true
+mls-rs.workspace = true
+mls-rs-crypto-rustcrypto.workspace = true
+# Same versions mls-rs 0.56.0 itself depends on (mls-rs/Cargo.toml at tag 0.56.0).
+mls-rs-core = "=0.27.0"
+zeroize = "1"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test.workspace = true
+
+[[example]]
+name = "bench"

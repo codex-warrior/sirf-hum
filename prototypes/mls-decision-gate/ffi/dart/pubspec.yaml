@@ -1,0 +1,12 @@
+name: sh_crypto_ffi_spike
+description: EXPERIMENTAL, NOT FOR PRODUCTION. Dart FFI calls into the Rust MLS spike (Prompt 05).
+publish_to: none
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  ffi: 2.2.0
+
+dev_dependencies:
+  test: 1.33.0

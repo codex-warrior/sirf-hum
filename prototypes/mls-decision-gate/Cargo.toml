@@ -1,0 +1,37 @@
+# EXPERIMENTAL — NOT PRODUCTION. Prompt 05 MLS decision gate.
+# Not part of the Sirf Hum app; never imported by it (D-052).
+[workspace]
+resolver = "2"
+members = ["harness", "backend-openmls", "backend-mlsrs", "interop", "ffi"]
+
+[workspace.package]
+edition = "2021"
+publish = false
+license = "UNLICENSED"
+rust-version = "1.91"
+
+# Exact pins (Prompt 05 §24). Never `latest`, never floating ranges.
+# NEVER enable openmls `crypto-debug` / `content-debug` (they log secrets).
+[workspace.dependencies]
+harness = { path = "harness" }
+backend-openmls = { path = "backend-openmls" }
+backend-mlsrs = { path = "backend-mlsrs" }
+
+openmls = { version = "=0.9.1", default-features = false }
+openmls_traits = "=0.6.0"
+openmls_rust_crypto = "=0.6.0"
+openmls_basic_credential = "=0.6.0"
+
+# Same feature set on every target; `rayon` is excluded because wasm32 has no
+# threads and the comparison must use identical builds.
+mls-rs = { version = "=0.56.0", default-features = false, features = ["std", "rfc_compliant", "tree_index", "fast_serialize"] }
+mls-rs-crypto-rustcrypto = "=0.22.1"
+
+wasm-bindgen-test = "=0.3.79"
+
+[profile.release]
+# Representative of a shipped library: optimized, no debug info.
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = false

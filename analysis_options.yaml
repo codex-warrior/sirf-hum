@@ -16,6 +16,8 @@ analyzer:
     - "**/*.g.dart"
     - "**/*.freezed.dart"
     - build/**
+    # Experimental spikes are separate packages, never part of the app (D-052).
+    - prototypes/**
 
 linter:
   rules:
