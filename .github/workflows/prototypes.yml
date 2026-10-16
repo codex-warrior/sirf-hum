@@ -1,0 +1,49 @@
+name: Prototypes
+
+# Experimental spikes only (prototypes/**). Never part of the app build.
+# Runs only when a prototype or this workflow changes.
+
+on:
+  push:
+    branches: [main]
+    paths: ['prototypes/**', '.github/workflows/prototypes.yml']
+  pull_request:
+    paths: ['prototypes/**', '.github/workflows/prototypes.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prototypes-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: prototypes/mls-device-roster
+
+jobs:
+  mls-native:
+    name: MLS device-roster spike (native)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked
+
+  mls-wasm:
+    name: MLS device-roster spike (wasm32 under Node)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      # The test runner must match the wasm-bindgen version in Cargo.lock.
+      - name: Install wasm-bindgen test runner
+        run: |
+          version="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p')"
+          cargo install --locked wasm-bindgen-cli --version "$version"
+      - name: Run the spike tests on wasm32
+        env:
+          CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
+        run: cargo test --locked --target wasm32-unknown-unknown
