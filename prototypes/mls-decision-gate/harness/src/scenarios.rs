@@ -212,29 +212,57 @@ pub fn replay_is_rejected<B: Backend>() {
     assert!(a1.open(&ct).is_err(), "[{}] replay accepted", B::NAME);
 }
 
-/// Flips one bit at many positions across the whole message (framing,
-/// header, authenticated data, sender data, ciphertext, tag). Every variant
-/// must be rejected, and rejected garbage must not break later decryption.
+pub fn tamper_positions(len: usize) -> Vec<usize> {
+    (0..len).step_by(3).chain([len - 1]).collect()
+}
+
+/// Integrity: flips one bit at many positions across the whole message
+/// (framing, header, authenticated data, sender data, ciphertext, tag).
+/// Every variant must be rejected. Each attempt runs on a fresh copy of the
+/// receiver's state so one attempt cannot influence the next.
 pub fn tampering_is_rejected<B: Backend>() {
     let mut a1 = Member::<B>::founder("a/1");
     let mut b1 = add_device(&mut a1, &mut [], "b/1");
     let ct = b1.send(b"integrity matters");
-    let mut rejected = 0;
-    for pos in (0..ct.len()).step_by(3).chain([ct.len() - 1]) {
+    let receiver = B::snapshot(&a1.device, &mut a1.group);
+    for pos in tamper_positions(ct.len()) {
+        let (dev, mut group) = B::restore(&receiver);
         let mut forged = ct.clone();
         forged[pos] ^= 0x01;
-        match a1.open(&forged) {
-            Err(_) => rejected += 1,
-            Ok(pt) => panic!("[{}] tampered byte {pos} accepted, plaintext {pt:?}", B::NAME),
+        if let Ok(pt) = B::decrypt(&dev, &mut group, &forged) {
+            panic!("[{}] tampered byte {pos} accepted, plaintext {pt:?}", B::NAME);
         }
     }
-    assert!(rejected > 0);
-    assert_eq!(
-        a1.open(&ct).unwrap(),
-        b"integrity matters",
-        "[{}] rejected forgeries poisoned the receiver state",
-        B::NAME
-    );
+    // The untouched message still decrypts on the original state.
+    assert_eq!(a1.open(&ct).unwrap(), b"integrity matters");
+}
+
+/// Robustness (observation, Prompt 05 finding): after a *rejected* forgery,
+/// can the receiver still decrypt the genuine message? If not, whoever can
+/// inject a forged copy before the real one (the delivery service, or a
+/// member) can make that message undecryptable: a denial of service, not a
+/// confidentiality or integrity break. Returns the positions that poisoned
+/// the state and the error the genuine message then produced.
+pub fn rejected_forgery_poisoning<B: Backend>() -> (usize, Vec<usize>, Option<String>) {
+    let mut a1 = Member::<B>::founder("a/1");
+    let mut b1 = add_device(&mut a1, &mut [], "b/1");
+    let ct = b1.send(b"genuine");
+    let receiver = B::snapshot(&a1.device, &mut a1.group);
+    let (mut poisoned, mut first_error) = (vec![], None);
+    for pos in tamper_positions(ct.len()) {
+        let (dev, mut group) = B::restore(&receiver);
+        let mut forged = ct.clone();
+        forged[pos] ^= 0x01;
+        assert!(B::decrypt(&dev, &mut group, &forged).is_err());
+        match B::decrypt(&dev, &mut group, &ct) {
+            Ok(pt) => assert_eq!(pt, b"genuine"),
+            Err(e) => {
+                poisoned.push(pos);
+                first_error.get_or_insert(e);
+            }
+        }
+    }
+    (ct.len(), poisoned, first_error)
 }
 
 pub fn outsider_is_rejected<B: Backend>() {
@@ -301,6 +329,20 @@ macro_rules! scenario_tests {
         t!(tampering_is_rejected);
         t!(outsider_is_rejected);
         t!(persistence_round_trip);
+
+        #[cfg_attr(not(target_arch = "wasm32"), test)]
+        #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+        fn rejected_forgery_poisoning_is_measured() {
+            let (len, poisoned, err) = $crate::scenarios::rejected_forgery_poisoning::<$backend>();
+            let err: String = err.unwrap_or_default().chars().take(240).collect();
+            println!(
+                "OBSERVATION {} rejected_forgery_poisoning message_len={len} poisoned_positions={} of {} first={:?} error={err}",
+                <$backend as $crate::Backend>::NAME,
+                poisoned.len(),
+                $crate::scenarios::tamper_positions(len).len(),
+                &poisoned[..poisoned.len().min(12)],
+            );
+        }
 
         #[cfg_attr(not(target_arch = "wasm32"), test)]
         #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]

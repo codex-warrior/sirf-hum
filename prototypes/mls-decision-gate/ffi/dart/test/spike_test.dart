@@ -61,8 +61,13 @@ void main() {
     final add = spike.addTestMember(alice, ga, spike.keyPackage(bob));
     final gb = spike.joinTestGroup(bob, add.welcome);
 
+    // Forge a different message than the one later read, so this test
+    // checks integrity and replay only. Whether a rejected forgery affects a
+    // *later genuine* copy of the same message is measured separately in
+    // Rust (rejected_forgery_poisoning).
     final ct = spike.encryptTestMessage(alice, ga, utf8Bytes('once'));
-    final forged = Uint8List.fromList(ct)..[ct.length - 1] ^= 1;
+    final other = spike.encryptTestMessage(alice, ga, utf8Bytes('other'));
+    final forged = Uint8List.fromList(other)..[other.length - 1] ^= 1;
     expect(
       () => spike.decryptTestMessage(bob, gb, forged),
       throwsA(isA<MlsRejected>()),
