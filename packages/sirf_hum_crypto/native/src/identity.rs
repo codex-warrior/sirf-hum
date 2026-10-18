@@ -9,13 +9,13 @@
 //! - [`DeviceCertificate`]: the PIK's signature binding a device ID to the
 //!   device's MLS signature key. Carried inside the MLS BasicCredential.
 //!
-//! Trust comes only from person keys the user verified locally
-//! ([`TrustPolicy`]), never from the server. Signing and verification use the
+//! Trust comes only from what the device verified itself
+//! ([`crate::trust::TrustPolicy`], D-085), never from the server. Signing and verification use the
 //! OpenMLS crypto provider (Ed25519); no primitive is implemented here.
 
 use std::collections::BTreeSet;
 
-use openmls::prelude::{BasicCredential, Credential, CredentialType};
+use openmls::prelude::{BasicCredential, Credential};
 use openmls_traits::crypto::OpenMlsCrypto;
 use openmls_traits::types::SignatureScheme;
 
@@ -683,6 +683,47 @@ pub fn verify_lineage(
     revocations: &[RevocationEvidence<'_>],
     revoked_ids: &[DeviceId],
 ) -> CoreResult<Vec<DeviceCertificate>> {
+    Ok(verify_lineage_detailed(
+        crypto,
+        account,
+        root_certificate,
+        links,
+        revocations,
+        revoked_ids,
+    )?
+    .trusted
+    .into_iter()
+    .map(|(_, c)| c)
+    .collect())
+}
+
+/// What a verified lineage proves (D-084, D-085).
+pub struct LineageOutcome {
+    pub account: AccountId,
+    /// The root certificate (the account's first device of this identity).
+    pub root: DeviceCertificate,
+    /// Still-trusted certificates, in chain order, with their exact bytes.
+    pub trusted: Vec<(Vec<u8>, DeviceCertificate)>,
+    /// Revoked devices, with their person key when the certificate is known
+    /// (signed revocations always; server-asserted ones when in the chain).
+    pub revoked: Vec<(DeviceId, Option<PersonKey>)>,
+}
+
+impl core::fmt::Debug for LineageOutcome {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("LineageOutcome(<redacted>)")
+    }
+}
+
+/// [`verify_lineage`], also reporting the root and what was revoked.
+pub fn verify_lineage_detailed(
+    crypto: &impl OpenMlsCrypto,
+    account: &AccountId,
+    root_certificate: &[u8],
+    links: &[TrustLink<'_>],
+    revocations: &[RevocationEvidence<'_>],
+    revoked_ids: &[DeviceId],
+) -> CoreResult<LineageOutcome> {
     let invalid = |_| CoreError::TrustChainInvalid;
     let root = DeviceCertificate::decode(root_certificate).map_err(invalid)?;
     root.verify_signature(crypto).map_err(invalid)?;
@@ -763,7 +804,18 @@ pub fn verify_lineage(
         chain.push((new_bytes.to_vec(), cert));
     }
 
+    let root = chain[0].1.clone();
     let mut revoked: BTreeSet<DeviceId> = revoked_ids.iter().copied().collect();
+    let mut revoked_keys: Vec<(DeviceId, Option<PersonKey>)> = revoked_ids
+        .iter()
+        .map(|id| {
+            let key = chain
+                .iter()
+                .find(|(_, c)| c.device_id == *id)
+                .map(|(_, c)| c.person_key.clone());
+            (*id, key)
+        })
+        .collect();
     for r in revocations {
         if r.protocol_version != TRUST_PROTOCOL_VERSION || !member(&chain, r.revoker_certificate) {
             return Err(CoreError::TrustChainInvalid);
@@ -779,17 +831,19 @@ pub fn verify_lineage(
             r.signature,
         )
         .map_err(invalid)?;
-        revoked.insert(
-            DeviceCertificate::decode(r.revoked_certificate)
-                .map_err(invalid)?
-                .device_id,
-        );
+        let revoked_cert = DeviceCertificate::decode(r.revoked_certificate).map_err(invalid)?;
+        revoked.insert(revoked_cert.device_id);
+        revoked_keys.push((revoked_cert.device_id, Some(revoked_cert.person_key)));
     }
-    Ok(chain
-        .into_iter()
-        .map(|(_, c)| c)
-        .filter(|c| !revoked.contains(&c.device_id))
-        .collect())
+    Ok(LineageOutcome {
+        account: account.clone(),
+        root,
+        trusted: chain
+            .into_iter()
+            .filter(|(_, c)| !revoked.contains(&c.device_id))
+            .collect(),
+        revoked: revoked_keys,
+    })
 }
 
 fn verify_ed25519(
@@ -804,52 +858,6 @@ fn verify_ed25519(
     crypto
         .verify_signature(SignatureScheme::ED25519, payload, public_key, signature)
         .map_err(|_| CoreError::AuthenticationFailure)
-}
-
-/// Which people this device trusts, and which devices are revoked.
-#[derive(Clone, Default, PartialEq, Eq)]
-pub struct TrustPolicy {
-    pub(crate) trusted_people: BTreeSet<PersonKey>,
-    pub(crate) revoked_devices: BTreeSet<DeviceId>,
-}
-
-/// A credential that passed every check.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ValidatedDevice {
-    pub person_key: PersonKey,
-    pub device_id: DeviceId,
-}
-
-impl TrustPolicy {
-    /// Validates an MLS credential plus the leaf's signature key:
-    /// basic credential → strict certificate decode → certificate signature
-    /// by the person key → person key trusted → device not revoked → the leaf
-    /// signature key is the certified device key.
-    pub fn validate(
-        &self,
-        crypto: &impl OpenMlsCrypto,
-        credential: &Credential,
-        leaf_signature_key: &[u8],
-    ) -> CoreResult<ValidatedDevice> {
-        if credential.credential_type() != CredentialType::Basic {
-            return Err(CoreError::InvalidCredential);
-        }
-        let cert = DeviceCertificate::decode(credential.serialized_content())?;
-        cert.verify_signature(crypto)?;
-        if !self.trusted_people.contains(&cert.person_key) {
-            return Err(CoreError::UnauthorizedDevice);
-        }
-        if self.revoked_devices.contains(&cert.device_id) {
-            return Err(CoreError::UnauthorizedDevice);
-        }
-        if cert.device_signature_key != leaf_signature_key {
-            return Err(CoreError::InvalidCredential);
-        }
-        Ok(ValidatedDevice {
-            person_key: cert.person_key,
-            device_id: cert.device_id,
-        })
-    }
 }
 
 /// Extracts the device ID from a credential *without* trusting it (used only

@@ -522,6 +522,10 @@ fn error_codes_are_stable_unique_and_safe() {
         (CoreError::RecoveryKeyInvalid, -19, "recovery_key_invalid"),
         (CoreError::TrustStateStale, -20, "trust_state_stale"),
         (CoreError::TrustChainInvalid, -21, "trust_chain_invalid"),
+        (CoreError::CommitPending, -22, "commit_pending"),
+        (CoreError::NoStagedCommit, -23, "no_staged_commit"),
+        (CoreError::FutureEpoch, -24, "future_epoch"),
+        (CoreError::EnvelopeMismatch, -25, "envelope_mismatch"),
     ];
     assert_eq!(CoreError::ALL.len(), expected.len());
     for (e, code, name) in expected {
@@ -580,8 +584,21 @@ fn crypto_core_source_contains_no_logging_or_printing() {
         "info!(",
         "warn!(",
     ];
-    for entry in fs::read_dir(src).unwrap() {
-        let path = entry.unwrap().path();
+    // Recursive: src/engine/ holds the messaging module (Prompt 10).
+    let mut dirs = vec![src];
+    let mut files = Vec::new();
+    while let Some(dir) = dirs.pop() {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                dirs.push(path);
+            } else {
+                files.push(path);
+            }
+        }
+    }
+    assert!(files.iter().any(|p| p.ends_with("conversation.rs")));
+    for path in files {
         let text = fs::read_to_string(&path).unwrap();
         for f in forbidden {
             assert!(

@@ -37,6 +37,24 @@ pub const MAX_LINEAGE_BYTES: usize = 128 * 1024;
 /// Most links, revocations or revoked IDs one lineage may carry.
 pub const MAX_LINEAGE_ITEMS: usize = 64;
 
+/// Largest application payload of one message (Prompt 10, D-089): text up
+/// to 16,000 UTF-8 bytes plus the payload header. Media never goes through
+/// a message payload (Prompt 11 sends references).
+pub const MAX_MESSAGE_PAYLOAD_BYTES: usize = 16 * 1024;
+
+/// Largest message ciphertext accepted by `receive_message`, checked before
+/// parsing. Matches the Firestore rule on `messages.ciphertext`.
+pub const MAX_MESSAGE_CIPHERTEXT_BYTES: usize = 32 * 1024;
+
+/// Largest sealed local history record (one message).
+pub const MAX_HISTORY_RECORD_BYTES: usize = 64 * 1024;
+
+/// Most history records returned or kept per conversation listing.
+pub const MAX_HISTORY_RECORDS: usize = 10_000;
+
+/// Key packages added by one commit (≤ group size).
+pub const MAX_KEY_PACKAGES_PER_COMMIT: usize = MAX_GROUP_MEMBERS - 1;
+
 pub(crate) fn check(len: usize, max: usize) -> crate::CoreResult<()> {
     if len > max {
         Err(crate::CoreError::InputTooLarge)

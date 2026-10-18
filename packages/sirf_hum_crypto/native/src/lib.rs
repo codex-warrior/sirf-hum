@@ -20,9 +20,11 @@ pub mod lineage;
 pub mod record;
 pub mod recovery;
 pub mod store;
+pub mod trust;
 
 pub use crate::engine::{
-    AddResult, CryptoCore, Incoming, PublicIdentity, RecoveryApproval, RecoveryKeyBundle,
-    RosterEntry, CIPHERSUITE, IMPLEMENTATION,
+    AddResult, CryptoCore, Incoming, LocalMessage, MessageDirection, MessageState, PublicIdentity,
+    Received, RecoveryApproval, RecoveryKeyBundle, RosterEntry, Sent, StagedCommit, CIPHERSUITE,
+    IMPLEMENTATION,
 };
 pub use crate::error::{CoreError, CoreResult};

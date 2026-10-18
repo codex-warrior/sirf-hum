@@ -18,8 +18,8 @@
 use openmls_traits::crypto::OpenMlsCrypto;
 
 use crate::identity::{
-    verify_lineage, AccountId, DeviceId, Reader, RecoveryRegistrationEvidence, RevocationEvidence,
-    RevocationReason, TrustLink, DEVICE_ID_LEN,
+    verify_lineage_detailed, AccountId, DeviceId, LineageOutcome, Reader,
+    RecoveryRegistrationEvidence, RevocationEvidence, RevocationReason, TrustLink, DEVICE_ID_LEN,
 };
 use crate::limits::{check, MAX_LINEAGE_BYTES, MAX_LINEAGE_ITEMS};
 use crate::{CoreError, CoreResult};
@@ -42,6 +42,16 @@ fn u64_be(r: &mut Reader<'_>) -> CoreResult<u64> {
 
 /// Decodes and verifies; returns the encoded list of trusted device IDs.
 pub fn verify_encoded(crypto: &impl OpenMlsCrypto, blob: &[u8]) -> CoreResult<Vec<u8>> {
+    let outcome = decode_and_verify(crypto, blob)?;
+    let mut out = (outcome.trusted.len() as u32).to_be_bytes().to_vec();
+    for (_, cert) in &outcome.trusted {
+        out.extend_from_slice(&cert.device_id.0);
+    }
+    Ok(out)
+}
+
+/// Decodes and verifies; returns everything the trust policy needs (D-085).
+pub fn decode_and_verify(crypto: &impl OpenMlsCrypto, blob: &[u8]) -> CoreResult<LineageOutcome> {
     check(blob.len(), MAX_LINEAGE_BYTES)?;
     let invalid = |_| CoreError::TrustChainInvalid;
     let mut r = Reader(blob);
@@ -105,10 +115,5 @@ pub fn verify_encoded(crypto: &impl OpenMlsCrypto, blob: &[u8]) -> CoreResult<Ve
         return Err(CoreError::TrustChainInvalid);
     }
 
-    let trusted = verify_lineage(crypto, &account, root, &links, &revocations, &revoked_ids)?;
-    let mut out = (trusted.len() as u32).to_be_bytes().to_vec();
-    for cert in trusted {
-        out.extend_from_slice(&cert.device_id.0);
-    }
-    Ok(out)
+    verify_lineage_detailed(crypto, &account, root, &links, &revocations, &revoked_ids)
 }
