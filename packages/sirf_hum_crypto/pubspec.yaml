@@ -1,0 +1,21 @@
+name: sirf_hum_crypto
+description: >-
+  Sirf Hum crypto core (OpenMLS 0.9.1 behind a small C ABI). NOT production
+  E2EE: unaudited. See docs/security/CRYPTO-CORE-ARCHITECTURE.md.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.11.0
+
+# Exact pins (Prompt 06 Part 13). code_assets and hooks are first-party
+# (dart.dev), pinned to the versions Flutter 3.41.5's own tool uses, and
+# drive the native build in hook/build.dart (D-063).
+dependencies:
+  code_assets: 1.0.0
+  ffi: 2.2.0
+  hooks: 1.0.0
+
+dev_dependencies:
+  lints: 6.0.0
+  test: 1.33.0

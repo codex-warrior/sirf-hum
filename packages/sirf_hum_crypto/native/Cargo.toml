@@ -1,0 +1,38 @@
+[package]
+name = "sirf_hum_crypto"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "UNLICENSED"
+rust-version = "1.91"
+description = "Sirf Hum crypto core: thin, auditable wrapper around OpenMLS 0.9.1. NOT production E2EE (unaudited)."
+
+[lib]
+# cdylib: Android/iOS/desktop-test bundles via Flutter native assets. rlib: Rust tests.
+crate-type = ["cdylib", "rlib"]
+
+# EXACT pins only (D-054, Prompt 06 rule 3). CI fails if these change without review
+# (tool/check_crypto_pins.sh). Every dependency below is already in OpenMLS'
+# reviewed dependency tree; no new cryptographic library is introduced.
+#
+# NEVER enable openmls `crypto-debug` or `content-debug`: they log secrets.
+[dependencies]
+openmls = { version = "=0.9.1", default-features = false }
+openmls_traits = "=0.6.0"
+openmls_rust_crypto = "=0.6.0"
+openmls_basic_credential = "=0.6.0"
+openmls_memory_storage = "=0.6.0"
+# AEAD for sealing local state at rest (XChaCha20-Poly1305). Same version
+# openmls_rust_crypto 0.6.0 already depends on.
+chacha20poly1305 = { version = "=0.10.1", default-features = false, features = ["alloc", "getrandom"] }
+zeroize = { version = "=1.9.1", features = ["alloc"] }
+
+[dev-dependencies]
+tempfile = "=3.27.0"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = false
+panic = "unwind" # panics are caught at the FFI boundary (catch_unwind)

@@ -1,0 +1,10 @@
+# Pinned toolchain for reproducible crypto-core builds. rustup installs it (and
+# the targets) automatically on first `cargo` use in this directory.
+[toolchain]
+channel = "1.96.0"
+profile = "minimal"
+components = ["rustfmt", "clippy"]
+targets = [
+  "aarch64-linux-android", "armv7-linux-androideabi", "x86_64-linux-android",
+  "aarch64-apple-ios", "aarch64-apple-ios-sim", "x86_64-apple-ios",
+]

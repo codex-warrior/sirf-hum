@@ -30,6 +30,13 @@ jobs:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
+      # The crypto core's build hook runs cargo; rust-toolchain.toml pins the
+      # exact toolchain and targets. Fails closed on any other rustc.
+      - name: Install pinned Rust toolchain
+        working-directory: packages/sirf_hum_crypto/native
+        run: |
+          rustup toolchain install || true  # reads rust-toolchain.toml (rustup >= 1.28)
+          rustc --version | grep -q '^rustc 1\.96\.0 ' || { echo "::error::rustc is not the pinned 1.96.0"; exit 1; }
       - run: flutter pub get
       - run: dart format --output=none --set-exit-if-changed .
       - run: flutter analyze
@@ -79,6 +86,13 @@ jobs:
             rm -rf "$ANDROID_HOME/ndk/28.2.13676358"
           done
           exit 1
+      # The crypto core's build hook runs cargo; rust-toolchain.toml pins the
+      # exact toolchain and targets. Fails closed on any other rustc.
+      - name: Install pinned Rust toolchain
+        working-directory: packages/sirf_hum_crypto/native
+        run: |
+          rustup toolchain install || true  # reads rust-toolchain.toml (rustup >= 1.28)
+          rustc --version | grep -q '^rustc 1\.96\.0 ' || { echo "::error::rustc is not the pinned 1.96.0"; exit 1; }
       - name: Build
         run: >-
           flutter build apk --${{ matrix.mode }}
@@ -90,6 +104,12 @@ jobs:
           apk="build/app/outputs/flutter-apk/app-${{ matrix.flavor }}-${{ matrix.mode }}.apk"
           "$aapt2" dump badging "$apk" | grep -q "package: name='${{ matrix.app_id }}'" \
             || { echo "::error::$apk is not ${{ matrix.app_id }}"; exit 1; }
+      - name: Verify crypto core is bundled for every ABI
+        run: |
+          apk="build/app/outputs/flutter-apk/app-${{ matrix.flavor }}-${{ matrix.mode }}.apk"
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            unzip -l "$apk" | grep -q "lib/$abi/libsirf_hum_crypto.so" || { echo "::error::libsirf_hum_crypto.so missing for $abi"; exit 1; }
+          done
 
   ios:
     name: iOS (all schemes compile, tests build)
@@ -102,6 +122,13 @@ jobs:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
+      # The crypto core's build hook runs cargo; rust-toolchain.toml pins the
+      # exact toolchain and targets. Fails closed on any other rustc.
+      - name: Install pinned Rust toolchain
+        working-directory: packages/sirf_hum_crypto/native
+        run: |
+          rustup toolchain install || true  # reads rust-toolchain.toml (rustup >= 1.28)
+          rustc --version | grep -q '^rustc 1\.96\.0 ' || { echo "::error::rustc is not the pinned 1.96.0"; exit 1; }
       - run: flutter pub get
       # Each build overwrites build/ios/iphoneos/Runner.app, so the bundle ID
       # is checked right after each scheme is built.
@@ -117,6 +144,7 @@ jobs:
         run: |
           flutter build ios --release --no-codesign --flavor production --dart-define=SH_ENV=production
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' build/ios/iphoneos/Runner.app/Info.plist)" = com.sirfhum.app
+          test -f build/ios/iphoneos/Runner.app/Frameworks/sirf_hum_crypto.framework/sirf_hum_crypto || { echo "::error::crypto core framework not bundled"; exit 1; }
       - name: Build native test target (RunnerTests)
         run: |
           # pipefail: without it, `| tail` would hide an xcodebuild failure.
@@ -127,6 +155,134 @@ jobs:
             -configuration Debug-Development \
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO | tail -n 20
+
+  crypto-core:
+    name: Crypto core (Rust policy, fmt, clippy, tests, audit; Dart package)
+    runs-on: ubuntu-24.04
+    env:
+      CARGO_AUDIT_VERSION: 0.21.2
+    steps:
+      - uses: actions/checkout@v4
+      # The crypto core's build hook runs cargo; rust-toolchain.toml pins the
+      # exact toolchain and targets. Fails closed on any other rustc.
+      - name: Install pinned Rust toolchain
+        working-directory: packages/sirf_hum_crypto/native
+        run: |
+          rustup toolchain install || true  # reads rust-toolchain.toml (rustup >= 1.28)
+          rustc --version | grep -q '^rustc 1\.96\.0 ' || { echo "::error::rustc is not the pinned 1.96.0"; exit 1; }
+      - name: Dependency policy (pins, OpenMLS version, lockfile, features, no logging)
+        run: bash tool/check_crypto_core.sh
+      - name: Rust fmt, clippy, tests
+        working-directory: packages/sirf_hum_crypto/native
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+      - name: Lockfile unchanged by the build
+        run: git diff --exit-code -- packages/sirf_hum_crypto/native/Cargo.lock
+      # RustSec advisories: known, published issues in locked dependencies
+      # only. It cannot find unknown bugs. Warnings (unmaintained, unsound,
+      # yanked) fail too.
+      - name: Known-vulnerability audit (cargo-audit)
+        run: |
+          cargo +stable install cargo-audit --version "$CARGO_AUDIT_VERSION" --locked
+          cargo audit --file packages/sirf_hum_crypto/native/Cargo.lock --deny warnings
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Dart package (analyze, tests through the real native library)
+        working-directory: packages/sirf_hum_crypto
+        env:
+          SIRF_HUM_REQUIRE_NATIVE_CRYPTO: '1'
+        run: |
+          dart pub get
+          dart format --output=none --set-exit-if-changed .
+          dart analyze --fatal-infos
+          dart test
+
+  crypto-android-device:
+    name: Crypto core on Android emulator (integration test)
+    runs-on: ubuntu-24.04
+    needs: crypto-core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Install pinned Android NDK
+        run: |
+          for attempt in 1 2 3; do
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;28.2.13676358" > /dev/null && test -f "$ANDROID_HOME/ndk/28.2.13676358/source.properties" && exit 0
+            echo "NDK install attempt $attempt failed; retrying"
+            rm -rf "$ANDROID_HOME/ndk/28.2.13676358"
+          done
+          exit 1
+      # The crypto core's build hook runs cargo; rust-toolchain.toml pins the
+      # exact toolchain and targets. Fails closed on any other rustc.
+      - name: Install pinned Rust toolchain
+        working-directory: packages/sirf_hum_crypto/native
+        run: |
+          rustup toolchain install || true  # reads rust-toolchain.toml (rustup >= 1.28)
+          rustc --version | grep -q '^rustc 1\.96\.0 ' || { echo "::error::rustc is not the pinned 1.96.0"; exit 1; }
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - run: flutter pub get
+      - name: Run crypto integration test on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: >-
+            flutter test integration_test/crypto_core_test.dart
+            --flavor development --dart-define=SH_ENV=development -d emulator-5554
+
+  crypto-ios-device:
+    name: Crypto core on iOS simulator (integration test)
+    runs-on: macos-latest
+    needs: crypto-core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      # The crypto core's build hook runs cargo; rust-toolchain.toml pins the
+      # exact toolchain and targets. Fails closed on any other rustc.
+      - name: Install pinned Rust toolchain
+        working-directory: packages/sirf_hum_crypto/native
+        run: |
+          rustup toolchain install || true  # reads rust-toolchain.toml (rustup >= 1.28)
+          rustc --version | grep -q '^rustc 1\.96\.0 ' || { echo "::error::rustc is not the pinned 1.96.0"; exit 1; }
+      - run: flutter pub get
+      - name: Boot an iPhone simulator
+        id: sim
+        run: |
+          udid="$(xcrun simctl list devices available --json | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          ios = [d for runtime, ds in devices.items() if "iOS" in runtime for d in ds if d["name"].startswith("iPhone")]
+          print(ios[-1]["udid"] if ios else "")')"
+          test -n "$udid" || { echo "::error::no iPhone simulator available"; exit 1; }
+          xcrun simctl boot "$udid"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+      - name: Run crypto integration test on simulator
+        run: >-
+          flutter test integration_test/crypto_core_test.dart
+          --flavor development --dart-define=SH_ENV=development -d ${{ steps.sim.outputs.udid }}
 
   functions:
     name: Cloud Functions (typecheck, lint, build, test)
