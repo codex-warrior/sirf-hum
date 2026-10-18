@@ -16,7 +16,10 @@ import 'package:ffi/ffi.dart';
 import 'package:sirf_hum_crypto/src/types.dart';
 
 /// ABI version this Dart code was written against (native ABI_VERSION).
-const int expectedAbiVersion = 1;
+const int expectedAbiVersion = 2;
+
+// True in release (product) builds, where test key stores are refused.
+const bool _isReleaseBuild = bool.fromEnvironment('dart.vm.product');
 
 const int _incomingApplication = 1;
 const int _incomingCommit = 2;
@@ -41,6 +44,45 @@ external int _open(
   int len,
   int keystore,
   Pointer<Pointer<_ShCore>> out,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Pointer<_ShCore>>,
+  )
+>(symbol: 'sh_crypto_open_with_platform_key')
+external int _openWithPlatformKey(
+  Pointer<Uint8> dir,
+  int dirLen,
+  Pointer<Uint8> key,
+  int keyLen,
+  Pointer<Pointer<_ShCore>> out,
+);
+
+@Native<Int32 Function(Pointer<_ShCore>, Pointer<Uint8>, Size)>(
+  symbol: 'sh_crypto_check_account',
+)
+external int _checkAccount(Pointer<_ShCore> h, Pointer<Uint8> a, int len);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Uint32,
+    Pointer<Uint8>,
+    Size,
+    Pointer<_ShBuf>,
+  )
+>(symbol: 'sh_crypto_device_proof')
+external int _deviceProof(
+  Pointer<_ShCore> h,
+  int purpose,
+  Pointer<Uint8> challenge,
+  int len,
+  Pointer<_ShBuf> out,
 );
 
 @Native<Void Function(Pointer<_ShCore>)>(symbol: 'sh_crypto_close')
@@ -270,17 +312,56 @@ final class CryptoCore implements Finalizable {
   /// [directory] (which must be app-private storage). Fails closed with
   /// [CryptoErrorCode.stateCorruption] if stored state cannot be
   /// authenticated, rather than starting empty.
+  ///
+  /// Only for the insecure TEST key stores. They are refused in release
+  /// builds, and [KeyStoreKind.platform] must use [initializeWithPlatformKey].
   static CryptoCore initialize({
     required String directory,
     required KeyStoreKind keyStore,
   }) {
-    if (!isAvailable) throw const CryptoException(CryptoErrorCode.unsupported);
+    // Release builds refuse the insecure test key stores outright.
+    if (!isAvailable || keyStore == KeyStoreKind.platform || _isReleaseBuild) {
+      throw const CryptoException(CryptoErrorCode.unsupported);
+    }
+    return _openWith(
+      (out) => _input(
+        utf8.encode(directory),
+        (p, n) => _open(p, n, keyStore.wireValue, out),
+      ),
+    );
+  }
+
+  /// Opens or restores the core with the 32-byte store key obtained from the
+  /// platform key store (Android Keystore / iOS Keychain, D-066).
+  ///
+  /// [storeKey] is filled with zeros after the call so the caller's copy does
+  /// not linger; the native copy lives only in zeroizing memory.
+  static CryptoCore initializeWithPlatformKey({
+    required String directory,
+    required Uint8List storeKey,
+  }) {
+    try {
+      if (!isAvailable) {
+        throw const CryptoException(CryptoErrorCode.unsupported);
+      }
+      return _openWith(
+        (out) => _input(
+          utf8.encode(directory),
+          (d, dl) => _input(
+            storeKey,
+            (k, kl) => _openWithPlatformKey(d, dl, k, kl, out),
+          ),
+        ),
+      );
+    } finally {
+      storeKey.fillRange(0, storeKey.length, 0);
+    }
+  }
+
+  static CryptoCore _openWith(int Function(Pointer<Pointer<_ShCore>>) open) {
     final out = calloc<Pointer<_ShCore>>();
     try {
-      _input(
-        utf8.encode(directory),
-        (p, n) => _check(_open(p, n, keyStore.wireValue, out)),
-      );
+      _check(open(out));
       return CryptoCore._(out.value);
     } finally {
       calloc.free(out);
@@ -311,6 +392,25 @@ final class CryptoCore implements Finalizable {
 
   PublicIdentity publicIdentity() =>
       _parseIdentity(_output((o) => _publicIdentity(_h, o)));
+
+  /// Throws [CryptoErrorCode.accountMismatch] unless this device's local
+  /// identity belongs to [account] ([CryptoErrorCode.identityState] if there
+  /// is none). Call on every open: one account's identity must never be
+  /// used for another (DEVICE-IDENTITY.md).
+  void checkAccount(AccountId account) => _input(
+    utf8.encode(account.value),
+    (p, n) => _check(_checkAccount(_h, p, n)),
+  );
+
+  /// Signs a 32-byte server challenge with the device key to prove possession
+  /// (D-070). The signed payload is built inside the core from its own account
+  /// and certificate; the result is a 64-byte Ed25519 signature (public).
+  Uint8List deviceProof(DeviceProofPurpose purpose, Uint8List challenge) =>
+      _input(
+        challenge,
+        (c, cl) =>
+            _output((o) => _deviceProof(_h, purpose.wireValue, c, cl, o)),
+      );
 
   /// Trusts a person key the user has verified out of band (D-064). Devices
   /// certified by untrusted person keys are rejected at the boundary.

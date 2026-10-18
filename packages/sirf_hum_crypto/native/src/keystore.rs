@@ -5,9 +5,11 @@
 //! production the KEK must come from a hardware-backed, non-exportable
 //! platform key (Android Keystore / iOS Keychain, KEY-MANAGEMENT.md).
 //!
-//! **No production adapter exists yet.** The adapters below are for
-//! development and tests only and report `is_production_secure() == false`.
-//! Replacing them never touches MLS logic: only this trait.
+//! [`PlatformProvidedKey`] carries the key obtained by the app's platform
+//! adapter (Android Keystore-wrapped / iOS Keychain, D-066). The other two
+//! adapters are for development and tests only and report
+//! `is_production_secure() == false`. Replacing them never touches MLS logic:
+//! only this trait.
 
 use std::fs;
 use std::io::Write;
@@ -99,5 +101,38 @@ impl KeyEncryptionKeyProvider for InsecureFileTestKeyStore {
     }
     fn is_production_secure(&self) -> bool {
         false
+    }
+}
+
+/// The store key the app obtained from the platform keystore adapter
+/// (Android: unwrapped by a non-exportable Keystore key; iOS: a
+/// `ThisDeviceOnly` Keychain item). Handed over for one open and held only in
+/// zeroizing memory. `is_production_secure` describes the key source only.
+pub struct PlatformProvidedKey {
+    kek: Zeroizing<[u8; KEK_LEN]>,
+}
+
+impl PlatformProvidedKey {
+    pub fn from_slice(bytes: &[u8]) -> CoreResult<Self> {
+        if bytes.len() != KEK_LEN {
+            return Err(CoreError::InvalidInput);
+        }
+        let mut kek = Zeroizing::new([0u8; KEK_LEN]);
+        kek.copy_from_slice(bytes);
+        // An all-zero key means the platform side handed over an
+        // uninitialised buffer; refuse rather than seal with it.
+        if kek.iter().all(|b| *b == 0) {
+            return Err(CoreError::InvalidInput);
+        }
+        Ok(Self { kek })
+    }
+}
+
+impl KeyEncryptionKeyProvider for PlatformProvidedKey {
+    fn key_encryption_key(&self) -> CoreResult<Zeroizing<[u8; KEK_LEN]>> {
+        Ok(self.kek.clone())
+    }
+    fn is_production_secure(&self) -> bool {
+        true
     }
 }

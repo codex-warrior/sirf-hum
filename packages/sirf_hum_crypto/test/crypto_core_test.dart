@@ -226,7 +226,7 @@ void main() {
         );
       });
 
-      test('platform key store is not implemented and says so', () {
+      test('platform key store is never opened through initialize', () {
         expect(
           () => CryptoCore.initialize(
             directory: '${root.path}/p',
@@ -255,6 +255,99 @@ void main() {
         ]) {
           expect(value.toString(), contains('<redacted>'));
         }
+      });
+    },
+    skip: available
+        ? false
+        : (_required ? false : 'no native crypto core on this host'),
+  );
+
+  group(
+    'device identity (Prompt 07)',
+    () {
+      late Directory dir;
+      Uint8List key(int byte) => Uint8List.fromList(List.filled(32, byte));
+      CryptoCore open(int byte) => CryptoCore.initializeWithPlatformKey(
+        directory: dir.path,
+        storeKey: key(byte),
+      );
+
+      setUp(() => dir = Directory.systemTemp.createTempSync('sh_device_'));
+      tearDown(() => dir.deleteSync(recursive: true));
+
+      test('platform store key opens, restores, and is wiped after use', () {
+        final storeKey = key(5);
+        final core = CryptoCore.initializeWithPlatformKey(
+          directory: dir.path,
+          storeKey: storeKey,
+        );
+        expect(storeKey.every((b) => b == 0), isTrue);
+        final id = core.createIdentity(AccountId('account-a')).deviceId;
+        core.close();
+        final again = open(5);
+        expect(again.publicIdentity().deviceId, id);
+        again.close();
+      });
+
+      test('a different store key cannot open the state', () {
+        open(5)
+          ..createIdentity(AccountId('account-a'))
+          ..close();
+        expect(() => open(6), _fails(CryptoErrorCode.stateCorruption));
+      });
+
+      test('malformed store keys are refused', () {
+        for (final bad in [Uint8List(32), Uint8List(31), Uint8List(33)]) {
+          expect(
+            () => CryptoCore.initializeWithPlatformKey(
+              directory: dir.path,
+              storeKey: bad,
+            ),
+            _fails(CryptoErrorCode.invalidInput),
+          );
+        }
+      });
+
+      test('account check binds the identity to one account', () {
+        final core = open(5);
+        expect(
+          () => core.checkAccount(AccountId('account-a')),
+          _fails(CryptoErrorCode.identityState),
+        );
+        core.createIdentity(AccountId('account-a'));
+        core.checkAccount(AccountId('account-a'));
+        expect(
+          () => core.checkAccount(AccountId('account-b')),
+          _fails(CryptoErrorCode.accountMismatch),
+        );
+        core.close();
+      });
+
+      test('device proof is a 64-byte signature bound to the challenge', () {
+        final core = open(5)..createIdentity(AccountId('account-a'));
+        final c1 = Uint8List.fromList(List.filled(32, 1));
+        final c2 = Uint8List.fromList(List.filled(32, 2));
+        final p1 = core.deviceProof(DeviceProofPurpose.activation, c1);
+        expect(p1, hasLength(64));
+        // Ed25519 is deterministic: same input, same proof; new challenge, new proof.
+        expect(core.deviceProof(DeviceProofPurpose.activation, c1), p1);
+        expect(core.deviceProof(DeviceProofPurpose.activation, c2), isNot(p1));
+        for (final bad in [Uint8List(0), Uint8List(31), Uint8List(33)]) {
+          expect(
+            () => core.deviceProof(DeviceProofPurpose.activation, bad),
+            _fails(CryptoErrorCode.invalidInput),
+          );
+        }
+        core.close();
+      });
+
+      test('no proof without an identity', () {
+        final core = open(5);
+        expect(
+          () => core.deviceProof(DeviceProofPurpose.activation, Uint8List(32)),
+          _fails(CryptoErrorCode.identityState),
+        );
+        core.close();
       });
     },
     skip: available

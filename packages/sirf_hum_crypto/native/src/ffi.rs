@@ -24,17 +24,22 @@ use std::sync::Mutex;
 
 use zeroize::Zeroize;
 
-use crate::identity::{AccountId, DeviceId, PersonKey};
-use crate::keystore::{EphemeralTestKeyStore, InsecureFileTestKeyStore, KeyEncryptionKeyProvider};
+use crate::identity::{AccountId, DeviceId, PersonKey, ProofPurpose};
+use crate::keystore::{
+    EphemeralTestKeyStore, InsecureFileTestKeyStore, KeyEncryptionKeyProvider, PlatformProvidedKey,
+};
 use crate::store::FileStore;
 use crate::{CoreError, CryptoCore, Incoming};
 
 /// Bumped on any incompatible ABI change; Dart refuses mismatches.
-pub const ABI_VERSION: u32 = 1;
+/// v2 (Prompt 07): platform store key, account check, device proof.
+pub const ABI_VERSION: u32 = 2;
 
 pub const KEYSTORE_EPHEMERAL_TEST: u32 = 1;
 pub const KEYSTORE_INSECURE_FILE_TEST: u32 = 2;
-/// Reserved for the platform keystore adapter (not implemented: Unsupported).
+/// The platform keystore adapter: the key arrives through
+/// `sh_crypto_open_with_platform_key`, never through `sh_crypto_open`
+/// (which returns Unsupported for this value).
 pub const KEYSTORE_PLATFORM: u32 = 100;
 
 pub const INCOMING_APPLICATION: u32 = 1;
@@ -106,7 +111,30 @@ pub extern "C" fn sh_crypto_abi_version() -> u32 {
     ABI_VERSION
 }
 
-/// Opens or restores the core for one device from `dir` (app-private).
+/// # Safety
+/// `dir[..dir_len]` must be readable (or null with `dir_len == 0`).
+unsafe fn open_dir(dir: *const u8, dir_len: usize) -> Result<PathBuf, CoreError> {
+    let dir = std::str::from_utf8(slice(dir, dir_len)?).map_err(|_| CoreError::InvalidInput)?;
+    if dir.is_empty() {
+        return Err(CoreError::InvalidInput);
+    }
+    Ok(PathBuf::from(dir))
+}
+
+/// # Safety
+/// `out` must be writable.
+unsafe fn open_into(
+    dir: &std::path::Path,
+    keys: &dyn KeyEncryptionKeyProvider,
+    out: *mut *mut ShCore,
+) -> Result<(), CoreError> {
+    let core = CryptoCore::open(Box::new(FileStore::open(dir)?), keys)?;
+    *out = Box::into_raw(Box::new(ShCore(Mutex::new(core))));
+    Ok(())
+}
+
+/// Opens or restores the core for one device from `dir` (app-private) with a
+/// TEST key store (`KEYSTORE_EPHEMERAL_TEST` / `KEYSTORE_INSECURE_FILE_TEST`).
 ///
 /// # Safety
 /// `dir[..dir_len]` must be valid UTF-8 bytes; `out` must be writable.
@@ -121,11 +149,7 @@ pub unsafe extern "C" fn sh_crypto_open(
         if out.is_null() {
             return Err(CoreError::InvalidInput);
         }
-        let dir = std::str::from_utf8(slice(dir, dir_len)?).map_err(|_| CoreError::InvalidInput)?;
-        if dir.is_empty() {
-            return Err(CoreError::InvalidInput);
-        }
-        let dir = PathBuf::from(dir);
+        let dir = open_dir(dir, dir_len)?;
         let keys: Box<dyn KeyEncryptionKeyProvider> = match keystore {
             KEYSTORE_EPHEMERAL_TEST => Box::new(EphemeralTestKeyStore::new()),
             KEYSTORE_INSECURE_FILE_TEST => {
@@ -133,9 +157,31 @@ pub unsafe extern "C" fn sh_crypto_open(
             }
             _ => return Err(CoreError::Unsupported),
         };
-        let core = CryptoCore::open(Box::new(FileStore::open(&dir)?), keys.as_ref())?;
-        *out = Box::into_raw(Box::new(ShCore(Mutex::new(core))));
-        Ok(())
+        open_into(&dir, keys.as_ref(), out)
+    })
+}
+
+/// Opens or restores the core with the 32-byte store key obtained from the
+/// platform keystore adapter (D-066). The key is copied into zeroizing memory;
+/// the caller wipes its own copy after the call.
+///
+/// # Safety
+/// `dir[..dir_len]` valid UTF-8; `key[..key_len]` readable; `out` writable.
+#[no_mangle]
+pub unsafe extern "C" fn sh_crypto_open_with_platform_key(
+    dir: *const u8,
+    dir_len: usize,
+    key: *const u8,
+    key_len: usize,
+    out: *mut *mut ShCore,
+) -> i32 {
+    guarded(|| {
+        if out.is_null() {
+            return Err(CoreError::InvalidInput);
+        }
+        let dir = open_dir(dir, dir_len)?;
+        let keys = PlatformProvidedKey::from_slice(slice(key, key_len)?)?;
+        open_into(&dir, &keys, out)
     })
 }
 
@@ -180,6 +226,47 @@ pub unsafe extern "C" fn sh_crypto_public_identity(h: *const ShCore, out: *mut S
     guarded(|| {
         let public = with_core(h, |c| c.public_identity())?;
         write(out, encode_public(&public))
+    })
+}
+
+/// Returns 0 if the local identity belongs to `account`, `AccountMismatch`
+/// if it belongs to another account, `IdentityState` if there is none.
+///
+/// # Safety
+/// Valid handle; readable account bytes (UTF-8).
+#[no_mangle]
+pub unsafe extern "C" fn sh_crypto_check_account(
+    h: *const ShCore,
+    account: *const u8,
+    len: usize,
+) -> i32 {
+    guarded(|| {
+        let account =
+            std::str::from_utf8(slice(account, len)?).map_err(|_| CoreError::InvalidInput)?;
+        let account = AccountId::new(account)?;
+        with_core(h, |c| c.check_account(&account))
+    })
+}
+
+/// Signs a 32-byte server challenge for `purpose` (1 = activation) with the
+/// device signature key; `out` receives the 64-byte Ed25519 signature. The
+/// signed payload is built inside Rust (identity::device_proof_payload).
+///
+/// # Safety
+/// Valid handle; readable challenge; writable `out`.
+#[no_mangle]
+pub unsafe extern "C" fn sh_crypto_device_proof(
+    h: *const ShCore,
+    purpose: u32,
+    challenge: *const u8,
+    challenge_len: usize,
+    out: *mut ShBuf,
+) -> i32 {
+    guarded(|| {
+        let purpose = ProofPurpose::from_u32(purpose)?;
+        let challenge = slice(challenge, challenge_len)?;
+        let proof = with_core(h, |c| c.device_proof(purpose, challenge))?;
+        write(out, proof)
     })
 }
 

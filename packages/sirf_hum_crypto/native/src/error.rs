@@ -45,6 +45,10 @@ pub enum CoreError {
     IdentityState = -16,
     /// A panic was caught at the FFI boundary.
     Internal = -17,
+    /// The local identity belongs to a different account than the caller
+    /// expects (account switching must never reuse another account's
+    /// identity; DEVICE-IDENTITY.md).
+    AccountMismatch = -18,
 }
 
 impl CoreError {
@@ -52,7 +56,7 @@ impl CoreError {
         self as i32
     }
 
-    pub const ALL: [CoreError; 17] = [
+    pub const ALL: [CoreError; 18] = [
         CoreError::InvalidInput,
         CoreError::InputTooLarge,
         CoreError::InvalidCredential,
@@ -70,6 +74,7 @@ impl CoreError {
         CoreError::InternalCryptoFailure,
         CoreError::IdentityState,
         CoreError::Internal,
+        CoreError::AccountMismatch,
     ];
 
     /// Stable snake_case name, safe for logs.
@@ -92,6 +97,7 @@ impl CoreError {
             CoreError::InternalCryptoFailure => "internal_crypto_failure",
             CoreError::IdentityState => "identity_state",
             CoreError::Internal => "internal",
+            CoreError::AccountMismatch => "account_mismatch",
         }
     }
 }
