@@ -1,6 +1,6 @@
 # Recovery and Revocation
 
-Status: **Design (Prompt 04). Nothing is implemented.** Labels follow
+Status: **Design (Prompt 04). Revocation, device approval and an optional recovery key implemented in Prompt 08 ([MULTI-DEVICE-TRUST](MULTI-DEVICE-TRUST.md)); unreviewed.** Labels follow
 [E2EE-ARCHITECTURE](E2EE-ARCHITECTURE.md#labels).
 
 Principle (**APPROVED**, Prompt 01 / D-011): **no silent key escrow with
@@ -144,3 +144,29 @@ Interaction with the MLS core (D-054):
 - Recovery restores the **identity** (PIK), never MLS group secrets.
 - A recovered device joins groups as a *new* member via Add/Welcome, so
   removal and rotation guarantees are unchanged.
+
+## Part 5: What Prompt 08 implements (D-074–D-080)
+
+Details: [MULTI-DEVICE-TRUST](MULTI-DEVICE-TRUST.md).
+
+- **Trusted-device recovery (option A):** implemented as device approval.
+  A trusted device's PIK signs an approval of the new device. **No PIK
+  private key is transferred**: this supersedes the Part 3 and D-045 idea of
+  moving the PIK between devices (D-074).
+- **User-held recovery key (option B):** implemented, opt-in.
+  - It is generated in Rust, shown once as `SHRK1-…`, and only its public
+    half is registered.
+  - It is **single-use**: after a recovery the user creates a new one.
+  - It restores *device trust* for a new identity. It does **not** restore
+    the old PIK or any history.
+- **Encrypted history archive (option C):** still deferred.
+- **All devices lost, no recovery key:** there is no path yet. An "identity
+  reset" (partner-visible, re-verified) is designed but open (D-076). A
+  server or support reset is rejected, because it would turn a password
+  compromise into a trust compromise.
+- **Revocation:**
+  - the owner revokes from any session, one way;
+  - revoked devices cannot approve or register recovery keys;
+  - approvals signed before revocation are refused;
+  - revocation does not wipe the device remotely;
+  - there is no cascade (`approvedBy` lineage is recorded).

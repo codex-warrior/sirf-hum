@@ -1,6 +1,6 @@
 # Pairing and Device Trust
 
-Status: **Design (Prompt 04). Not implemented; no UI.** Labels follow
+Status: **Design (Prompt 04). Own-device enrollment implemented in Prompt 08 as signed approvals without PIK transfer ([MULTI-DEVICE-TRUST](MULTI-DEVICE-TRUST.md), D-074); pairing two people not implemented; no UI.** Labels follow
 [E2EE-ARCHITECTURE](E2EE-ARCHITECTURE.md#labels).
 
 ## Principles
@@ -20,6 +20,13 @@ Status: **Design (Prompt 04). Not implemented; no UI.** Labels follow
   No new key-exchange protocol is designed here.
 
 ## Device enrollment (own devices)
+
+> **Superseded in part by D-074 (Prompt 08).** Each device keeps its own
+> PIK; the existing device *signs an approval* of the new device instead of
+> transferring the PIK private key (steps 1 and 4 below). The QR-based
+> transfer channel is not needed. A six-digit comparison code on both screens
+> binds the user's choice to the right device. Current design:
+> [MULTI-DEVICE-TRUST §4](MULTI-DEVICE-TRUST.md#4-approval-handshake-d-075).
 
 1. **First device:** generates the PIK, a device key and a device
    certificate, and creates the personal MLS group.

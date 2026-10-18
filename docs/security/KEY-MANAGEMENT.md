@@ -1,6 +1,6 @@
 # Key Management
 
-Status: **Design (Prompt 04). Local key storage implemented (Prompts 06–07): sealed state (D-065) and the platform key store (D-066, [DEVICE-IDENTITY](DEVICE-IDENTITY.md)); unreviewed.** Labels follow
+Status: **Design (Prompt 04). Local key storage implemented (Prompts 06–07): sealed state (D-065) and the platform key store (D-066, [DEVICE-IDENTITY](DEVICE-IDENTITY.md)). Prompt 08 (D-074): every device keeps its own PIK and nothing is transferred between devices. The PIK rows below describing transfer are superseded ([MULTI-DEVICE-TRUST](MULTI-DEVICE-TRUST.md)). A user-held recovery key exists (D-076); unreviewed.** Labels follow
 [E2EE-ARCHITECTURE](E2EE-ARCHITECTURE.md#labels).
 
 ## 1. Key inventory

@@ -100,6 +100,20 @@ cloning matrix is in §6 of that document.
 | App | `test/security/device/`, `test/platform/`, `test/infrastructure/` | State machine; persistence; account switching; corruption; partial write; stale-key rotation; removal; key wiping; Web; registration flow (no challenge reuse, revoked terminal, account mismatch); log redaction; rules ↔ client field drift | CI `flutter` (native required) |
 | Device | `integration_test/device_identity_test.dart` | Real Keystore/Keychain: key store, persistence, isolation, removal, missing key fails closed | CI Android emulator + iOS simulator |
 
+## Multi-device trust tests (exist; Prompt 08)
+
+Design: [MULTI-DEVICE-TRUST](../security/MULTI-DEVICE-TRUST.md).
+
+| Layer | Where | What | Runs |
+| --- | --- | --- | --- |
+| Rust | `native/tests/device_trust.rs`, `src/recovery.rs` | Independent key material per device; approval binds account, approver, new device, challenge and expiry; not forgeable from a device proof; self/tampered/revoked targets refused; approval lets the approver add the device to MLS (and survives restart); recovery key round trip, freshness and typos; base32 RFC 4648 vectors; server golden vectors (all three statements, code, seed→key) | CI `crypto-core` |
+| Dart package | `test/crypto_core_test.dart` (multi-device group) | Approval, comparison code, recovery key, purposes, through the real library | CI `crypto-core` |
+| Server verifiers | `functions/test/statements.test.mjs` | Golden vectors; wrong account/approver/device/challenge/expiry/signer; cross-statement and device-proof reuse rejected; recovery registration and approval bindings; comparison code | CI `functions` |
+| Server flows | `functions/test/emulator/multi_device.test.mjs` | A approves B; chain A→B→C with B revoked (C stays, B can't approve); revoked B can't return; A lost, B approves C; unproven requests; enrollment proof purpose; rejection terminal; expired, consumed, pre-revocation, target-revoked, altered, wrong-account and wrong-device approvals; cross-account; offline revocation; copied stale state; copied metadata; forged certificate; recovery once and single-use; no recovery key; wrong key; revoked registrar; replayed challenge; pending cap; rate limits; failure budget; lazy and scheduled expiry; cleanup idempotent | CI `functions` (emulator) |
+| Rules | `firebase/tests/devices.test.js` | No client create; terminal states immutable; no server-controlled fields from clients; revoked device can't restore; cross-account revocation; all server-only collections closed | CI `security-rules` |
+| App | `test/security/device/` | State machine (new terminal states); enrollment flow (bootstrap vs approval, code, terminal); trust service (codes match, approve, reject, untrusted device refused, offline revocation, revoke, recovery, typo caught locally, unregistered key, log redaction of recovery key/IDs/codes); drift tests against server inputs, rules and failure categories | CI `flutter` |
+| Device | `integration_test/device_identity_test.dart` | Approval, comparison code and recovery key with real platform keys | CI Android emulator + iOS simulator |
+
 ## Decision-gate tests (exist; experimental; regression suite)
 
 `prototypes/mls-decision-gate` (`.github/workflows/prototypes.yml`), run
