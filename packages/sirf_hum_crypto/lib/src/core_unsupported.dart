@@ -1,5 +1,5 @@
 // Platforms without dart:ffi (Web). Web V1 has no private-content E2EE
-// (D-058): every operation fails closed. Nothing here degrades to an
+// (D-046): every operation fails closed. Nothing here degrades to an
 // unencrypted path.
 import 'dart:typed_data';
 

@@ -14,7 +14,7 @@ enum PrivateContentCryptoSupport {
   /// exist. For development and tests only; never for real users' content.
   nativeDevelopmentOnly,
 
-  /// Web V1 has no private-content E2EE (D-058). Private features are
+  /// Web V1 has no private-content E2EE (D-046). Private features are
   /// unavailable on Web, never silently unencrypted.
   unavailableOnWeb,
 

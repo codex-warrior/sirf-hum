@@ -17,7 +17,6 @@ use openmls_basic_credential::SignatureKeyPair;
 use openmls_rust_crypto::OpenMlsRustCrypto;
 use openmls_traits::crypto::OpenMlsCrypto;
 use openmls_traits::types::SignatureScheme;
-use openmls_traits::OpenMlsProvider as _;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::from_process_error;

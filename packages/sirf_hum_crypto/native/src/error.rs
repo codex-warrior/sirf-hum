@@ -143,7 +143,7 @@ pub(crate) fn from_process_error<E>(e: openmls::prelude::ProcessMessageError<E>)
             V::LibraryError(_) => CoreError::InternalCryptoFailure,
             _ => CoreError::ProtocolViolation,
         },
-        P::IncompatibleWireFormat | P::MalformedSafeAad => CoreError::MalformedMessage,
+        P::IncompatibleWireFormat => CoreError::MalformedMessage,
         P::InvalidCommit(_) | P::UnsupportedProposalType => CoreError::ProtocolViolation,
         P::UnauthorizedExternalApplicationMessage | P::UnauthorizedExternalCommitMessage => {
             CoreError::UnauthorizedDevice
