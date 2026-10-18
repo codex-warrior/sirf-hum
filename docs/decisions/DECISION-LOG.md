@@ -514,7 +514,14 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
   - `hooks` and `code_assets` are pinned to 1.0.0, the versions Flutter 3.41.5's tool depends on. 2.x conflicts with Flutter's pinned `meta`.
   - Builds are always `cargo build --locked --release`.
 - **Consequence:** Android and iOS app builds need rustup. On Windows, local Android builds also need the MSVC Build Tools.
-- **Status:** Accepted · 2026-10-18
+- **Invariant (enforced):** the `hooks` and `code_assets` versions in `packages/sirf_hum_crypto/pubspec.yaml` are exact pins equal to the versions in the installed Flutter SDK's `packages/flutter_tools/pubspec.yaml`.
+  - `tool/check_flutter_hook_pins.sh` compares them and fails closed. It runs from `tool/check_crypto_core.sh` (CI `crypto-core` job, after Flutter is installed and before any Rust build) and from `tool/verify.sh`.
+  - Tests: `tool/test_check_flutter_hook_pins.sh` (fixtures: match passes; hooks/code_assets mismatch, ranges and missing entries fail).
+- **Why the invariant exists:**
+  - the build hook talks to `flutter_tools` through those packages' hook protocol, so a different version can drift from what the SDK speaks;
+  - newer majors can also be unresolvable. Prompt 06's first draft pinned `hooks 2.2.0`, whose `record_use` dependency needs `meta ^1.19.0` against Flutter 3.41.5's pinned `meta 1.17.0`.
+  - Upgrading Flutter therefore means re-pinning both packages to the new SDK's versions in the same change.
+- **Status:** Accepted · 2026-10-18 · invariant added 2026-10-18
 
 ### D-068 — Crypto dependency gate
 - **Decision:** CI (`tool/check_crypto_core.sh` plus the `crypto-core` job) fails when:

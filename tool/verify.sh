@@ -22,6 +22,12 @@ flutter analyze
 step 'Unit + widget tests'
 flutter test
 
+step 'Hook pins match the installed Flutter SDK (D-067) + their tests'
+bash tool/test_check_flutter_hook_pins.sh
+flutter_root="${FLUTTER_ROOT:-$(cd "$(dirname "$(readlink -f "$(command -v flutter)")")/.." && pwd)}"
+bash tool/check_flutter_hook_pins.sh packages/sirf_hum_crypto/pubspec.yaml \
+  "$flutter_root/packages/flutter_tools/pubspec.yaml"
+
 step 'Crypto package: analyze + Dart tests (native tests skip without a host build)'
 (cd packages/sirf_hum_crypto && dart pub get && dart analyze --fatal-infos && dart test)
 

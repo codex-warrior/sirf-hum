@@ -157,7 +157,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO | tail -n 20
 
   crypto-core:
-    name: Crypto core (Rust policy, fmt, clippy, tests, audit; Dart package)
+    name: Crypto core (policy, fmt, clippy, tests, audit; Dart package)
     runs-on: ubuntu-24.04
     env:
       CARGO_AUDIT_VERSION: 0.21.2
@@ -170,7 +170,16 @@ jobs:
         run: |
           rustup toolchain install || true  # reads rust-toolchain.toml (rustup >= 1.28)
           rustc --version | grep -q '^rustc 1\.96\.0 ' || { echo "::error::rustc is not the pinned 1.96.0"; exit 1; }
-      - name: Dependency policy (pins, OpenMLS version, lockfile, features, no logging)
+      # Flutter first: the policy check compares the hooks/code_assets pins
+      # with the installed SDK's flutter_tools (D-067).
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Hook pin check tests (D-067)
+        run: bash tool/test_check_flutter_hook_pins.sh
+      - name: Dependency policy (Flutter hook pins, crate pins, OpenMLS version, lockfile, features, no logging)
         run: bash tool/check_crypto_core.sh
       - name: Rust fmt, clippy, tests
         working-directory: packages/sirf_hum_crypto/native
@@ -187,11 +196,6 @@ jobs:
         run: |
           cargo +stable install cargo-audit --version "$CARGO_AUDIT_VERSION" --locked
           cargo audit --file packages/sirf_hum_crypto/native/Cargo.lock --deny warnings
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          cache: true
       - name: Dart package (analyze, tests through the real native library)
         working-directory: packages/sirf_hum_crypto
         env:

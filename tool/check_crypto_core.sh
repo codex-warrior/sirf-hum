@@ -10,10 +10,23 @@
 # What it does NOT guarantee: that the pinned code is free of vulnerabilities.
 # Known advisories are checked separately by `cargo audit` in CI (RustSec
 # database: known issues only, not unknown bugs).
+#   - hooks/code_assets pins equal the installed Flutter SDK's (D-067), so
+#     this script needs Flutter on PATH or FLUTTER_ROOT.
 set -euo pipefail
-cd "$(dirname "$0")/../packages/sirf_hum_crypto/native"
+tool_dir="$(cd "$(dirname "$0")" && pwd)"
+cd "$tool_dir/../packages/sirf_hum_crypto/native"
 
 fail() { echo "CRYPTO-CORE CHECK FAILED: $*" >&2; exit 1; }
+
+echo "==> hooks/code_assets match the installed Flutter SDK (D-067)"
+flutter_root="${FLUTTER_ROOT:-}"
+if [ -z "$flutter_root" ]; then
+  flutter_bin="$(command -v flutter || true)"
+  [ -n "$flutter_bin" ] || fail "Flutter SDK not found (set FLUTTER_ROOT or put flutter on PATH)"
+  flutter_root="$(cd "$(dirname "$(readlink -f "$flutter_bin")")/.." && pwd)"
+fi
+bash "$tool_dir/check_flutter_hook_pins.sh" ../pubspec.yaml \
+  "$flutter_root/packages/flutter_tools/pubspec.yaml" || fail "hook pins differ from the Flutter SDK"
 
 echo "==> exact pins in Cargo.toml"
 deps="$(awk '/^\[(dev-)?dependencies\]/{on=1; next} /^\[/{on=0} on && /^[a-z0-9_-]+ *=/' Cargo.toml)"
