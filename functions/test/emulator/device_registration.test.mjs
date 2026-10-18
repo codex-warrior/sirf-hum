@@ -1,4 +1,6 @@
-// Device registration against the Firestore emulator (Prompt 07 §10–11):
+// Device registration against the Firestore emulator (Prompt 07 §10–11;
+// since Prompt 08 this is the first-device bootstrap path, so every test uses
+// a fresh account):
 // challenge issuance, proof of possession, replay, cloning and revocation.
 // Run: npm run test:emulator (needs Java + firebase-tools; builds first).
 import { Buffer } from 'node:buffer';
@@ -7,10 +9,14 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { deleteApp, initializeApp } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import common from '../../lib/device/common.js';
 import registration from '../../lib/device/registration.js';
 import { keyFromSeed, makeCertificate, makeProof, seed } from '../support.mjs';
 
-const { activateDevice, CHALLENGE_TTL_MS, issueActivationChallenge, RegistrationError } = registration;
+const { activateDevice, issueDeviceChallenge } = registration;
+const { DeviceError: RegistrationError, TTL } = common;
+const CHALLENGE_TTL_MS = TTL.challengeMs;
+const issueActivationChallenge = (db, uid, data, now) => issueDeviceChallenge(db, uid, { purpose: 'activation', ...data }, now);
 
 assert.ok(process.env.FIRESTORE_EMULATOR_HOST, 'run through `npm run test:emulator`');
 
@@ -46,6 +52,8 @@ async function createPending(accountId, d, overrides = {}) {
     ciphersuite: 1,
     implementation: 'openmls/0.9.1',
     createdAt: Timestamp.now(),
+    // Prompt 08: pending records carry a server-set expiry (D-078).
+    expiresAt: Timestamp.fromMillis(Date.now() + TTL.pendingDeviceMs),
     ...overrides,
   });
 }
@@ -213,6 +221,7 @@ describe('cloning and forgery', () => {
     await db.doc(`users/${account}/devices/${deviceHex(other)}`).set({
       schemaVersion: 1, status: 'pending', platform: 'ios', certificate: d.certificate,
       ciphersuite: 1, implementation: 'openmls/0.9.1', createdAt: Timestamp.now(),
+      expiresAt: Timestamp.fromMillis(Date.now() + TTL.pendingDeviceMs),
     });
     const issued = await challengeFor(account, other);
     const { signature } = makeProof({

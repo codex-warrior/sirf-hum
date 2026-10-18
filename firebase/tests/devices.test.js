@@ -1,6 +1,7 @@
-// Device registry rules (Prompt 07 §8). Every allowed case has a matching
-// denied case; server-only state ("active", indexes, challenges) is
-// unreachable from clients.
+// Device registry rules (Prompt 07 §8, Prompt 08 §21). Every allowed case
+// has a matching denied case; all trust-creating state (registration,
+// activation, approvals, recovery, indexes, challenges, rate limits) is
+// server-only and unreachable from clients.
 import { readFileSync } from 'node:fs';
 import { after, afterEach, before, describe, test } from 'node:test';
 import {
@@ -106,9 +107,11 @@ describe('cross-account isolation', () => {
 });
 
 describe('registration', () => {
-  test('5. valid self registration (pending) is allowed', async () => {
-    await assertSucceeds(setDoc(doc(asUser(A), devicePath(A)), pending()));
-    await assertSucceeds(
+  test('5. self registration goes through the registerDevice Function: even a valid client create is denied', async () => {
+    // Prompt 07 allowed this create; Prompt 08 moved registration server-side
+    // (certificate verified, rate-limited, capped), so it is now denied.
+    await assertFails(setDoc(doc(asUser(A), devicePath(A)), pending()));
+    await assertFails(
       setDoc(doc(asUser(A), devicePath(A, 'ffffffffffffffffffffffffffffffff')), pending({ platform: 'ios' })),
     );
   });
@@ -205,13 +208,65 @@ describe('immutability and revocation', () => {
   });
 });
 
+describe('Prompt 08: terminal states and server-controlled fields', () => {
+  test('rejected and expired records can never change, not even to revoked', async () => {
+    for (const status of ['rejected', 'expired']) {
+      const path = devicePath(A, status === 'rejected' ? 'a'.repeat(32) : 'b'.repeat(32));
+      await seed(path, seeded(status));
+      for (const change of [revocation(), { status: 'pending' }, { status: 'active' }]) {
+        await assertFails(updateDoc(doc(asUser(A), path), change));
+      }
+    }
+  });
+
+  test('client cannot write server-controlled trust fields', async () => {
+    await seed(devicePath(A), seeded('pending', { expiresAt: Timestamp.now() }));
+    const db = asUser(A);
+    for (const change of [
+      { activationMethod: 'approval' },
+      { approvedBy: 'c'.repeat(32) },
+      { expiresAt: Timestamp.fromMillis(Date.now() + 1e10) },
+      { activatedAt: serverTimestamp() },
+      { ...revocation(), approvedBy: 'c'.repeat(32) },
+    ]) {
+      await assertFails(updateDoc(doc(db, devicePath(A)), change));
+    }
+  });
+
+  test('a revoked device (its own owner session) cannot restore its state', async () => {
+    await seed(devicePath(A), seeded('revoked', { revokedAt: Timestamp.now(), revokedReason: 'user_removed', activationMethod: 'approval' }));
+    const db = asUser(A);
+    await assertFails(updateDoc(doc(db, devicePath(A)), { status: 'active' }));
+    await assertFails(updateDoc(doc(db, devicePath(A)), { status: 'active', revokedAt: null, revokedReason: null }));
+    await assertFails(setDoc(doc(db, devicePath(A)), seeded('active')));
+  });
+
+  test("unauthorized revocation: another account cannot revoke A's device", async () => {
+    await seed(devicePath(A), seeded('active'));
+    await assertFails(updateDoc(doc(asUser(B), devicePath(A)), revocation()));
+    await assertFails(updateDoc(doc(anonymous(), devicePath(A)), revocation()));
+  });
+});
+
 describe('server-only collections', () => {
-  test('challenges and uniqueness indexes are unreachable from clients', async () => {
-    for (const path of ['deviceChallenges/c1', 'deviceIdIndex/i1', 'deviceKeyIndex/k1']) {
+  test('trust records, challenges, approvals, indexes and limits are unreachable from clients', async () => {
+    for (const path of [
+      'deviceChallenges/c1',
+      'deviceIdIndex/i1',
+      'deviceKeyIndex/k1',
+      `accountTrust/${A}`,
+      'deviceApprovalRequests/r1',
+      `rateLimits/${A}__register`,
+    ]) {
       await seed(path, { accountId: A });
       await assertFails(getDoc(doc(asUser(A), path)));
       await assertFails(setDoc(doc(asUser(A), path), { accountId: A }));
+      await assertFails(deleteDoc(doc(asUser(A), path)));
     }
+    // Replayed approval metadata: writing an "approved" request is impossible.
+    await assertFails(
+      setDoc(doc(asUser(A), 'deviceApprovalRequests/r2'), { accountId: A, status: 'proven', deviceId: DEVICE }),
+    );
   });
 
   test('the account document itself stays closed', async () => {
