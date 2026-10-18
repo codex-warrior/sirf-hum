@@ -21,7 +21,8 @@ enum CryptoErrorCode {
   internalCryptoFailure(-15),
   identityState(-16),
   internal(-17),
-  accountMismatch(-18);
+  accountMismatch(-18),
+  recoveryKeyInvalid(-19);
 
   const CryptoErrorCode(this.code);
 
@@ -69,7 +70,10 @@ enum KeyStoreKind {
 /// What a device proof of possession is for (D-070). Each purpose is a
 /// separate signed domain; values match the native ABI.
 enum DeviceProofPurpose {
-  activation(1);
+  activation(1),
+
+  /// A new device proving possession while it awaits approval (Prompt 08).
+  enrollment(2);
 
   const DeviceProofPurpose(this.wireValue);
 
@@ -208,6 +212,43 @@ class AddMemberResult {
 
   @override
   String toString() => 'AddMemberResult(<redacted>)';
+}
+
+/// A newly created recovery key (D-076). [secret] is shown to the user once:
+/// never store, send or log it.
+class RecoveryKeyBundle {
+  RecoveryKeyBundle({
+    required this.secret,
+    required Uint8List publicKey,
+    required Uint8List registrationSignature,
+  }) : publicKey = Uint8List.fromList(publicKey),
+       registrationSignature = Uint8List.fromList(registrationSignature);
+
+  final String secret;
+
+  /// Public half, registered with the server.
+  final Uint8List publicKey;
+
+  /// This device's PIK signature registering [publicKey].
+  final Uint8List registrationSignature;
+
+  @override
+  String toString() => 'RecoveryKeyBundle(<redacted>)';
+}
+
+/// A recovery approval for this device, signed with the recovery key.
+class RecoveryApprovalResult {
+  RecoveryApprovalResult({
+    required Uint8List signature,
+    required Uint8List recoveryPublicKey,
+  }) : signature = Uint8List.fromList(signature),
+       recoveryPublicKey = Uint8List.fromList(recoveryPublicKey);
+
+  final Uint8List signature;
+  final Uint8List recoveryPublicKey;
+
+  @override
+  String toString() => 'RecoveryApprovalResult(<redacted>)';
 }
 
 /// The result of processing one incoming MLS message.

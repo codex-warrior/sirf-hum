@@ -519,6 +519,7 @@ fn error_codes_are_stable_unique_and_safe() {
         (CoreError::IdentityState, -16, "identity_state"),
         (CoreError::Internal, -17, "internal"),
         (CoreError::AccountMismatch, -18, "account_mismatch"),
+        (CoreError::RecoveryKeyInvalid, -19, "recovery_key_invalid"),
     ];
     assert_eq!(CoreError::ALL.len(), expected.len());
     for (e, code, name) in expected {

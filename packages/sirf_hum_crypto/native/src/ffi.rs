@@ -13,9 +13,12 @@
 //!   strings, no debug output, no secrets cross this boundary.
 //! - **Panics:** caught at every entry point (`SH_INTERNAL`); never unwind
 //!   into Dart.
-//! - **Secrets:** no function returns private keys, epoch secrets or
-//!   serialized state. Plaintext leaves only via `sh_crypto_process` (the
-//!   decrypted application message, for display).
+//! - **Secrets:** no function returns device/person private keys, epoch
+//!   secrets or serialized state. Two things leave on purpose, for display
+//!   only: decrypted application messages (`sh_crypto_process`) and a newly
+//!   created recovery key's text (`sh_crypto_create_recovery_key`, once, by
+//!   explicit user action, D-076). A recovery key typed by the user comes in
+//!   through `sh_crypto_recovery_approval` and is wiped after signing.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
@@ -33,7 +36,8 @@ use crate::{CoreError, CryptoCore, Incoming};
 
 /// Bumped on any incompatible ABI change; Dart refuses mismatches.
 /// v2 (Prompt 07): platform store key, account check, device proof.
-pub const ABI_VERSION: u32 = 2;
+/// v3 (Prompt 08): device approval, approval code, recovery key.
+pub const ABI_VERSION: u32 = 3;
 
 pub const KEYSTORE_EPHEMERAL_TEST: u32 = 1;
 pub const KEYSTORE_INSECURE_FILE_TEST: u32 = 2;
@@ -267,6 +271,113 @@ pub unsafe extern "C" fn sh_crypto_device_proof(
         let challenge = slice(challenge, challenge_len)?;
         let proof = with_core(h, |c| c.device_proof(purpose, challenge))?;
         write(out, proof)
+    })
+}
+
+/// Approves another device of this account (D-075): `out` receives the
+/// approver PIK's 64-byte signature over the approval statement.
+///
+/// # Safety
+/// Valid handle; readable inputs; writable `out`.
+#[no_mangle]
+pub unsafe extern "C" fn sh_crypto_approve_device(
+    h: *const ShCore,
+    new_certificate: *const u8,
+    certificate_len: usize,
+    challenge: *const u8,
+    challenge_len: usize,
+    expires_at_unix: u64,
+    out: *mut ShBuf,
+) -> i32 {
+    guarded(|| {
+        let cert = slice(new_certificate, certificate_len)?;
+        let challenge = slice(challenge, challenge_len)?;
+        let signature = with_core(h, |c| c.approve_device(cert, challenge, expires_at_unix))?;
+        write(out, signature)
+    })
+}
+
+/// The six-digit comparison code for a pending device (no handle needed).
+///
+/// # Safety
+/// Readable inputs; writable `out_code`.
+#[no_mangle]
+pub unsafe extern "C" fn sh_crypto_approval_code(
+    new_certificate: *const u8,
+    certificate_len: usize,
+    challenge: *const u8,
+    challenge_len: usize,
+    out_code: *mut u32,
+) -> i32 {
+    guarded(|| {
+        if out_code.is_null() {
+            return Err(CoreError::InvalidInput);
+        }
+        let provider = openmls_rust_crypto::OpenMlsRustCrypto::default();
+        *out_code = crate::identity::approval_code(
+            openmls_traits::OpenMlsProvider::crypto(&provider),
+            slice(new_certificate, certificate_len)?,
+            slice(challenge, challenge_len)?,
+        )?;
+        Ok(())
+    })
+}
+
+/// Creates a recovery key (D-076). `out_secret` receives the UTF-8 text to
+/// show the user once; `out_public` the 32-byte public key; `out_signature`
+/// this device's PIK signature registering it.
+///
+/// # Safety
+/// Valid handle; readable challenge; writable outputs.
+#[no_mangle]
+pub unsafe extern "C" fn sh_crypto_create_recovery_key(
+    h: *const ShCore,
+    challenge: *const u8,
+    challenge_len: usize,
+    expires_at_unix: u64,
+    out_secret: *mut ShBuf,
+    out_public: *mut ShBuf,
+    out_signature: *mut ShBuf,
+) -> i32 {
+    guarded(|| {
+        if out_secret.is_null() || out_public.is_null() || out_signature.is_null() {
+            return Err(CoreError::InvalidInput);
+        }
+        let challenge = slice(challenge, challenge_len)?;
+        let bundle = with_core(h, |c| c.create_recovery_key(challenge, expires_at_unix))?;
+        write(out_secret, bundle.secret.as_bytes().to_vec())?;
+        write(out_public, bundle.public_key.to_vec())?;
+        write(out_signature, bundle.registration_signature.clone())
+    })
+}
+
+/// Signs a recovery approval for this device with the user-typed recovery
+/// key (UTF-8). `out_signature`: 64 bytes; `out_public`: the key's public
+/// half (for a local match against the registered key).
+///
+/// # Safety
+/// Valid handle; readable inputs; writable outputs.
+#[no_mangle]
+pub unsafe extern "C" fn sh_crypto_recovery_approval(
+    h: *const ShCore,
+    recovery_key: *const u8,
+    recovery_key_len: usize,
+    challenge: *const u8,
+    challenge_len: usize,
+    expires_at_unix: u64,
+    out_signature: *mut ShBuf,
+    out_public: *mut ShBuf,
+) -> i32 {
+    guarded(|| {
+        if out_signature.is_null() || out_public.is_null() {
+            return Err(CoreError::InvalidInput);
+        }
+        let key = std::str::from_utf8(slice(recovery_key, recovery_key_len)?)
+            .map_err(|_| CoreError::RecoveryKeyInvalid)?;
+        let challenge = slice(challenge, challenge_len)?;
+        let approval = with_core(h, |c| c.recovery_approval(key, challenge, expires_at_unix))?;
+        write(out_signature, approval.signature)?;
+        write(out_public, approval.recovery_public_key.to_vec())
     })
 }
 

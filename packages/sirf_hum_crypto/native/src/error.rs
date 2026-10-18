@@ -49,6 +49,9 @@ pub enum CoreError {
     /// expects (account switching must never reuse another account's
     /// identity; DEVICE-IDENTITY.md).
     AccountMismatch = -18,
+    /// A recovery key is malformed or mistyped (bad prefix, encoding,
+    /// version or checksum). Says nothing about whether it is registered.
+    RecoveryKeyInvalid = -19,
 }
 
 impl CoreError {
@@ -56,7 +59,7 @@ impl CoreError {
         self as i32
     }
 
-    pub const ALL: [CoreError; 18] = [
+    pub const ALL: [CoreError; 19] = [
         CoreError::InvalidInput,
         CoreError::InputTooLarge,
         CoreError::InvalidCredential,
@@ -75,6 +78,7 @@ impl CoreError {
         CoreError::IdentityState,
         CoreError::Internal,
         CoreError::AccountMismatch,
+        CoreError::RecoveryKeyInvalid,
     ];
 
     /// Stable snake_case name, safe for logs.
@@ -98,6 +102,7 @@ impl CoreError {
             CoreError::IdentityState => "identity_state",
             CoreError::Internal => "internal",
             CoreError::AccountMismatch => "account_mismatch",
+            CoreError::RecoveryKeyInvalid => "recovery_key_invalid",
         }
     }
 }

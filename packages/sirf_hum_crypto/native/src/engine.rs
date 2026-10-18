@@ -21,12 +21,14 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::from_process_error;
 use crate::identity::{
-    device_id_of, device_proof_payload, put, AccountId, DeviceCertificate, DeviceId, PersonKey,
-    ProofPurpose, Reader, TrustPolicy, DEVICE_ID_LEN,
+    device_approval_payload, device_id_of, device_proof_payload, put, recovery_approval_payload,
+    recovery_registration_payload, AccountId, DeviceCertificate, DeviceId, PersonKey, ProofPurpose,
+    Reader, TrustPolicy, DEVICE_ID_LEN,
 };
 use crate::keystore::{KeyEncryptionKeyProvider, KEK_LEN};
 use crate::limits::{self, *};
 use crate::record::{self, RecordKind};
+use crate::recovery::RecoverySeed;
 use crate::store::CryptoStore;
 use crate::{CoreError, CoreResult};
 
@@ -82,6 +84,28 @@ impl core::fmt::Debug for Incoming {
 pub struct RosterEntry {
     pub device_id: DeviceId,
     pub person_key: PersonKey,
+}
+
+/// A freshly created recovery key (D-076). `secret` is shown to the user
+/// once and then dropped (it is wiped on drop); only `public_key` and the
+/// registration signature go to the server.
+pub struct RecoveryKeyBundle {
+    pub secret: Zeroizing<String>,
+    pub public_key: [u8; 32],
+    pub registration_signature: Vec<u8>,
+}
+
+impl core::fmt::Debug for RecoveryKeyBundle {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("RecoveryKeyBundle(<redacted>)")
+    }
+}
+
+/// A recovery approval for this device, signed with the user's recovery key.
+#[derive(Debug)]
+pub struct RecoveryApproval {
+    pub signature: Vec<u8>,
+    pub recovery_public_key: [u8; 32],
 }
 
 pub struct AddResult {
@@ -319,6 +343,109 @@ impl CryptoCore {
             .crypto()
             .sign(SignatureScheme::ED25519, &payload, &id.device_private)
             .map_err(|_| CoreError::InternalCryptoFailure)
+    }
+
+    // ------------------------------------------------- multi-device (D-075)
+
+    /// Approves another device of this account: signs the approval statement
+    /// (identity::device_approval_payload) with this device's PIK, and trusts
+    /// the new device's person key locally so this device accepts it in MLS.
+    /// The server decides whether the approval counts (approver active,
+    /// challenge valid, not expired); the core only signs what the user
+    /// approved.
+    pub fn approve_device(
+        &mut self,
+        new_certificate: &[u8],
+        challenge: &[u8],
+        expires_at_unix: u64,
+    ) -> CoreResult<Vec<u8>> {
+        self.guard()?;
+        let new = DeviceCertificate::decode(new_certificate)?;
+        new.verify_signature(self.state.provider.crypto())?;
+        let id = self.identity()?;
+        if new.device_id == id.certificate.device_id || new.person_key == id.person_key {
+            return Err(CoreError::InvalidInput);
+        }
+        if self.state.trust.revoked_devices.contains(&new.device_id) {
+            return Err(CoreError::UnauthorizedDevice);
+        }
+        let payload = device_approval_payload(
+            &id.account,
+            &id.certificate.encode(),
+            new_certificate,
+            challenge,
+            expires_at_unix,
+        )?;
+        let signature = self
+            .state
+            .provider
+            .crypto()
+            .sign(SignatureScheme::ED25519, &payload, &id.person_private)
+            .map_err(|_| CoreError::InternalCryptoFailure)?;
+        let person_key = new.person_key;
+        self.transact(|core| {
+            core.state.trust.trusted_people.insert(person_key);
+            Ok(())
+        })?;
+        Ok(signature)
+    }
+
+    /// Creates a new recovery key and signs its registration with this
+    /// device's PIK. The secret leaves the core exactly once, for display.
+    pub fn create_recovery_key(
+        &self,
+        challenge: &[u8],
+        expires_at_unix: u64,
+    ) -> CoreResult<RecoveryKeyBundle> {
+        self.guard()?;
+        let id = self.identity()?;
+        let crypto = self.state.provider.crypto();
+        let seed = RecoverySeed::generate();
+        let public_key = seed.public_key();
+        let payload = recovery_registration_payload(
+            &id.account,
+            &id.certificate.encode(),
+            &public_key,
+            challenge,
+            expires_at_unix,
+        )?;
+        let registration_signature = crypto
+            .sign(SignatureScheme::ED25519, &payload, &id.person_private)
+            .map_err(|_| CoreError::InternalCryptoFailure)?;
+        Ok(RecoveryKeyBundle {
+            secret: seed.encode(crypto)?,
+            public_key,
+            registration_signature,
+        })
+    }
+
+    /// Signs a recovery approval for THIS device with the user-typed recovery
+    /// key. The decoded seed is wiped when this returns.
+    pub fn recovery_approval(
+        &self,
+        recovery_key: &str,
+        challenge: &[u8],
+        expires_at_unix: u64,
+    ) -> CoreResult<RecoveryApproval> {
+        self.guard()?;
+        let id = self.identity()?;
+        let crypto = self.state.provider.crypto();
+        let seed = RecoverySeed::decode(crypto, recovery_key)?;
+        let recovery_public_key = seed.public_key();
+        let payload = recovery_approval_payload(
+            &id.account,
+            &recovery_public_key,
+            &id.certificate.encode(),
+            challenge,
+            expires_at_unix,
+        )?;
+        let signature = crypto
+            .sign(SignatureScheme::ED25519, &payload, seed.seed())
+            .map_err(|_| CoreError::InternalCryptoFailure)?;
+        Ok(RecoveryApproval {
+            signature,
+            recovery_public_key,
+        })
     }
 
     /// Trusts a partner's person key. Call only after out-of-band

@@ -364,4 +364,128 @@ void main() {
         ? false
         : (_required ? false : 'no native crypto core on this host'),
   );
+
+  group(
+    'multi-device trust (Prompt 08)',
+    () {
+      late Directory root;
+      late CryptoCore a;
+      late CryptoCore b;
+      final challenge = Uint8List.fromList(List.filled(32, 4));
+      const expires = 1800000000;
+
+      CryptoCore open(String name, int keyByte) {
+        final core = CryptoCore.initializeWithPlatformKey(
+          directory: (Directory('${root.path}/$name')..createSync()).path,
+          storeKey: Uint8List.fromList(List.filled(32, keyByte)),
+        );
+        core.createIdentity(AccountId('accountA'));
+        return core;
+      }
+
+      setUp(() {
+        root = Directory.systemTemp.createTempSync('sh_trust_');
+        a = open('a', 11);
+        b = open('b', 12);
+      });
+      tearDown(() {
+        a.close();
+        b.close();
+        root.deleteSync(recursive: true);
+      });
+
+      test('two devices of one account have independent identities', () {
+        final ia = a.publicIdentity();
+        final ib = b.publicIdentity();
+        expect(ia.deviceId, isNot(ib.deviceId));
+        expect(ia.personKey, isNot(ib.personKey));
+      });
+
+      test('approval is a 64-byte signature; self-approval is refused', () {
+        final sig = a.approveDevice(
+          newCertificate: b.publicIdentity().certificate,
+          challenge: challenge,
+          expiresAtUnix: expires,
+        );
+        expect(sig, hasLength(64));
+        expect(
+          () => a.approveDevice(
+            newCertificate: a.publicIdentity().certificate,
+            challenge: challenge,
+            expiresAtUnix: expires,
+          ),
+          _fails(CryptoErrorCode.invalidInput),
+        );
+        expect(
+          () => a.approveDevice(
+            newCertificate: b.publicIdentity().certificate,
+            challenge: challenge,
+            expiresAtUnix: -1,
+          ),
+          _fails(CryptoErrorCode.invalidInput),
+        );
+      });
+
+      test('comparison code is six digits and bound to device + challenge', () {
+        final cert = b.publicIdentity().certificate;
+        final code = CryptoCore.approvalCode(
+          newCertificate: cert,
+          challenge: challenge,
+        );
+        expect(code, inInclusiveRange(0, 999999));
+        expect(
+          CryptoCore.approvalCode(newCertificate: cert, challenge: challenge),
+          code,
+        );
+        expect(
+          CryptoCore.approvalCode(
+            newCertificate: a.publicIdentity().certificate,
+            challenge: challenge,
+          ),
+          isNot(code),
+        );
+      });
+
+      test(
+        'recovery key: created once, typed on a new device, typos caught',
+        () {
+          final bundle = a.createRecoveryKey(
+            challenge: challenge,
+            expiresAtUnix: expires,
+          );
+          expect(bundle.secret, startsWith('SHRK1-'));
+          expect(bundle.publicKey, hasLength(32));
+          expect(bundle.registrationSignature, hasLength(64));
+          expect(bundle.toString(), contains('<redacted>'));
+          final approval = b.recoveryApproval(
+            recoveryKey: bundle.secret.toLowerCase(),
+            challenge: challenge,
+            expiresAtUnix: expires,
+          );
+          expect(approval.signature, hasLength(64));
+          expect(approval.recoveryPublicKey, bundle.publicKey);
+          final typo =
+              '${bundle.secret.substring(0, bundle.secret.length - 1)}'
+              '${bundle.secret.endsWith('A') ? 'B' : 'A'}';
+          expect(
+            () => b.recoveryApproval(
+              recoveryKey: typo,
+              challenge: challenge,
+              expiresAtUnix: expires,
+            ),
+            _fails(CryptoErrorCode.recoveryKeyInvalid),
+          );
+        },
+      );
+
+      test('enrollment proofs are a separate purpose from activation', () {
+        final c1 = a.deviceProof(DeviceProofPurpose.activation, challenge);
+        final c2 = a.deviceProof(DeviceProofPurpose.enrollment, challenge);
+        expect(c1, isNot(c2));
+      });
+    },
+    skip: available
+        ? false
+        : (_required ? false : 'no native crypto core on this host'),
+  );
 }

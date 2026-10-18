@@ -189,8 +189,10 @@ fn challenge_must_be_exactly_32_bytes() {
         ProofPurpose::from_u32(0).unwrap_err(),
         CoreError::InvalidInput
     );
+    // Prompt 08 added purpose 2 (enrollment); anything else stays invalid.
+    assert_eq!(ProofPurpose::from_u32(2).unwrap(), ProofPurpose::Enrollment);
     assert_eq!(
-        ProofPurpose::from_u32(2).unwrap_err(),
+        ProofPurpose::from_u32(3).unwrap_err(),
         CoreError::InvalidInput
     );
 }
