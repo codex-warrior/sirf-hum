@@ -27,7 +27,7 @@ use std::sync::Mutex;
 
 use zeroize::Zeroize;
 
-use crate::identity::{AccountId, DeviceId, PersonKey, ProofPurpose};
+use crate::identity::{AccountId, DeviceId, PersonKey, ProofPurpose, RevocationReason};
 use crate::keystore::{
     EphemeralTestKeyStore, InsecureFileTestKeyStore, KeyEncryptionKeyProvider, PlatformProvidedKey,
 };
@@ -37,7 +37,9 @@ use crate::{CoreError, CryptoCore, Incoming};
 /// Bumped on any incompatible ABI change; Dart refuses mismatches.
 /// v2 (Prompt 07): platform store key, account check, device proof.
 /// v3 (Prompt 08): device approval, approval code, recovery key.
-pub const ABI_VERSION: u32 = 3;
+/// v4 (Prompt 09): signed revocation, reset cancellation, trust epoch,
+/// peer-side lineage verification.
+pub const ABI_VERSION: u32 = 4;
 
 pub const KEYSTORE_EPHEMERAL_TEST: u32 = 1;
 pub const KEYSTORE_INSECURE_FILE_TEST: u32 = 2;
@@ -378,6 +380,95 @@ pub unsafe extern "C" fn sh_crypto_recovery_approval(
         let approval = with_core(h, |c| c.recovery_approval(key, challenge, expires_at_unix))?;
         write(out_signature, approval.signature)?;
         write(out_public, approval.recovery_public_key.to_vec())
+    })
+}
+
+/// Signs a revocation of `revoked_certificate` (reason: 1 removed, 2 lost,
+/// 3 stolen, 4 compromised) with this device's PIK (D-081).
+///
+/// # Safety
+/// Valid handle; readable inputs; writable `out`.
+#[no_mangle]
+pub unsafe extern "C" fn sh_crypto_sign_revocation(
+    h: *const ShCore,
+    revoked_certificate: *const u8,
+    certificate_len: usize,
+    reason: u32,
+    challenge: *const u8,
+    challenge_len: usize,
+    expires_at_unix: u64,
+    out: *mut ShBuf,
+) -> i32 {
+    guarded(|| {
+        let reason = u8::try_from(reason).map_err(|_| CoreError::InvalidInput)?;
+        let reason = RevocationReason::from_u8(reason)?;
+        let cert = slice(revoked_certificate, certificate_len)?;
+        let challenge = slice(challenge, challenge_len)?;
+        let signature = with_core(h, |c| {
+            c.sign_revocation(cert, reason, challenge, expires_at_unix)
+        })?;
+        write(out, signature)
+    })
+}
+
+/// Signs a cancellation of a pending identity reset (D-082).
+///
+/// # Safety
+/// Valid handle; readable challenge; writable `out`.
+#[no_mangle]
+pub unsafe extern "C" fn sh_crypto_sign_reset_cancellation(
+    h: *const ShCore,
+    challenge: *const u8,
+    challenge_len: usize,
+    expires_at_unix: u64,
+    out: *mut ShBuf,
+) -> i32 {
+    guarded(|| {
+        let challenge = slice(challenge, challenge_len)?;
+        let signature = with_core(h, |c| c.sign_reset_cancellation(challenge, expires_at_unix))?;
+        write(out, signature)
+    })
+}
+
+/// Records the server trust epoch; `TrustStateStale` if it went backwards
+/// (D-083). `out_previous` receives the previously seen epoch.
+///
+/// # Safety
+/// Valid handle; writable `out_previous`.
+#[no_mangle]
+pub unsafe extern "C" fn sh_crypto_observe_trust_epoch(
+    h: *const ShCore,
+    epoch: u64,
+    out_previous: *mut u64,
+) -> i32 {
+    guarded(|| {
+        if out_previous.is_null() {
+            return Err(CoreError::InvalidInput);
+        }
+        *out_previous = with_core(h, |c| c.observe_trust_epoch(epoch))?;
+        Ok(())
+    })
+}
+
+/// Verifies an account's trust lineage (lineage.rs format, D-084) without a
+/// handle; `out` receives `u32 count | count x device id[16]` of the devices
+/// still trusted.
+///
+/// # Safety
+/// Readable blob; writable `out`.
+#[no_mangle]
+pub unsafe extern "C" fn sh_crypto_verify_lineage(
+    blob: *const u8,
+    blob_len: usize,
+    out: *mut ShBuf,
+) -> i32 {
+    guarded(|| {
+        let provider = openmls_rust_crypto::OpenMlsRustCrypto::default();
+        let trusted = crate::lineage::verify_encoded(
+            openmls_traits::OpenMlsProvider::crypto(&provider),
+            slice(blob, blob_len)?,
+        )?;
+        write(out, trusted)
     })
 }
 

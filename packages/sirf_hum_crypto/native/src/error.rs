@@ -52,6 +52,12 @@ pub enum CoreError {
     /// A recovery key is malformed or mistyped (bad prefix, encoding,
     /// version or checksum). Says nothing about whether it is registered.
     RecoveryKeyInvalid = -19,
+    /// The server's trust epoch is older than one this device already saw:
+    /// a stale or rolled-back server view (D-083). Fail closed.
+    TrustStateStale = -20,
+    /// A trust chain or revocation did not verify (unknown root, broken
+    /// link, wrong account, bad signature, unsupported version).
+    TrustChainInvalid = -21,
 }
 
 impl CoreError {
@@ -59,7 +65,7 @@ impl CoreError {
         self as i32
     }
 
-    pub const ALL: [CoreError; 19] = [
+    pub const ALL: [CoreError; 21] = [
         CoreError::InvalidInput,
         CoreError::InputTooLarge,
         CoreError::InvalidCredential,
@@ -79,6 +85,8 @@ impl CoreError {
         CoreError::Internal,
         CoreError::AccountMismatch,
         CoreError::RecoveryKeyInvalid,
+        CoreError::TrustStateStale,
+        CoreError::TrustChainInvalid,
     ];
 
     /// Stable snake_case name, safe for logs.
@@ -103,6 +111,8 @@ impl CoreError {
             CoreError::Internal => "internal",
             CoreError::AccountMismatch => "account_mismatch",
             CoreError::RecoveryKeyInvalid => "recovery_key_invalid",
+            CoreError::TrustStateStale => "trust_state_stale",
+            CoreError::TrustChainInvalid => "trust_chain_invalid",
         }
     }
 }

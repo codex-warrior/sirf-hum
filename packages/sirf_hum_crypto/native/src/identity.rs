@@ -499,6 +499,299 @@ pub fn approval_code(
     Ok(u32::from_be_bytes(head) % 1_000_000)
 }
 
+// ------------------------------------------- revocation and reset (D-081, D-082)
+
+const REVOCATION_CONTEXT: &[u8] = b"SirfHum-DeviceRevocation-v1";
+const RESET_CANCEL_CONTEXT: &[u8] = b"SirfHum-IdentityResetCancel-v1";
+
+/// Why a device was revoked. Stable wire values; extend by appending.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum RevocationReason {
+    /// Removed by its owner (unwanted, replaced, sold).
+    Removed = 1,
+    /// Reported lost.
+    Lost = 2,
+    /// Reported stolen.
+    Stolen = 3,
+    /// Suspected compromised.
+    Compromised = 4,
+}
+
+impl RevocationReason {
+    pub fn from_u8(value: u8) -> CoreResult<Self> {
+        match value {
+            1 => Ok(Self::Removed),
+            2 => Ok(Self::Lost),
+            3 => Ok(Self::Stolen),
+            4 => Ok(Self::Compromised),
+            _ => Err(CoreError::InvalidInput),
+        }
+    }
+}
+
+/// `"SirfHum-DeviceRevocation-v1" | version | u32 len | account
+///  | revoker device id[16] | u32 len | revoker certificate
+///  | revoked device id[16] | u32 len | revoked certificate | reason u8
+///  | challenge[32] | expires_at u64 BE`
+/// signed by the revoker's PIK (an active device, possibly the revoked
+/// device itself). The single-use challenge is the revocation's unique ID.
+pub fn revocation_payload(
+    account: &AccountId,
+    revoker_certificate: &[u8],
+    revoked_certificate: &[u8],
+    reason: RevocationReason,
+    challenge: &[u8],
+    expires_at_unix: u64,
+) -> CoreResult<Vec<u8>> {
+    check_challenge(challenge)?;
+    let revoker = DeviceCertificate::decode(revoker_certificate)?;
+    let revoked = DeviceCertificate::decode(revoked_certificate)?;
+    let mut out = statement_header(REVOCATION_CONTEXT, account);
+    out.extend_from_slice(&revoker.device_id.0);
+    put(&mut out, revoker_certificate);
+    out.extend_from_slice(&revoked.device_id.0);
+    put(&mut out, revoked_certificate);
+    out.push(reason as u8);
+    out.extend_from_slice(challenge);
+    out.extend_from_slice(&expires_at_unix.to_be_bytes());
+    Ok(out)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn verify_revocation(
+    crypto: &impl OpenMlsCrypto,
+    account: &AccountId,
+    revoker_certificate: &[u8],
+    revoked_certificate: &[u8],
+    reason: RevocationReason,
+    challenge: &[u8],
+    expires_at_unix: u64,
+    signature: &[u8],
+) -> CoreResult<()> {
+    let revoker = DeviceCertificate::decode(revoker_certificate)?;
+    revoker.verify_signature(crypto)?;
+    DeviceCertificate::decode(revoked_certificate)?.verify_signature(crypto)?;
+    let payload = revocation_payload(
+        account,
+        revoker_certificate,
+        revoked_certificate,
+        reason,
+        challenge,
+        expires_at_unix,
+    )?;
+    verify_ed25519(crypto, &revoker.person_key.0, &payload, signature)
+}
+
+/// `"SirfHum-IdentityResetCancel-v1" | version | u32 len | account
+///  | device id[16] | u32 len | certificate | challenge[32] | expires_at u64 BE`
+/// signed by an active device's PIK: proof that a trusted device still
+/// exists and objects to the pending identity reset.
+pub fn reset_cancel_payload(
+    account: &AccountId,
+    certificate: &[u8],
+    challenge: &[u8],
+    expires_at_unix: u64,
+) -> CoreResult<Vec<u8>> {
+    check_challenge(challenge)?;
+    let cert = DeviceCertificate::decode(certificate)?;
+    let mut out = statement_header(RESET_CANCEL_CONTEXT, account);
+    out.extend_from_slice(&cert.device_id.0);
+    put(&mut out, certificate);
+    out.extend_from_slice(challenge);
+    out.extend_from_slice(&expires_at_unix.to_be_bytes());
+    Ok(out)
+}
+
+pub fn verify_reset_cancel(
+    crypto: &impl OpenMlsCrypto,
+    account: &AccountId,
+    certificate: &[u8],
+    challenge: &[u8],
+    expires_at_unix: u64,
+    signature: &[u8],
+) -> CoreResult<()> {
+    let cert = DeviceCertificate::decode(certificate)?;
+    cert.verify_signature(crypto)?;
+    let payload = reset_cancel_payload(account, certificate, challenge, expires_at_unix)?;
+    verify_ed25519(crypto, &cert.person_key.0, &payload, signature)
+}
+
+// ------------------------------------------------ peer-side lineage (D-084)
+
+/// Evidence that a recovery key was registered by a device of the chain.
+pub struct RecoveryRegistrationEvidence<'a> {
+    pub registrar_certificate: &'a [u8],
+    pub recovery_public_key: &'a [u8],
+    pub challenge: &'a [u8],
+    pub expires_at_unix: u64,
+    pub signature: &'a [u8],
+}
+
+/// One activation in an account's trust chain, as stored by the server
+/// next to the activated device (DEVICE-IDENTITY §4).
+pub enum TrustLink<'a> {
+    /// `new_certificate` approved by `approver_certificate`'s PIK.
+    Approval {
+        protocol_version: u8,
+        approver_certificate: &'a [u8],
+        new_certificate: &'a [u8],
+        challenge: &'a [u8],
+        expires_at_unix: u64,
+        signature: &'a [u8],
+    },
+    /// `new_certificate` approved by a recovery key that a chain device registered.
+    Recovery {
+        protocol_version: u8,
+        registration: RecoveryRegistrationEvidence<'a>,
+        new_certificate: &'a [u8],
+        challenge: &'a [u8],
+        expires_at_unix: u64,
+        signature: &'a [u8],
+    },
+}
+
+/// A signed revocation as stored by the server.
+pub struct RevocationEvidence<'a> {
+    pub protocol_version: u8,
+    pub revoker_certificate: &'a [u8],
+    pub revoked_certificate: &'a [u8],
+    pub reason: RevocationReason,
+    pub challenge: &'a [u8],
+    pub expires_at_unix: u64,
+    pub signature: &'a [u8],
+}
+
+/// Verifies an account's trust chain on the device, without trusting the
+/// server: starting from `root_certificate` (the account's first device,
+/// whose own trust comes from partner verification of its PIK, never from
+/// the server), every link must be signed by a key that is already part of
+/// the chain, and every statement must bind this account. Then applies
+/// signed revocations whose revoker is in the chain, plus `revoked_ids`
+/// (server-asserted revocations, e.g. identity reset; honoured because
+/// revocation only reduces trust).
+///
+/// Returns the certificates still trusted, in chain order. Fails closed on
+/// any broken link. Freshness (expiry) is enforced by the server at the
+/// time of use; peers check the expiry is not before the certificate was
+/// issued, which catches statements made for another device generation.
+pub fn verify_lineage(
+    crypto: &impl OpenMlsCrypto,
+    account: &AccountId,
+    root_certificate: &[u8],
+    links: &[TrustLink<'_>],
+    revocations: &[RevocationEvidence<'_>],
+    revoked_ids: &[DeviceId],
+) -> CoreResult<Vec<DeviceCertificate>> {
+    let invalid = |_| CoreError::TrustChainInvalid;
+    let root = DeviceCertificate::decode(root_certificate).map_err(invalid)?;
+    root.verify_signature(crypto).map_err(invalid)?;
+    let mut chain: Vec<(Vec<u8>, DeviceCertificate)> = vec![(root_certificate.to_vec(), root)];
+    let member =
+        |chain: &[(Vec<u8>, DeviceCertificate)], cert: &[u8]| chain.iter().any(|(c, _)| c == cert);
+
+    for link in links {
+        let new_cert = match link {
+            TrustLink::Approval {
+                protocol_version,
+                approver_certificate,
+                new_certificate,
+                challenge,
+                expires_at_unix,
+                signature,
+            } => {
+                if *protocol_version != TRUST_PROTOCOL_VERSION
+                    || !member(&chain, approver_certificate)
+                {
+                    return Err(CoreError::TrustChainInvalid);
+                }
+                verify_device_approval(
+                    crypto,
+                    account,
+                    approver_certificate,
+                    new_certificate,
+                    challenge,
+                    *expires_at_unix,
+                    signature,
+                )
+                .map_err(invalid)?;
+                (*new_certificate, *expires_at_unix)
+            }
+            TrustLink::Recovery {
+                protocol_version,
+                registration,
+                new_certificate,
+                challenge,
+                expires_at_unix,
+                signature,
+            } => {
+                if *protocol_version != TRUST_PROTOCOL_VERSION
+                    || !member(&chain, registration.registrar_certificate)
+                {
+                    return Err(CoreError::TrustChainInvalid);
+                }
+                verify_recovery_registration(
+                    crypto,
+                    account,
+                    registration.registrar_certificate,
+                    registration.recovery_public_key,
+                    registration.challenge,
+                    registration.expires_at_unix,
+                    registration.signature,
+                )
+                .map_err(invalid)?;
+                verify_recovery_approval(
+                    crypto,
+                    account,
+                    registration.recovery_public_key,
+                    new_certificate,
+                    challenge,
+                    *expires_at_unix,
+                    signature,
+                )
+                .map_err(invalid)?;
+                (*new_certificate, *expires_at_unix)
+            }
+        };
+        let (new_bytes, expires_at) = new_cert;
+        let cert = DeviceCertificate::decode(new_bytes).map_err(invalid)?;
+        if expires_at < cert.issued_at_unix
+            || chain.iter().any(|(_, c)| c.device_id == cert.device_id)
+        {
+            return Err(CoreError::TrustChainInvalid);
+        }
+        chain.push((new_bytes.to_vec(), cert));
+    }
+
+    let mut revoked: BTreeSet<DeviceId> = revoked_ids.iter().copied().collect();
+    for r in revocations {
+        if r.protocol_version != TRUST_PROTOCOL_VERSION || !member(&chain, r.revoker_certificate) {
+            return Err(CoreError::TrustChainInvalid);
+        }
+        verify_revocation(
+            crypto,
+            account,
+            r.revoker_certificate,
+            r.revoked_certificate,
+            r.reason,
+            r.challenge,
+            r.expires_at_unix,
+            r.signature,
+        )
+        .map_err(invalid)?;
+        revoked.insert(
+            DeviceCertificate::decode(r.revoked_certificate)
+                .map_err(invalid)?
+                .device_id,
+        );
+    }
+    Ok(chain
+        .into_iter()
+        .map(|(_, c)| c)
+        .filter(|c| !revoked.contains(&c.device_id))
+        .collect())
+}
+
 fn verify_ed25519(
     crypto: &impl OpenMlsCrypto,
     public_key: &[u8],

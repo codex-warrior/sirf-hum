@@ -3,9 +3,10 @@
 // unencrypted path.
 import 'dart:typed_data';
 
+import 'package:sirf_hum_crypto/src/lineage.dart';
 import 'package:sirf_hum_crypto/src/types.dart';
 
-const int expectedAbiVersion = 3;
+const int expectedAbiVersion = 4;
 
 Never _unsupported() =>
     throw const CryptoException(CryptoErrorCode.unsupported);
@@ -56,6 +57,22 @@ final class CryptoCore {
     required Uint8List challenge,
     required int expiresAtUnix,
   }) => _unsupported();
+
+  Uint8List signRevocation({
+    required Uint8List revokedCertificate,
+    required RevocationReason reason,
+    required Uint8List challenge,
+    required int expiresAtUnix,
+  }) => _unsupported();
+
+  Uint8List signResetCancellation({
+    required Uint8List challenge,
+    required int expiresAtUnix,
+  }) => _unsupported();
+
+  int observeTrustEpoch(int epoch) => _unsupported();
+
+  static List<DeviceId> verifyLineage(LineageRequest request) => _unsupported();
 
   PublicIdentity createIdentity(AccountId account) => _unsupported();
 

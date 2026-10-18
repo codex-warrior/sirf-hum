@@ -13,10 +13,11 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:sirf_hum_crypto/src/lineage.dart';
 import 'package:sirf_hum_crypto/src/types.dart';
 
 /// ABI version this Dart code was written against (native ABI_VERSION).
-const int expectedAbiVersion = 3;
+const int expectedAbiVersion = 4;
 
 // True in release (product) builds, where test key stores are refused.
 const bool _isReleaseBuild = bool.fromEnvironment('dart.vm.product');
@@ -160,6 +161,60 @@ external int _recoveryApproval(
   Pointer<_ShBuf> signature,
   Pointer<_ShBuf> publicKey,
 );
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Uint32,
+    Pointer<Uint8>,
+    Size,
+    Uint64,
+    Pointer<_ShBuf>,
+  )
+>(symbol: 'sh_crypto_sign_revocation')
+external int _signRevocation(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> cert,
+  int certLen,
+  int reason,
+  Pointer<Uint8> challenge,
+  int challengeLen,
+  int expiresAt,
+  Pointer<_ShBuf> out,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Uint64,
+    Pointer<_ShBuf>,
+  )
+>(symbol: 'sh_crypto_sign_reset_cancellation')
+external int _signResetCancellation(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> challenge,
+  int challengeLen,
+  int expiresAt,
+  Pointer<_ShBuf> out,
+);
+
+@Native<Int32 Function(Pointer<_ShCore>, Uint64, Pointer<Uint64>)>(
+  symbol: 'sh_crypto_observe_trust_epoch',
+)
+external int _observeTrustEpoch(
+  Pointer<_ShCore> h,
+  int epoch,
+  Pointer<Uint64> previous,
+);
+
+@Native<Int32 Function(Pointer<Uint8>, Size, Pointer<_ShBuf>)>(
+  symbol: 'sh_crypto_verify_lineage',
+)
+external int _verifyLineage(Pointer<Uint8> blob, int len, Pointer<_ShBuf> out);
 
 @Native<Void Function(Pointer<_ShCore>)>(symbol: 'sh_crypto_close')
 external void _close(Pointer<_ShCore> h);
@@ -616,6 +671,79 @@ final class CryptoCore implements Finalizable {
     } finally {
       wipeBytes(keyBytes);
     }
+  }
+
+  /// Signs a revocation of [revokedCertificate] (another device of this
+  /// account, or this device itself) with this device's PIK (D-081). The
+  /// server decides whether it counts (this device must be active).
+  Uint8List signRevocation({
+    required Uint8List revokedCertificate,
+    required RevocationReason reason,
+    required Uint8List challenge,
+    required int expiresAtUnix,
+  }) => _input(
+    revokedCertificate,
+    (r, rl) => _input(
+      challenge,
+      (c, cl) => _output(
+        (o) => _signRevocation(
+          _h,
+          r,
+          rl,
+          reason.wireValue,
+          c,
+          cl,
+          _u64(expiresAtUnix),
+          o,
+        ),
+      ),
+    ),
+  );
+
+  /// Signs a cancellation of a pending identity reset (D-082).
+  Uint8List signResetCancellation({
+    required Uint8List challenge,
+    required int expiresAtUnix,
+  }) => _input(
+    challenge,
+    (c, cl) => _output(
+      (o) => _signResetCancellation(_h, c, cl, _u64(expiresAtUnix), o),
+    ),
+  );
+
+  /// Records the server's account trust epoch (D-083). Throws
+  /// [CryptoErrorCode.trustStateStale] if it is older than one this device
+  /// already saw (a stale or rolled-back server view). Returns the
+  /// previously seen epoch.
+  int observeTrustEpoch(int epoch) {
+    final previous = calloc<Uint64>();
+    try {
+      _check(_observeTrustEpoch(_h, _u64(epoch), previous));
+      return previous.value;
+    } finally {
+      calloc.free(previous);
+    }
+  }
+
+  /// Verifies an account's trust lineage on this device (D-084) and returns
+  /// the device IDs still trusted, in chain order. Throws
+  /// [CryptoErrorCode.trustChainInvalid] for any broken link.
+  static List<DeviceId> verifyLineage(LineageRequest request) {
+    if (!isAvailable) throw const CryptoException(CryptoErrorCode.unsupported);
+    final bytes = _input(
+      request.encode(),
+      (b, bl) => _output((o) => _verifyLineage(b, bl, o)),
+    );
+    final view = ByteData.sublistView(bytes);
+    if (bytes.length < 4) throw const CryptoException(CryptoErrorCode.internal);
+    final count = view.getUint32(0, Endian.big);
+    if (bytes.length != 4 + count * 16) {
+      throw const CryptoException(CryptoErrorCode.internal);
+    }
+    return [
+      for (var i = 0; i < count; i++)
+        DeviceId(bytes.sublist(4 + i * 16, 20 + i * 16)),
+    ];
   }
 
   /// Trusts a person key the user has verified out of band (D-064). Devices

@@ -488,4 +488,121 @@ void main() {
         ? false
         : (_required ? false : 'no native crypto core on this host'),
   );
+
+  group(
+    'hardening (Prompt 09)',
+    () {
+      late Directory root;
+      late CryptoCore a;
+      late CryptoCore b;
+      final challenge = Uint8List.fromList(List.filled(32, 6));
+
+      CryptoCore open(String name, int keyByte) =>
+          CryptoCore.initializeWithPlatformKey(
+            directory: (Directory('${root.path}/$name')..createSync()).path,
+            storeKey: Uint8List.fromList(List.filled(32, keyByte)),
+          )..createIdentity(AccountId('accountA'));
+
+      setUp(() {
+        root = Directory.systemTemp.createTempSync('sh_p09_');
+        a = open('a', 31);
+        b = open('b', 32);
+      });
+      tearDown(() {
+        a.close();
+        b.close();
+        root.deleteSync(recursive: true);
+      });
+
+      test(
+        'signed revocation and reset cancellation are 64-byte signatures',
+        () {
+          expect(
+            a.signRevocation(
+              revokedCertificate: b.publicIdentity().certificate,
+              reason: RevocationReason.lost,
+              challenge: challenge,
+              expiresAtUnix: 1900000000,
+            ),
+            hasLength(64),
+          );
+          expect(
+            a.signResetCancellation(
+              challenge: challenge,
+              expiresAtUnix: 1900000000,
+            ),
+            hasLength(64),
+          );
+        },
+      );
+
+      test('trust epoch only moves forward', () {
+        expect(a.observeTrustEpoch(4), 0);
+        expect(a.observeTrustEpoch(9), 4);
+        expect(
+          () => a.observeTrustEpoch(8),
+          _fails(CryptoErrorCode.trustStateStale),
+        );
+        expect(a.observeTrustEpoch(9), 9);
+      });
+
+      test(
+        'lineage built from real cores verifies; a revoked device drops out',
+        () {
+          final ca = a.publicIdentity().certificate;
+          final cb = b.publicIdentity().certificate;
+          final approval = a.approveDevice(
+            newCertificate: cb,
+            challenge: challenge,
+            expiresAtUnix: 1900000000,
+          );
+          final link = ApprovalLink(
+            approverCertificate: ca,
+            newCertificate: cb,
+            challenge: challenge,
+            expiresAtUnix: 1900000000,
+            signature: approval,
+          );
+          final trusted = CryptoCore.verifyLineage(
+            LineageRequest(
+              accountId: 'accountA',
+              rootCertificate: ca,
+              links: [link],
+            ),
+          );
+          expect(trusted, [
+            a.publicIdentity().deviceId,
+            b.publicIdentity().deviceId,
+          ]);
+          final revocation = SignedRevocation(
+            revokerCertificate: ca,
+            revokedCertificate: cb,
+            reason: RevocationReason.stolen.wireValue,
+            challenge: challenge,
+            expiresAtUnix: 1900000000,
+            signature: a.signRevocation(
+              revokedCertificate: cb,
+              reason: RevocationReason.stolen,
+              challenge: challenge,
+              expiresAtUnix: 1900000000,
+            ),
+          );
+          expect(
+            CryptoCore.verifyLineage(
+              LineageRequest(
+                accountId: 'accountA',
+                rootCertificate: ca,
+                links: [link],
+                revocations: [revocation],
+              ),
+            ),
+            [a.publicIdentity().deviceId],
+          );
+        },
+      );
+    },
+    skip: available
+        ? false
+        : (_required ? false : 'no native crypto core on this host'),
+  );
 }

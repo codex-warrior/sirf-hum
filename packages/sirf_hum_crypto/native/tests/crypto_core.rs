@@ -520,6 +520,8 @@ fn error_codes_are_stable_unique_and_safe() {
         (CoreError::Internal, -17, "internal"),
         (CoreError::AccountMismatch, -18, "account_mismatch"),
         (CoreError::RecoveryKeyInvalid, -19, "recovery_key_invalid"),
+        (CoreError::TrustStateStale, -20, "trust_state_stale"),
+        (CoreError::TrustChainInvalid, -21, "trust_chain_invalid"),
     ];
     assert_eq!(CoreError::ALL.len(), expected.len());
     for (e, code, name) in expected {
