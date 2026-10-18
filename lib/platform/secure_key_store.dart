@@ -35,8 +35,16 @@ class PlatformSecureKeyStore implements DeviceKeyStore {
       (await _call<String>('slotDirectory', {'slot': slot}))!;
 
   @override
-  Future<Uint8List?> storeKey(String slot, {required bool create}) =>
-      _call<Uint8List>('storeKey', {'slot': slot, 'create': create});
+  Future<Uint8List?> storeKey(String slot, {required bool create}) async {
+    final decoded = await _call<Uint8List>('storeKey', {
+      'slot': slot,
+      'create': create,
+    });
+    // The message codec hands back an unmodifiable view, which callers could
+    // not wipe. Return a copy we own; the codec's buffer itself cannot be
+    // wiped (documented residual risk, D-066).
+    return decoded == null ? null : Uint8List.fromList(decoded);
+  }
 
   @override
   Future<void> removeSlot(String slot) =>

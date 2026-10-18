@@ -24,7 +24,7 @@ final class CryptoCore {
     required String directory,
     required Uint8List storeKey,
   }) {
-    storeKey.fillRange(0, storeKey.length, 0);
+    wipeBytes(storeKey);
     return _unsupported();
   }
 

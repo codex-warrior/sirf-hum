@@ -54,6 +54,14 @@ void main() {
     }
   });
 
+  test('wipeBytes zeroes owned buffers and never throws on views', () {
+    final owned = Uint8List.fromList(List.filled(8, 9));
+    wipeBytes(owned);
+    expect(owned.every((b) => b == 0), isTrue);
+    final view = Uint8List.fromList(List.filled(8, 9)).asUnmodifiableView();
+    expect(() => wipeBytes(view), returnsNormally);
+  });
+
   test('the key store wire values match the native ABI', () {
     expect(KeyStoreKind.insecureTestEphemeral.wireValue, 1);
     expect(KeyStoreKind.insecureTestFile.wireValue, 2);

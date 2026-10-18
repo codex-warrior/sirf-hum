@@ -32,6 +32,14 @@ void main() {
     expect(calls.single.arguments, {'slot': 'accountA', 'create': true});
   });
 
+  test('returned keys are our own copy and can be wiped', () async {
+    // Regression: the codec decodes binary replies as unmodifiable views.
+    respond((_) => Uint8List.fromList(List.filled(32, 3)).asUnmodifiableView());
+    final key = (await store.storeKey('accountA', create: false))!;
+    key.fillRange(0, key.length, 0);
+    expect(key.every((b) => b == 0), isTrue);
+  });
+
   test('a missing key is null, not an error', () async {
     respond((_) => throw PlatformException(code: 'key_missing'));
     expect(await store.storeKey('accountA', create: false), isNull);

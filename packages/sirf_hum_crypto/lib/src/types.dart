@@ -76,6 +76,17 @@ enum DeviceProofPurpose {
   final int wireValue;
 }
 
+/// Zeroes [bytes] in place. Never throws: an unmodifiable view (e.g. one
+/// decoded by a platform channel) is left as is, because a wipe must never
+/// mask the real outcome of the operation it follows.
+void wipeBytes(Uint8List bytes) {
+  try {
+    bytes.fillRange(0, bytes.length, 0);
+  } on UnsupportedError {
+    // Not ours to wipe; the owner of the underlying buffer must do it.
+  }
+}
+
 /// The account a device belongs to (validated: 1–128 UTF-8 bytes).
 class AccountId {
   AccountId(this.value) {

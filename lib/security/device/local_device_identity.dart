@@ -137,7 +137,7 @@ class LocalDeviceIdentityService {
         LocalIdentityCorruptionReason.undecryptable,
       );
     } finally {
-      key.fillRange(0, key.length, 0);
+      wipeBytes(key);
     }
 
     try {
@@ -174,7 +174,7 @@ class LocalDeviceIdentityService {
         try {
           core = _openCore(directory: directory, storeKey: rotated);
         } finally {
-          rotated.fillRange(0, rotated.length, 0);
+          wipeBytes(rotated);
         }
       }
       final identity = core.createIdentity(account);

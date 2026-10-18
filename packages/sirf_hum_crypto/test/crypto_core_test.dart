@@ -289,6 +289,16 @@ void main() {
         again.close();
       });
 
+      test('an unmodifiable store key (channel-decoded) still opens', () {
+        // Regression: wiping must not throw and mask the open result.
+        final core = CryptoCore.initializeWithPlatformKey(
+          directory: dir.path,
+          storeKey: key(5).asUnmodifiableView(),
+        );
+        core.createIdentity(AccountId('account-a'));
+        core.close();
+      });
+
       test('a different store key cannot open the state', () {
         open(5)
           ..createIdentity(AccountId('account-a'))

@@ -354,7 +354,7 @@ final class CryptoCore implements Finalizable {
         ),
       );
     } finally {
-      storeKey.fillRange(0, storeKey.length, 0);
+      wipeBytes(storeKey);
     }
   }
 
