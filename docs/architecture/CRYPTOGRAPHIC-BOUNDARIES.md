@@ -1,6 +1,6 @@
 # Cryptographic Boundaries
 
-Status: **Design (Prompt 04); boundaries defined and feasibility measured (Prompt 05); crypto-core foundation implemented in `packages/sirf_hum_crypto` (Prompt 06, [CRYPTO-CORE-ARCHITECTURE](../security/CRYPTO-CORE-ARCHITECTURE.md)). Not production E2EE: test key stores only, unreviewed, unused by features.** Where plaintext and keys may
+Status: **Design (Prompt 04); boundaries defined and feasibility measured (Prompt 05); crypto-core foundation implemented in `packages/sirf_hum_crypto` (Prompt 06, [CRYPTO-CORE-ARCHITECTURE](../security/CRYPTO-CORE-ARCHITECTURE.md)). Platform key store and device identity added (Prompt 07, [DEVICE-IDENTITY](../security/DEVICE-IDENTITY.md)). Not production E2EE: unreviewed, unused by features.** Where plaintext and keys may
 exist in code, and how the crypto core connects to Flutter and Firebase.
 Labels follow [E2EE-ARCHITECTURE](../security/E2EE-ARCHITECTURE.md#labels).
 

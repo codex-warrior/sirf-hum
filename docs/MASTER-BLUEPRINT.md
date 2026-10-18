@@ -3,7 +3,7 @@
 The index of record. Each section summarises what is **decided** and links
 to the detailed source of truth. Updated at the end of every phase.
 
-Last updated: **Prompt 06 — 2026-10-18**.
+Last updated: **Prompt 07 — 2026-10-18**.
 
 ## 1. Vision
 
@@ -57,7 +57,9 @@ person → account → devices → cryptographic identity → couple model.
 **Crypto-core foundation implemented (Prompt 06); no feature uses it.
 Sirf Hum is NOT production E2EE yet:**
 
-- only insecure test key stores exist (D-066);
+- the platform key store exists (Prompt 07, D-066) but nothing is reviewed;
+- device identity and registration exist (Prompt 07) but server activation
+  is emulator-only until Blaze (D-025);
 - no independent review has taken place.
 
 → [CRYPTO-CORE-ARCHITECTURE](security/CRYPTO-CORE-ARCHITECTURE.md)
@@ -78,7 +80,12 @@ Sirf Hum is NOT production E2EE yet:**
   - Flutter → narrow Dart facade → hand-written C ABI bundled by
     first-party native assets (D-063, decided in Prompt 06) → Rust core
     (OpenMLS + credential policy + sealed atomic store) → KEK provider.
-    The platform KeyStore adapter (Keystore / Keychain) is open (D-066).
+    Platform key store: Android Keystore-wrapped / iOS Keychain store keys
+    (D-066, Prompt 07).
+  - Device identity and registration: one identity per (installation,
+    account), `pending` → server proof of possession → `active` →
+    `revoked` (D-069–D-071).
+    → [DEVICE-IDENTITY](security/DEVICE-IDENTITY.md)
   - No API exports keys or state.
   - The core never depends on Firebase.
   - Measured: Android `.so`, iOS XCFramework, wasm32 and Dart FFI all work
@@ -247,7 +254,8 @@ designed with privacy — all **post-V1** and individually reviewed.
 | 3 | Initial market, languages (Hindi/English/other), and segments | Visual identity, copy, localisation |
 | 4 | Sign-in methods (baseline email link or email/password; phone optional) | Identity phase |
 | 5 | Commission the independent OpenMLS delta + crypto-core review (D-054 conditions, now including `packages/sirf_hum_crypto`); decide D-060 (past-epoch window) | Before production E2EE |
-| 5a | Platform key-store adapter (Android Keystore / iOS Keychain) and local rollback protection (D-066) | Before any real user's private content |
+| 5a | Local rollback protection and review of the platform key store (D-066 residual) | Before any real user's private content |
+| 5b | Blaze plan to deploy device activation Functions (D-025, D-069) | First real device activation |
 | 6 | Shared history after unpairing | Pairing phase (product + legal) |
 | 7 | LiveKit Cloud vs. self-hosted | Calls phase |
 | 8 | Analytics vendor and consent posture | First analytics event |

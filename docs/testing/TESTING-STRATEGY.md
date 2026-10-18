@@ -46,6 +46,8 @@ flutter test integration_test --flavor development -d <device-id>   # integratio
 (cd firebase && npm ci && npm test)            # Security Rules (needs Java + firebase-tools)
 (cd packages/sirf_hum_crypto && dart test)     # crypto package (native tests need a Linux/macOS host)
 (cd packages/sirf_hum_crypto/native && cargo test --locked)   # Rust crypto core
+(cd functions && npm run test:emulator)        # device registration flows (Java + firebase-tools)
+flutter test integration_test/device_identity_test.dart --flavor development -d <device>   # real Keystore/Keychain
 tool/verify.sh --all                           # everything runnable locally
 ```
 

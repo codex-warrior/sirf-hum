@@ -85,6 +85,21 @@ Above the Rust layer:
 - **Web:** the stub fails closed with `unsupported`, and the app classifies
   Web as `unavailableOnWeb`.
 
+## Device identity tests (exist; Prompt 07)
+
+Design: [DEVICE-IDENTITY](../security/DEVICE-IDENTITY.md). The replay and
+cloning matrix is in §6 of that document.
+
+| Layer | Where | What | Runs |
+| --- | --- | --- | --- |
+| Rust | `native/tests/device_identity.rs` | Account binding; device proof verifies only for its account, challenge and certificate; every certificate byte; challenge length; no state change; platform key open/restore/refuse; server golden vector | CI `crypto-core` |
+| Dart package | `test/crypto_core_test.dart` (device identity group) | Platform key wiped after open; wrong key fails closed; account check; proof shape | CI `crypto-core` |
+| Server verifier | `functions/test/device_proof.test.mjs` | Golden vector is reproducible and verifies; forged and altered certificates; altered account; stale challenge; copied key; other purpose | CI `functions` |
+| Server flows | `functions/test/emulator/device_registration.test.mjs` | Activation; replayed proof; reused or stale challenge; cross-account challenge; copied records; duplicate device ID and key; altered device ID; revoked devices; malformed input | CI `functions` (emulator) |
+| Rules | `firebase/tests/devices.test.js` | The 8 required cases plus schema, immutability, no client activation, one-way revocation, no deletes, server-only collections | CI `security-rules` |
+| App | `test/security/device/`, `test/platform/`, `test/infrastructure/` | State machine; persistence; account switching; corruption; partial write; stale-key rotation; removal; key wiping; Web; registration flow (no challenge reuse, revoked terminal, account mismatch); log redaction; rules ↔ client field drift | CI `flutter` (native required) |
+| Device | `integration_test/device_identity_test.dart` | Real Keystore/Keychain: key store, persistence, isolation, removal, missing key fails closed | CI Android emulator + iOS simulator |
+
 ## Decision-gate tests (exist; experimental; regression suite)
 
 `prototypes/mls-decision-gate` (`.github/workflows/prototypes.yml`), run

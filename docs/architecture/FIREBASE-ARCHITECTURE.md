@@ -1,7 +1,8 @@
 # Firebase Architecture
 
-Status: **Boundaries established (Prompt 01). No collections, rules or
-functions are open yet.**
+Status: **Boundaries established (Prompt 01). Device registry open
+(Prompt 07): `users/{uid}/devices/{deviceId}` rules + activation Functions
+(emulator-only until Blaze).**
 
 ## Principle
 
@@ -69,6 +70,24 @@ messages/{messageId}
 - Couple membership is a necessary condition for access to couple data,
   never a sufficient one for access to a partner's *account* data.
 
+## Device registry (Prompt 07)
+
+Full design: [DEVICE-IDENTITY](../security/DEVICE-IDENTITY.md) (D-069,
+D-070).
+
+| Path | Client access | Server (Admin SDK) |
+| --- | --- | --- |
+| `users/{uid}/devices/{deviceId}` | Owner: read; create exact `pending` v1 record; revoke one-way. No delete | `activateDevice` sets `active` after proof of possession |
+| `deviceChallenges/{id}` | None | `issueDeviceChallenge` creates; consumed by the first activation attempt |
+| `deviceIdIndex/{deviceId}`, `deviceKeyIndex/{sha256}` | None | Global uniqueness of activated device IDs and keys, kept forever |
+
+Callables: `issueDeviceChallenge` and `activateDevice` in `asia-south1`,
+`enforceAppCheck: true`, category-only errors. Tests:
+
+- `firebase/tests/devices.test.js` (rules);
+- `functions/test/device_proof.test.mjs` (verifier, golden vector);
+- `functions/test/emulator/` (flows).
+
 ## Cloud Functions policy
 
 - TypeScript, strict mode, in `functions/`. Region `asia-south1` (D-016),
@@ -121,7 +140,7 @@ are **outside** the trust boundary.
 | APIs: Firestore, App Check, Identity Toolkit, Crashlytics, FCM | Enabled | Enabled | Enabled |
 | Auth sign-in providers | None (D-029) | None | None |
 | Cloud Storage bucket | **Blocked: needs Blaze** | **Blocked** | **Blocked** |
-| Cloud Functions | **Blocked: needs Blaze** | **Blocked** | **Blocked** |
+| Cloud Functions | **Blocked: needs Blaze** (device activation written and emulator-tested, Prompt 07) | **Blocked** | **Blocked** |
 | Hosting default site | Exists, nothing deployed | Exists | Exists |
 
 Reproduce with `tool/provision_firebase.sh <env>`.

@@ -31,7 +31,7 @@ Status: **Foundation implemented (Prompt 01).**
 | `features/<area>/` | Product areas: `home`, `together`, `moments`, `future`, `us` | core, design_system, security, infrastructure (data layer only) |
 | `security/` | Cryptography boundary, key management (future) | core |
 | `infrastructure/` | Firebase, LiveKit integrations | core, security (envelope types) |
-| `platform/` | Device capability wrappers (permissions, camera, secure storage…) | core |
+| `platform/` | Device capability wrappers (permissions, camera, secure storage…) | core; security *ports only* (implements e.g. `DeviceKeyStore`, D-072) |
 
 Rules:
 

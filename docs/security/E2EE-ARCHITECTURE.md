@@ -2,7 +2,8 @@
 
 Status: **Design (Prompt 04, 2026-10-16). Crypto-core foundation implemented
 in Prompt 06 ([CRYPTO-CORE-ARCHITECTURE](CRYPTO-CORE-ARCHITECTURE.md)); no
-feature uses it, and it runs only with insecure test key stores.** Sirf Hum
+feature uses it. Prompt 07 added the platform key store and device
+identity ([DEVICE-IDENTITY](DEVICE-IDENTITY.md)); nothing is reviewed.** Sirf Hum
 is **NOT production E2EE yet** and must not say it is.
 
 Companion documents:
