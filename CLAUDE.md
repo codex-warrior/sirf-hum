@@ -18,6 +18,7 @@ the task — they replace restating the spec in prompts:
 | Private content, keys, devices | `docs/security/MLS-DECISION.md` (crypto core, conditions), `docs/security/E2EE-ARCHITECTURE.md`, `KEY-MANAGEMENT.md`, `PAIRING-AND-DEVICE-TRUST.md`, `RECOVERY-AND-REVOCATION.md`, `WEB-SECURITY.md` (all in `docs/security/`), `docs/architecture/CRYPTOGRAPHIC-BOUNDARIES.md`, `docs/security/THREAT-MODEL.md` |
 | Crypto core (`packages/sirf_hum_crypto`) | `docs/security/CRYPTO-CORE-ARCHITECTURE.md` (boundaries, rollback, formats, what is unaudited) |
 | Device identity, registration, platform key store | `docs/security/DEVICE-IDENTITY.md` (hierarchy, lifecycle, schema, proof of possession, threats) |
+| Multi-device trust, revocation, recovery, identity reset, lineage | `docs/security/MULTI-DEVICE-TRUST.md` (state machine, transition matrix, signed statements, D-074–D-084) |
 | Multi-device trust, approval, revocation, recovery | `docs/security/MULTI-DEVICE-TRUST.md` (trust model, approval protocol, recovery key, rate limits, rollback limits) |
 | Experiments | `prototypes/` is isolated and never imported by the app (D-052) |
 | Analytics | `docs/security/ANALYTICS-POLICY.md` |

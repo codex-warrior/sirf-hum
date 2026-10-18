@@ -135,8 +135,9 @@ Revocation and wipe exist; recovery does not.
   There is no server key, no escrow and no export function, and none may be
   added (Prompt 06 rules 7–8).
 
-- **Device records (Prompt 07):** the owner can revoke a server record
-  one-way (`pending|active → revoked`). Revoked device IDs and keys stay
+- **Device records (Prompt 07; signed since Prompt 09, D-081):** a
+  trusted device revokes a server record one-way (`pending|active →
+  revoked`). Revoked device IDs and keys stay
   indexed forever, so neither can be activated again. A device that must
   work again gets a **new** identity (D-069).
 
@@ -160,12 +161,13 @@ Details: [MULTI-DEVICE-TRUST](MULTI-DEVICE-TRUST.md).
   - It restores *device trust* for a new identity. It does **not** restore
     the old PIK or any history.
 - **Encrypted history archive (option C):** still deferred.
-- **All devices lost, no recovery key:** there is no path yet. An "identity
-  reset" (partner-visible, re-verified) is designed but open (D-076). A
-  server or support reset is rejected, because it would turn a password
-  compromise into a trust compromise.
+- **All devices lost, no recovery key:** since Prompt 09, a delayed
+  (7-day), cancellable identity reset to a NEW identity that partners must
+  re-verify (D-082). A server or support reset is rejected, because it
+  would turn a password compromise into a trust compromise.
 - **Revocation:**
-  - the owner revokes from any session, one way;
+  - since Prompt 09, a trusted device signs each revocation (D-081); the
+    owner's session alone can no longer revoke;
   - revoked devices cannot approve or register recovery keys;
   - approvals signed before revocation are refused;
   - revocation does not wipe the device remotely;

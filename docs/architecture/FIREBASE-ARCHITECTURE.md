@@ -77,10 +77,10 @@ D-070).
 
 | Path | Client access | Server (Admin SDK) |
 | --- | --- | --- |
-| `users/{uid}/devices/{deviceId}` | Owner: read; revoke one-way. **No create** (Prompt 08), no delete | `registerDevice` creates `pending`; `activateDevice` (first device only), `approveDevice`, `recoverDevice` set `active`; `rejectDeviceApproval` sets `rejected`; cleanup sets `expired` |
+| `users/{uid}/devices/{deviceId}` | Owner: read. **No client write at all** (Prompt 09) | `registerDevice` creates `pending`; `activateDevice` (first device only), `approveDevice`, `recoverDevice` set `active` with signed evidence; `rejectDeviceApproval` sets `rejected`; cleanup sets `expired`; `revokeDevice` (signed, D-081) and `completeIdentityReset` set `revoked` |
 | `deviceChallenges/{id}` | None | `issueDeviceChallenge` creates; consumed by the first attempt |
 | `deviceApprovalRequests/{id}` | None | `requestDeviceApproval` / `proveDeviceEnrollment`; consumed by approval, rejection or recovery |
-| `accountTrust/{uid}` | None | Once-ever bootstrap marker; recovery key **public** half |
+| `accountTrust/{uid}` | Owner: read (Prompt 09). No write | Bootstrap marker (`firstDeviceId`, `bootstrapOpen`), `trustEpoch` (D-083), `identityEpoch` and `reset` (D-082), recovery key **public** half with its registration evidence |
 | `rateLimits/{uid}__{op}` | None | Per-account rate limits (D-077) |
 | `deviceIdIndex/{deviceId}`, `deviceKeyIndex/{sha256}` | None | Global uniqueness of activated device IDs and keys, kept forever |
 
@@ -89,7 +89,9 @@ Callables:
 - `registerDevice`, `issueDeviceChallenge`, `activateDevice`;
 - `requestDeviceApproval`, `proveDeviceEnrollment`,
   `listDeviceApprovalRequests`, `approveDevice`, `rejectDeviceApproval`;
-- `registerRecoveryKey`, `recoverDevice`.
+- `registerRecoveryKey`, `recoverDevice`;
+- `revokeDevice` (D-081);
+- `requestIdentityReset`, `cancelIdentityReset`, `completeIdentityReset` (D-082).
 
 Plus the scheduled `cleanupExpiredDeviceRecords`. All run in
 `asia-south1` with `enforceAppCheck: true` and category-only errors.
@@ -97,7 +99,8 @@ Design: [MULTI-DEVICE-TRUST](../security/MULTI-DEVICE-TRUST.md). Tests:
 
 - `firebase/tests/devices.test.js` (rules);
 - `functions/test/device_proof.test.mjs`, `functions/test/statements.test.mjs` (verifiers, golden vectors);
-- `functions/test/emulator/` (flows).
+- `functions/test/hardening.test.mjs` (revocation/reset statements, v2 vectors, log guard);
+- `functions/test/emulator/` (flows; `hardening.test.mjs`: revocation, reset, epoch, races, rate-limit boundaries).
 
 ## Cloud Functions policy
 
