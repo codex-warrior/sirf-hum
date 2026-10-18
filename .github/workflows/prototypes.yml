@@ -200,6 +200,18 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
       - name: Record the exact upstream commit
         run: git rev-parse HEAD
+      # OpenMLS's workspace includes a `cli` demo that depends on termion from
+      # gitlab.redox-os.org; that git host became unreachable on 2026-10-18 and
+      # Cargo resolves every workspace member even for `-p openmls`. The cli is
+      # not part of the library, its tests or the IETF vectors, so drop just
+      # that member. Fails loudly if the edit does not apply.
+      - name: Drop the unrelated OpenMLS cli workspace member
+        if: matrix.repo == 'openmls/openmls'
+        run: |
+          grep -qx '    "cli",' Cargo.toml
+          sed -i '/^    "cli",$/d' Cargo.toml
+          ! grep -q '"cli"' Cargo.toml
+          echo "workspace members now:"; sed -n '/members/,/\]/p' Cargo.toml
       - name: Run the pinned release's own test suite (includes IETF MLS test vectors)
         run: |
           set +e
