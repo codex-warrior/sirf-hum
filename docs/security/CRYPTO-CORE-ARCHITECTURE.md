@@ -50,6 +50,7 @@ The wrapper's own code is policy:
 | **Firebase** | No crypto state, keys or plaintext. Only `EncryptedEnvelope` may reach infrastructure (already the rule). The package does not depend on Firebase. | Dependency graph; existing Security Rules unchanged |
 | **Web** | No private-content E2EE in V1 (D-046). Web compiles a stub where every call throws `unsupported`. | Conditional export on `dart.library.ffi`; `types_test.dart`; app test |
 | **Errors** | 17 stable `i32` codes. No strings, payloads or native messages cross the ABI. Unknown codes become `internal`. | `error.rs`, `CryptoErrorCode` |
+| **Dependencies** | Exact pins; OpenMLS versions fixed (D-054); `cargo audit --deny warnings` with three documented ignores, re-verified on every run, for code that is never compiled or never shipped (D-068) | `tool/check_crypto_core.sh`, `tool/crypto_audit.sh` |
 | **Logging** | The core never logs. CI fails on printing/logging macros or crates in `src/` and on OpenMLS `crypto-debug`/`content-debug` features. Dart types print `<redacted>`. App-side logging goes through `AppLogger` with category names only. | `tool/check_crypto_core.sh`, the source-scan test, clippy `print_*`/`dbg_macro` deny, redaction tests |
 
 ### Identity material

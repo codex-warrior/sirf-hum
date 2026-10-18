@@ -536,4 +536,13 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
   - 0.21.2 could not parse the current RustSec database (CVSS 4.0 vector in RUSTSEC-2026-0124) and failed closed. That was a tool failure, not a finding.
   - Assessed: RUSTSEC-2026-0124 affects `libcrux-chacha20poly1305 < 0.0.8`. We lock 0.0.9 (patched), so it does not apply.
   - A database-format break must be fixed by updating the tool, never by skipping the audit.
+- **Documented ignores** (`tool/crypto_audit.sh`; each is re-verified on every run, and the script fails if the reason stops holding):
+  - **RUSTSEC-2026-0330, RUSTSEC-2026-0331** (`libcrux-kem 0.0.9`: panics on short hybrid seeds and keys; medium and high).
+    - Why inapplicable: the crate is locked only as an inactive optional dependency (`hpke-rs` feature `libcrux` is off; `openmls_rust_crypto 0.6.0` uses the RustCrypto HPKE backend). It is never compiled, which CI build logs confirm.
+    - Why not bumped: `hpke-rs-libcrux 0.7.0` pins `=0.0.9`, and the fix needs `hpke-rs 0.8`, outside the D-054 pins.
+    - Check: `cargo tree --target all -e normal,build -i libcrux-kem` (and `hpke-rs-libcrux`) must be empty.
+  - **RUSTSEC-2026-0173** (`proc-macro-error2 2.0.1` unmaintained; not a vulnerability).
+    - Why inapplicable: it is used only by proc-macro crates (`hax-lib-macros`), so it runs at compile time and never ships in the binary. No maintained release exists.
+    - Check: every user of the crate in `cargo metadata` must be a proc-macro target.
+  - **Revisit:** any OpenMLS/provider upgrade (the D-054 delta review) must try to remove all three ignores. A new ignore needs the same treatment: a written reason, an automated re-check, and an entry here.
 - **Status:** Accepted · 2026-10-18

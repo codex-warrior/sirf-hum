@@ -193,11 +193,12 @@ jobs:
         run: git diff --exit-code -- packages/sirf_hum_crypto/native/Cargo.lock
       # RustSec advisories: known, published issues in locked dependencies
       # only. It cannot find unknown bugs. Warnings (unmaintained, unsound,
-      # yanked) fail too.
+      # yanked) fail too. The script re-verifies, on every run, why each of
+      # its three documented ignores is inapplicable (D-068).
       - name: Known-vulnerability audit (cargo-audit)
         run: |
           cargo +stable install cargo-audit --version "$CARGO_AUDIT_VERSION" --locked
-          cargo audit --file packages/sirf_hum_crypto/native/Cargo.lock --deny warnings
+          bash tool/crypto_audit.sh
       - name: Dart package (analyze, tests through the real native library)
         working-directory: packages/sirf_hum_crypto
         env:
