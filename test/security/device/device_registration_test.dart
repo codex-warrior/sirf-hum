@@ -1,6 +1,7 @@
-// Client-side registration flow (Prompt 07 §9–11) with a fake registry and
-// the real native core. Server-side verification (signature checks, replay,
-// cloning) is tested in functions/test against the Firestore emulator.
+// Client-side enrollment flow (Prompt 07 §9–11, Prompt 08 §7–8) with a fake
+// registry and the real native core. Server-side verification (signatures,
+// replay, cloning, approvals) is tested in functions/test against the
+// Firestore emulator.
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -12,60 +13,7 @@ import 'package:sirf_hum/security/device/device_status.dart';
 import 'package:sirf_hum_crypto/sirf_hum_crypto.dart';
 
 import 'device_test_support.dart';
-
-class FakeRegistry implements DeviceRegistry {
-  DeviceStatus serverStatus = DeviceStatus.unknown;
-  final calls = <String>[];
-  PendingDeviceRegistration? created;
-  final issued = <ActivationChallenge>[];
-  Uint8List? submittedProof;
-  String? submittedChallengeId;
-  DeviceRegistryException? failActivation;
-  int _next = 0;
-
-  @override
-  Future<DeviceStatus> status(AccountId account, String deviceIdHex) async {
-    calls.add('status');
-    return serverStatus;
-  }
-
-  @override
-  Future<void> createPending(PendingDeviceRegistration registration) async {
-    calls.add('createPending');
-    created = registration;
-    serverStatus = DeviceStatus.pending;
-  }
-
-  @override
-  Future<ActivationChallenge> requestActivationChallenge(
-    AccountId account,
-    String deviceIdHex,
-  ) async {
-    calls.add('challenge');
-    _next++;
-    final challenge = ActivationChallenge(
-      challengeId: 'c$_next'.padRight(32, '0'),
-      challenge: Uint8List.fromList(List.filled(32, _next)),
-    );
-    issued.add(challenge);
-    return challenge;
-  }
-
-  @override
-  Future<void> activate(
-    AccountId account,
-    String deviceIdHex,
-    String challengeId,
-    Uint8List proof,
-  ) async {
-    calls.add('activate');
-    submittedChallengeId = challengeId;
-    submittedProof = proof;
-    final failure = failActivation;
-    if (failure != null) throw failure;
-    serverStatus = DeviceStatus.active;
-  }
-}
+import 'fake_registry.dart';
 
 class CapturingSink implements LogSink {
   final records = <String>[];
@@ -95,78 +43,129 @@ void main() {
       dir.deleteSync(recursive: true);
     });
 
-    Future<DeviceStatus> run() => DeviceRegistrationFlow(registry).ensureActive(
-      core: core,
-      account: account,
-      platform: DevicePlatform.android,
-    );
+    String ownId() =>
+        PendingDeviceRegistration.hexOf(core.publicIdentity().deviceId);
 
-    test('new device: register pending, prove possession, active', () async {
-      expect(await run(), DeviceStatus.active);
+    Future<EnrollmentState> run() => DeviceRegistrationFlow(
+      registry,
+    ).enroll(core: core, account: account, platform: DevicePlatform.android);
+
+    test('first device: register, prove possession, active', () async {
+      expect(await run(), isA<EnrollmentActive>());
       expect(registry.calls, [
         'status',
-        'createPending',
-        'challenge',
+        'register',
+        'challenge:activation',
         'activate',
       ]);
-      final created = registry.created!;
-      expect(created.deviceIdHex, hasLength(32));
-      expect(created.certificate, core.publicIdentity().certificate);
-      expect(registry.submittedProof, hasLength(64));
-      expect(registry.submittedChallengeId, registry.issued.single.challengeId);
+      expect(registry.certificates[ownId()], core.publicIdentity().certificate);
+      expect(registry.submitted['activate'], hasLength(64));
     });
 
-    test('the proof is computed over the issued challenge', () async {
-      await run();
-      expect(
-        registry.submittedProof,
-        core.deviceProof(
-          DeviceProofPurpose.activation,
-          registry.issued.single.challenge,
-        ),
-      );
-    });
+    test(
+      'second device: approval required, proven request, comparison code',
+      () async {
+        registry.trustInitialized = true; // another device is already trusted
+        final state = await run();
+        expect(state, isA<EnrollmentAwaitingApproval>());
+        final awaiting = state as EnrollmentAwaitingApproval;
+        expect(registry.calls, [
+          'status',
+          'register',
+          'challenge:activation',
+          'requestApproval',
+          'prove',
+        ]);
+        // The proof is an ENROLLMENT proof over the request's challenge.
+        expect(
+          registry.submitted['prove'],
+          core.deviceProof(
+            DeviceProofPurpose.enrollment,
+            awaiting.request.challenge,
+          ),
+        );
+        // The code this device shows is the one approvers will compute.
+        expect(
+          awaiting.code,
+          CryptoCore.approvalCode(
+            newCertificate: core.publicIdentity().certificate,
+            challenge: awaiting.request.challenge,
+          ),
+        );
+        expect(registry.statuses[ownId()], DeviceStatus.pending);
+      },
+    );
+
+    test(
+      'the activation proof is computed over the issued challenge',
+      () async {
+        await run();
+        expect(registry.submitted['activate'], hasLength(64));
+        expect(registry.issuedChallenges, hasLength(1));
+      },
+    );
 
     test('already active: no writes at all', () async {
-      registry.serverStatus = DeviceStatus.active;
-      expect(await run(), DeviceStatus.active);
+      registry.statuses[ownId()] = DeviceStatus.active;
+      expect(await run(), isA<EnrollmentActive>());
       expect(registry.calls, ['status']);
     });
 
-    test('revoked: terminal, never re-registered or re-activated', () async {
-      registry.serverStatus = DeviceStatus.revoked;
-      expect(await run(), DeviceStatus.revoked);
-      expect(registry.calls, ['status']);
-    });
+    for (final terminal in [
+      DeviceStatus.revoked,
+      DeviceStatus.rejected,
+      DeviceStatus.expired,
+    ]) {
+      test(
+        '${terminal.name}: terminal, never re-registered or re-activated',
+        () async {
+          registry.statuses[ownId()] = terminal;
+          final state = await run();
+          expect(
+            state,
+            isA<EnrollmentTerminal>().having(
+              (s) => s.status,
+              'status',
+              terminal,
+            ),
+          );
+          expect(registry.calls, ['status']);
+        },
+      );
+    }
 
     test(
       'pending (interrupted earlier): resumes with a NEW challenge',
       () async {
-        registry.serverStatus = DeviceStatus.pending;
-        expect(await run(), DeviceStatus.active);
-        expect(registry.calls, ['status', 'challenge', 'activate']);
+        registry.statuses[ownId()] = DeviceStatus.pending;
+        expect(await run(), isA<EnrollmentActive>());
+        expect(registry.calls, ['status', 'challenge:activation', 'activate']);
       },
     );
 
     test('a failed activation never reuses its challenge on retry', () async {
-      registry.failActivation = const DeviceRegistryException(
-        DeviceRegistryFailure.challengeExpired,
+      registry.statuses[ownId()] = DeviceStatus.pending;
+      registry.failNext = null;
+      // Fail the activate call itself (after a challenge was issued).
+      final failing = _FailingActivation(registry);
+      await expectLater(
+        DeviceRegistrationFlow(failing).enroll(
+          core: core,
+          account: account,
+          platform: DevicePlatform.android,
+        ),
+        throwsA(isA<DeviceRegistryException>()),
       );
-      await expectLater(run(), throwsA(isA<DeviceRegistryException>()));
-      registry.failActivation = null;
-      expect(await run(), DeviceStatus.active);
-      expect(registry.issued, hasLength(2));
-      expect(
-        registry.submittedChallengeId,
-        isNot(registry.issued.first.challengeId),
-      );
+      expect(await run(), isA<EnrollmentActive>());
+      expect(registry.issuedChallenges, hasLength(2));
+      expect(registry.issuedChallenges.toSet(), hasLength(2));
     });
 
     test(
-      'refuses to register when the core belongs to another account',
+      'refuses to enroll when the core belongs to another account',
       () async {
         await expectLater(
-          DeviceRegistrationFlow(registry).ensureActive(
+          DeviceRegistrationFlow(registry).enroll(
             core: core,
             account: AccountId('accountB'),
             platform: DevicePlatform.ios,
@@ -183,36 +182,35 @@ void main() {
       },
     );
 
-    test(
-      'logs carry only status categories, never identity material',
-      () async {
-        final sink = CapturingSink();
-        AppLogger.configure(sinks: [sink], minimumLevel: LogLevel.debug);
-        addTearDown(
-          () => AppLogger.configure(
-            sinks: const [DeveloperLogSink()],
-            minimumLevel: LogLevel.debug,
-          ),
-        );
-        await run();
-        final logs = sink.records.join('\n');
-        final secrets = [
-          PendingDeviceRegistration.hexOf(core.publicIdentity().deviceId),
-          base64Encode(registry.submittedProof!),
-          base64Encode(core.publicIdentity().certificate),
-          base64Encode(registry.issued.single.challenge),
-          account.value,
-        ];
-        for (final s in secrets) {
-          expect(logs, isNot(contains(s)));
-        }
-        expect(logs, contains('device_registration_status'));
-      },
-    );
+    test('logs carry only state categories, never identity material', () async {
+      final sink = CapturingSink();
+      AppLogger.configure(sinks: [sink], minimumLevel: LogLevel.debug);
+      addTearDown(
+        () => AppLogger.configure(
+          sinks: const [DeveloperLogSink()],
+          minimumLevel: LogLevel.debug,
+        ),
+      );
+      registry.trustInitialized = true;
+      final state = await run() as EnrollmentAwaitingApproval;
+      final logs = sink.records.join('\n');
+      for (final s in [
+        ownId(),
+        base64Encode(registry.submitted['prove']!),
+        base64Encode(core.publicIdentity().certificate),
+        base64Encode(state.request.challenge),
+        state.request.requestId,
+        state.code.toString().padLeft(6, '0'),
+        account.value,
+      ]) {
+        expect(logs, isNot(contains(s)));
+      }
+      expect(logs, contains('device_enrollment_state'));
+    });
   }, skip: nativeSkip);
 
   group('records', () {
-    test('pending record validates the certificate size', () {
+    test('registration validates the certificate size', () {
       final id = DeviceId(Uint8List(16));
       for (final bad in [Uint8List(0), Uint8List(513)]) {
         expect(
@@ -234,11 +232,19 @@ void main() {
       expect(RegExp(r'^[0-9a-f]{32}$').hasMatch(hex), isTrue);
     });
 
-    test('challenges must be exactly 32 bytes', () {
+    test('challenges and requests must be exactly 32 bytes', () {
       for (final len in [0, 31, 33]) {
         expect(
           () =>
               ActivationChallenge(challengeId: 'x', challenge: Uint8List(len)),
+          throwsA(isA<DeviceRegistryException>()),
+        );
+        expect(
+          () => ApprovalRequest(
+            requestId: 'x',
+            challenge: Uint8List(len),
+            expiresAtUnix: 1,
+          ),
           throwsA(isA<DeviceRegistryException>()),
         );
       }
@@ -250,11 +256,21 @@ void main() {
         'unauthenticated': DeviceRegistryFailure.unauthenticated,
         'device_not_found': DeviceRegistryFailure.deviceNotFound,
         'device_not_pending': DeviceRegistryFailure.deviceNotPending,
+        'device_expired': DeviceRegistryFailure.deviceExpired,
         'challenge_invalid': DeviceRegistryFailure.challengeInvalid,
         'challenge_expired': DeviceRegistryFailure.challengeExpired,
         'proof_invalid': DeviceRegistryFailure.proofInvalid,
         'certificate_invalid': DeviceRegistryFailure.certificateInvalid,
         'duplicate_device': DeviceRegistryFailure.duplicateDevice,
+        'too_many_pending': DeviceRegistryFailure.tooManyPending,
+        'approval_required': DeviceRegistryFailure.approvalRequired,
+        'request_invalid': DeviceRegistryFailure.requestInvalid,
+        'request_expired': DeviceRegistryFailure.requestExpired,
+        'approver_not_trusted': DeviceRegistryFailure.approverNotTrusted,
+        'approval_invalid': DeviceRegistryFailure.approvalInvalid,
+        'recovery_unavailable': DeviceRegistryFailure.recoveryUnavailable,
+        'recovery_invalid': DeviceRegistryFailure.recoveryInvalid,
+        'rate_limited': DeviceRegistryFailure.rateLimited,
       };
       expected.forEach((category, failure) {
         expect(DeviceRegistryFailure.fromServer(category), failure);
@@ -267,7 +283,26 @@ void main() {
       }
     });
 
-    test('records and challenges print redacted', () {
+    test('server failure categories cover every server category', () {
+      // Drift guard: every category in functions/src/device/common.ts maps.
+      final source = File('functions/src/device/common.ts').readAsStringSync();
+      final block = RegExp(
+        r'export type DeviceFailure =([^;]*);',
+      ).firstMatch(source)!.group(1)!;
+      final categories = RegExp(
+        r"'([a-z_]+)'",
+      ).allMatches(block).map((m) => m[1]!);
+      expect(categories, isNotEmpty);
+      for (final c in categories) {
+        expect(
+          DeviceRegistryFailure.fromServer(c),
+          isNot(DeviceRegistryFailure.unavailable),
+          reason: c,
+        );
+      }
+    });
+
+    test('records, challenges and requests print redacted', () {
       final r = PendingDeviceRegistration(
         accountId: account,
         deviceId: DeviceId(Uint8List(16)),
@@ -282,6 +317,36 @@ void main() {
         ).toString(),
         contains('<redacted>'),
       );
+      expect(
+        ApprovalRequest(
+          requestId: 'id',
+          challenge: Uint8List(32),
+          expiresAtUnix: 1,
+        ).toString(),
+        contains('<redacted>'),
+      );
     });
   });
+}
+
+/// Delegates to [FakeRegistry] but fails the activation call once.
+class _FailingActivation implements DeviceRegistry {
+  _FailingActivation(this._inner);
+
+  final FakeRegistry _inner;
+
+  @override
+  Future<void> activate(AccountId a, String d, String c, Uint8List p) async =>
+      throw const DeviceRegistryException(
+        DeviceRegistryFailure.challengeExpired,
+      );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      Function.apply(switch (invocation.memberName) {
+        #status => _inner.status,
+        #register => _inner.register,
+        #requestChallenge => _inner.requestChallenge,
+        _ => throw UnimplementedError(),
+      }, invocation.positionalArguments);
 }
