@@ -18,6 +18,8 @@ export const TTL = {
   approvalRequestMs: 10 * 60 * 1000,
   /** A registered device that is never activated expires after this. */
   pendingDeviceMs: 7 * 24 * 60 * 60 * 1000,
+  /** Identity reset takes effect only after this public, cancellable delay (D-082). */
+  identityResetDelayMs: 7 * 24 * 60 * 60 * 1000,
 } as const;
 
 /** At most this many pending devices per account at a time. */
@@ -57,6 +59,9 @@ export type DeviceFailure =
   | 'approval_invalid'
   | 'recovery_unavailable'
   | 'recovery_invalid'
+  | 'revocation_invalid'
+  | 'reset_unavailable'
+  | 'reset_not_ready'
   | 'rate_limited';
 
 export class DeviceError extends Error {

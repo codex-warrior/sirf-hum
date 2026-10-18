@@ -13,44 +13,33 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Device registry (Prompts 07–08, docs/security/DEVICE-IDENTITY.md).
+    // Device registry and account trust (Prompts 07–09,
+    // docs/security/DEVICE-IDENTITY.md, docs/security/MULTI-DEVICE-TRUST.md).
     //
-    // A record is public, server-visible metadata about one device of one
-    // account. It is a directory entry, never proof of trust. Every write
-    // that creates or extends trust is server-only (Cloud Functions, Admin
-    // SDK): registration (rate-limited, certificate verified), first-device
-    // activation, approval by a trusted device, recovery. Firebase Auth
-    // alone never makes a device trusted.
+    // Records are public, server-visible metadata. They are a directory,
+    // never proof of trust: devices verify the signed evidence on them
+    // themselves (D-084). EVERY write is server-only (Cloud Functions,
+    // Admin SDK): registration, activation, approval, recovery, signed
+    // revocation (D-081), identity reset (D-082), trust epochs (D-083).
+    // Firebase Auth alone never creates, extends or removes device trust.
     //
-    // Clients may only:
-    //   - read their own records;
-    //   - revoke their own record (pending/active -> revoked, one way).
-    // Nobody may create or delete a record from a client, so a revoked
-    // device ID can never be re-created and re-activated. Terminal states
-    // (revoked, rejected, expired) can never change. Server-only
-    // collections (accountTrust, deviceChallenges, deviceApprovalRequests,
-    // deviceIdIndex, deviceKeyIndex, rateLimits) stay default-deny.
+    // Clients may only read their own records. Server-only collections
+    // (deviceChallenges, deviceApprovalRequests, deviceIdIndex,
+    // deviceKeyIndex, rateLimits) stay default-deny.
     match /users/{accountId}/devices/{deviceId} {
       allow read: if isAccountOwner(accountId);
-      allow create: if false;
-      allow update: if isAccountOwner(accountId) && isValidSelfRevocation();
-      allow delete: if false;
+      allow write: if false;
+    }
+
+    // The owner reads the trust epoch, reset status and the recovery key's
+    // PUBLIC half to verify freshness (D-083) and lineage (D-084).
+    match /accountTrust/{accountId} {
+      allow read: if isAccountOwner(accountId);
+      allow write: if false;
     }
 
     function isAccountOwner(accountId) {
       return request.auth != null && request.auth.uid == accountId;
-    }
-
-    // The owner may retire a device; nothing else about the record changes,
-    // and a revoked record can never change again.
-    function isValidSelfRevocation() {
-      let before = resource.data;
-      let after = request.resource.data;
-      return before.status in ['pending', 'active']
-        && after.status == 'revoked'
-        && after.diff(before).affectedKeys().hasOnly(['status', 'revokedAt', 'revokedReason'])
-        && after.revokedAt == request.time
-        && after.revokedReason == 'user_removed';
     }
   }
 }

@@ -38,9 +38,10 @@ import {
   TTL,
 } from './common';
 import { CHALLENGE_BYTES, InvalidProofError, PROOF_BYTES, ProofPurpose, verifyDeviceProof } from './proof';
+import { bumpEpoch } from './epoch';
 import { consume, requireBudget } from './rateLimit';
 
-export const CHALLENGE_PURPOSES = ['activation', 'recovery_registration'] as const;
+export const CHALLENGE_PURPOSES = ['activation', 'recovery_registration', 'revocation', 'reset_cancel'] as const;
 export type ChallengePurpose = (typeof CHALLENGE_PURPOSES)[number];
 
 export interface IssuedChallenge {
@@ -51,6 +52,14 @@ export interface IssuedChallenge {
   /** The value signed into statements (whole seconds). */
   readonly expiresAtUnix: number;
 }
+
+/**
+ * Proof of possession may activate a device only while the account has no
+ * trust yet, or after a completed identity reset opened a new identity epoch
+ * (D-075, D-082). Never otherwise.
+ */
+export const bootstrapAllowed = (trust: DocumentSnapshot): boolean =>
+  !trust.exists || trust.get('bootstrapOpen') === true;
 
 export const keyIndexId = (deviceSignatureKey: Buffer): string =>
   createHash('sha256').update(deviceSignatureKey).digest('hex');
@@ -104,19 +113,20 @@ export async function registerDevice(
   await consume(db, accountId, 'register', now);
 
   const devices = db.collection(Collections.users).doc(accountId).collection(Collections.devices);
-  const pending = await devices.where('status', '==', 'pending').count().get();
-  if (pending.data().count >= MAX_PENDING_DEVICES) throw new DeviceError('too_many_pending');
-
   const expiresAt = new Date(now.getTime() + TTL.pendingDeviceMs);
   await db.runTransaction(async (tx) => {
     const ref = deviceRef(db, accountId, deviceId);
-    const [existing, idIndex, keyIndex] = await Promise.all([
+    // The pending count is read inside the transaction, so concurrent
+    // registrations cannot exceed the cap (Prompt 09 race fix).
+    const [existing, idIndex, keyIndex, pending] = await Promise.all([
       tx.get(ref),
       tx.get(db.collection(Collections.deviceIdIndex).doc(deviceId)),
       tx.get(db.collection(Collections.deviceKeyIndex).doc(keyIndexId(deviceSignatureKey))),
+      tx.get(devices.where('status', '==', 'pending')),
     ]);
     // An existing record (even revoked) or an activated ID/key is never reused.
     if (existing.exists || idIndex.exists || keyIndex.exists) throw new DeviceError('duplicate_device');
+    if (pending.size >= MAX_PENDING_DEVICES) throw new DeviceError('too_many_pending');
     tx.create(ref, {
       schemaVersion: DEVICE_SCHEMA_VERSION,
       status: 'pending',
@@ -158,7 +168,7 @@ export async function issueDeviceChallenge(
     const failure = pendingFailure(device, now);
     if (failure === 'device_expired') await device.ref.update({ status: 'expired' });
     if (failure !== null) throw new DeviceError(failure);
-    if (trust.exists) throw new DeviceError('approval_required');
+    if (!bootstrapAllowed(trust)) throw new DeviceError('approval_required');
   } else {
     if (!device.exists) throw new DeviceError('device_not_found');
     if (device.get('status') !== 'active') throw new DeviceError('approver_not_trusted');
@@ -225,7 +235,7 @@ export async function activateDevice(db: Firestore, uid: string | undefined, dat
 
     let outcome: DeviceFailure | null =
       challengeFailure(challengeSnap, accountId, deviceId, 'activation', now) ?? pendingFailure(deviceSnap, now);
-    if (outcome === null && trust.exists) outcome = 'approval_required';
+    if (outcome === null && !bootstrapAllowed(trust)) outcome = 'approval_required';
 
     let keyId: string | undefined;
     if (outcome === null) {
@@ -255,13 +265,18 @@ export async function activateDevice(db: Firestore, uid: string | undefined, dat
     tx.delete(challengeRef);
     if (outcome === 'device_expired') tx.update(devRef, { status: 'expired' });
     if (outcome !== null || keyIndexRef === undefined) return outcome;
-    tx.create(trustRef(db, accountId), { initializedAt: FieldValue.serverTimestamp(), firstDeviceId: deviceId });
+    const epoch = bumpEpoch(tx, trustRef(db, accountId), trust, {
+      initializedAt: FieldValue.serverTimestamp(),
+      firstDeviceId: deviceId,
+      bootstrapOpen: false,
+    });
     tx.create(idIndexRef, { accountId });
     tx.create(keyIndexRef, { accountId, deviceId });
     tx.update(devRef, {
       status: 'active',
       activatedAt: FieldValue.serverTimestamp(),
       activationMethod: 'first_device',
+      activatedEpoch: epoch,
       expiresAt: FieldValue.delete(),
     });
     return null;

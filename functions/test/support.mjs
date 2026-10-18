@@ -9,7 +9,7 @@ import statementsModule from '../lib/device/statements.js';
 
 const { certificateSignedPayload, lengthPrefixed } = certModule;
 const { deviceProofPayload, ProofPurpose } = proofModule;
-const { approvalCode, approvalPayload, recoveryApprovalPayload, recoveryRegistrationPayload } = statementsModule;
+const { approvalCode, approvalPayload, recoveryApprovalPayload, recoveryRegistrationPayload, resetCancelPayload, revocationPayload } = statementsModule;
 
 // DER PKCS#8 prefix for a raw 32-byte Ed25519 seed (RFC 8410).
 const PKCS8_PREFIX = Buffer.from('302e020100300506032b657004220420', 'hex');
@@ -125,5 +125,103 @@ export function trustVectors() {
     recoverySignatureHex: recoveryApproval.signature.toString('hex'),
     recoveryPayloadHex: recoveryApproval.payload.toString('hex'),
     approvalCode: String(approvalCode(newDevice.certificate, challenge)).padStart(6, '0'),
+  };
+}
+
+export function makeRevocation({ revoker, revoked, accountId, reason = 3, challenge, expiresAtUnix, signer = revoker.person }) {
+  const payload = revocationPayload(accountId, revoker.certificate, revoked.certificate, reason, Buffer.from(challenge), expiresAtUnix);
+  return { payload, signature: sign(null, payload, signer.privateKey) };
+}
+
+export function makeResetCancel({ device, accountId, challenge, expiresAtUnix, signer = device.person }) {
+  const payload = resetCancelPayload(accountId, device.certificate, Buffer.from(challenge), expiresAtUnix);
+  return { payload, signature: sign(null, payload, signer.privateKey) };
+}
+
+// ---- lineage wire format (packages/sirf_hum_crypto/native/src/lineage.rs) ----
+const u32 = (n) => {
+  const b = Buffer.alloc(4);
+  b.writeUInt32BE(n, 0);
+  return b;
+};
+const u64 = (n) => {
+  const b = Buffer.alloc(8);
+  b.writeBigUInt64BE(BigInt(n), 0);
+  return b;
+};
+const lp = (buf) => Buffer.concat([u32(buf.length), Buffer.from(buf)]);
+
+/** Encodes a lineage request exactly as the Dart client does. */
+export function encodeLineage({ accountId, root, links = [], revocations = [], revokedIds = [] }) {
+  const parts = [Buffer.from([1]), lp(Buffer.from(accountId, 'utf8')), lp(root), u32(links.length)];
+  for (const l of links) {
+    if (l.kind === 'approval') {
+      parts.push(Buffer.from([1, l.protocolVersion ?? 1]), lp(l.approverCertificate), lp(l.newCertificate), lp(l.challenge), u64(l.expiresAtUnix), lp(l.signature));
+    } else {
+      const r = l.registration;
+      parts.push(
+        Buffer.from([2, l.protocolVersion ?? 1]),
+        lp(r.registrarCertificate), lp(r.recoveryPublicKey), lp(r.challenge), u64(r.expiresAtUnix), lp(r.signature),
+        lp(l.newCertificate), lp(l.challenge), u64(l.expiresAtUnix), lp(l.signature),
+      );
+    }
+  }
+  parts.push(u32(revocations.length));
+  for (const r of revocations) {
+    parts.push(Buffer.from([r.protocolVersion ?? 1]), lp(r.revokerCertificate), lp(r.revokedCertificate), Buffer.from([r.reason]), lp(r.challenge), u64(r.expiresAtUnix), lp(r.signature));
+  }
+  parts.push(u32(revokedIds.length), ...revokedIds.map((id) => Buffer.from(id)));
+  return Buffer.concat(parts);
+}
+
+/** Golden vectors for Prompt 09 (revocation, reset cancel, lineage). */
+export function trustVectorsV2() {
+  const accountId = 'vectorAccount02';
+  const A = makeDevice(0x61, 0x62, 'b1b2b3b4b5b6b7b8b9babbbcbdbebfc0');
+  const B = makeDevice(0x63, 0x64, 'c1c2c3c4c5c6c7c8c9cacbcccdcecfd0');
+  const C = makeDevice(0x65, 0x66, 'd1d2d3d4d5d6d7d8d9dadbdcdddedfe0');
+  const recovery = keyFromSeed(seed(0x67));
+  const ch = (b) => Buffer.alloc(32, b);
+  const exp = 1_760_001_000;
+  const approvalAB = makeApproval({ approver: A, newDevice: B, accountId, challenge: ch(0x71), expiresAtUnix: exp });
+  const registration = makeRecoveryRegistration({ registrar: B, recovery, accountId, challenge: ch(0x72), expiresAtUnix: exp });
+  const recoveryC = makeRecoveryApproval({ recovery, newDevice: C, accountId, challenge: ch(0x73), expiresAtUnix: exp });
+  const revocation = makeRevocation({ revoker: A, revoked: B, accountId, reason: 3, challenge: ch(0x74), expiresAtUnix: exp });
+  const cancel = makeResetCancel({ device: C, accountId, challenge: ch(0x75), expiresAtUnix: exp });
+  const lineage = encodeLineage({
+    accountId,
+    root: A.certificate,
+    links: [
+      { kind: 'approval', approverCertificate: A.certificate, newCertificate: B.certificate, challenge: ch(0x71), expiresAtUnix: exp, signature: approvalAB.signature },
+      {
+        kind: 'recovery',
+        registration: { registrarCertificate: B.certificate, recoveryPublicKey: recovery.publicKey, challenge: ch(0x72), expiresAtUnix: exp, signature: registration.signature },
+        newCertificate: C.certificate, challenge: ch(0x73), expiresAtUnix: exp, signature: recoveryC.signature,
+      },
+    ],
+    revocations: [
+      { revokerCertificate: A.certificate, revokedCertificate: B.certificate, reason: 3, challenge: ch(0x74), expiresAtUnix: exp, signature: revocation.signature },
+    ],
+  });
+  const hex = (b) => Buffer.from(b).toString('hex');
+  return {
+    description:
+      'Signed revocation, identity-reset cancellation and a full lineage (A root; A approves B; B registers a recovery key that recovers C; A revokes B) — D-081, D-082, D-084. Generated by functions/test/vectors/generate.mjs; verified by functions and Rust tests; Dart encodes the identical lineage blob.',
+    accountId,
+    certAHex: hex(A.certificate),
+    certBHex: hex(B.certificate),
+    certCHex: hex(C.certificate),
+    recoveryPublicKeyHex: hex(recovery.publicKey),
+    expiresAtUnix: String(exp),
+    approvalABSignatureHex: hex(approvalAB.signature),
+    registrationSignatureHex: hex(registration.signature),
+    recoveryCSignatureHex: hex(recoveryC.signature),
+    revocationPayloadHex: hex(revocation.payload),
+    revocationSignatureHex: hex(revocation.signature),
+    resetCancelPayloadHex: hex(cancel.payload),
+    resetCancelSignatureHex: hex(cancel.signature),
+    lineageBlobHex: hex(lineage),
+    // Trusted after verification: A and C (B revoked), as u32 count + ids.
+    lineageResultHex: hex(Buffer.concat([u32(2), A.deviceId, C.deviceId])),
   };
 }
