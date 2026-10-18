@@ -524,7 +524,7 @@ fn error_codes_are_stable_unique_and_safe() {
         assert_eq!(e.code(), code);
         assert_eq!(e.name(), name);
         assert_eq!(e.to_string(), name);
-        assert_eq!(format!("{e:?}").len() < 40, true);
+        assert!(format!("{e:?}").len() < 40);
     }
 }
 
