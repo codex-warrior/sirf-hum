@@ -67,7 +67,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-057 | Crypto core validates every credential before merge (OpenMLS has no identity-provider hook) | Accepted | 2026-10-16 |
 | D-058 | Transactional local storage provider (one atomic write per operation) | Accepted | 2026-10-16 |
 | D-059 | Size/structure limits on MLS input before parsing | Accepted | 2026-10-16 |
-| D-060 | Past-epoch key retention window | **Open** | 2026-10-16 |
+| D-060 | Past-epoch key retention window | **Resolved for messaging by D-091** (window 0) | 2026-10-16 |
 | D-061 | Crypto agility: explicit protocol/ciphersuite/implementation/schema versions on every record | Accepted | 2026-10-16 |
 | D-062 | Keep the backend-neutral harness + interop suite as a library-switch safety net | Accepted | 2026-10-16 |
 | D-063 | Flutter bridge: own hand-written C ABI + first-party Flutter native assets (not flutter_rust_bridge) | **Accepted** (Prompt 06) | 2026-10-18 |
@@ -88,6 +88,17 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-078 | Server-authoritative expiry (challenge 5 min, request 10 min, pending device 7 days) with lazy enforcement and an idempotent scheduled cleanup | Accepted (scheduler needs Blaze) | 2026-10-18 |
 | D-079 | Local rollback protection is not provided; analysis recorded; production hardening must choose an external freshness anchor | **Open** | 2026-10-18 |
 | D-080 | Revocation: owner session may revoke (one way); no cascade, lineage recorded; approvals die with their approver | Accepted | 2026-10-18 |
+| D-081 | Signed revocation by an active device's PIK; no client writes to device records | Accepted (development) | 2026-10-18 |
+| D-082 | Identity reset: delayed 7 days, cancellable by any trusted device, to a new identity | Accepted (development) | 2026-10-18 |
+| D-083 | Server trust epoch; devices refuse an older view | Accepted (development) | 2026-10-18 |
+| D-084 | Peer-side lineage verification in Rust | Accepted (development) | 2026-10-18 |
+| D-085 | Trust unit is the exact device certificate (device-pinned, one device per PIK); anchors only root lineage; revoking a device revokes its PIK | Accepted (development); own-account anchoring UX **Open** | 2026-10-19 |
+| D-086 | Conversations are server-provisioned from an accepted pairing only; clients cannot create or change membership | Accepted (development); pairing phase pending | 2026-10-19 |
+| D-087 | ABI v5 staged commits: stage, server acceptance, confirm/discard; ABI v4 semantics unchanged | Accepted (development) | 2026-10-19 |
+| D-088 | First commit wins per conversation epoch (create-only, rules-enforced); messages only at the current epoch; server arbitration never replaces MLS validation | Accepted (development) | 2026-10-19 |
+| D-089 | Versioned message envelope; routing fields bound in MLS authenticated data built by Rust; Rust-generated random message IDs | Accepted (development) | 2026-10-19 |
+| D-090 | Local message history as sealed core records in the account slot, atomic with MLS state; no plaintext fallback | Accepted (development) | 2026-10-19 |
+| D-091 | Per-epoch receive order; past-epoch window 0 (resolves D-060 for messaging); out-of-order tolerance 32; encrypt at compose, re-encrypt the same ID after a stale-epoch refusal | Accepted (development) | 2026-10-19 |
 
 ---
 
@@ -461,6 +472,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 ### D-060 — Past-epoch window
 - **Open:** OpenMLS defaults to keeping 0 past epochs, so late messages after a commit are rejected (measured); mls-rs keeps prior epochs. Choose a small window that balances delivery reliability against forward secrecy. Decide with the messaging design.
 - **Status:** Open · 2026-10-16
+- **Update (Prompt 10):** resolved for messaging by D-091: window 0, made safe by per-epoch processing and server-side current-epoch writes.
 
 ### D-061 — Crypto agility
 - **Decision:** Every protocol record carries explicit versions:
@@ -774,3 +786,69 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Trust anchor:** the root PIK is trusted only through partner out-of-band verification (D-064). The lineage proves descent from the root, not who the root is.
 - **Accepted limits:** the server can withhold evidence (omission) and controls ordering. Freshness is the trust epoch (D-083). There is no cascade (D-080).
 - **Status:** Accepted for development · 2026-10-18. Needs independent review.
+
+### D-085 — Device-pinned trust unit
+- **Problem:** the core trusted person keys (PIKs) and blocked device IDs. Since D-074 each device has its own PIK, which can sign any number of certificates. A revoked device could therefore certify a new device ID with its old PIK and pass validation.
+- **Decision:**
+  - The trust unit is the **exact device certificate** (person key, device ID, device signature key, issued-at, PIK signature). The core's `TrustPolicy` holds it with its source: own, approved, anchor, or the lineage of an account.
+  - Person keys verified out of band are **anchors**: roots for lineage verification. An anchor's own first certificate is accepted and **pinned**; a PIK certifies exactly one device ID.
+  - `trustLineage(lineage, trustEpoch)` (ABI v5) verifies an account's chain (D-084) from an anchored root. It trusts every proven certificate for that account, drops that account's devices no longer proven, and refuses a trust epoch older than one already applied.
+  - Revoking a device, locally or through lineage evidence, also revokes its PIK permanently.
+  - The state record moves to version 2. Version 1 still loads; its person keys become anchors.
+- **Rejected:**
+  - keeping PIK trust with only device-ID revocation (the gap);
+  - deriving device trust from Firebase records (server authority over trust).
+- **Open:** a non-root device must anchor its own account's root PIK. The verification UX belongs to the device-management/pairing phase.
+- **Status:** Accepted for development · 2026-10-19. Needs independent review.
+
+### D-086 — Server-authoritative conversation provisioning
+- **Decision:**
+  - A conversation (`conversations/{id}`, ID = 16 random bytes = MLS group ID) is created only by the server-internal `provisionConversation`.
+  - It needs a `pairings/{id}` record with `status: 'accepted'`, written by the future pairing phase.
+  - It also writes `accountPartners/{uid}` for both accounts, so each can read the other's public device directory for lineage verification.
+  - No callable exposes it. Clients cannot create pairings, conversations or partner records, or change membership.
+- **Reason:** couple membership is relationship metadata that the server must authorize; clients must never declare it.
+- **Status:** Accepted for development · 2026-10-19. Unreachable in the product until pairing exists.
+
+### D-087 — ABI v5 staged commits
+- **Decision:**
+  - Membership-changing commits for messaging are staged (`create_conversation_group`, `stage_add_members`, `stage_remove_members`, `stage_self_update`), uploaded, then confirmed with `confirm_commit(fromEpoch)` or dropped with `discard_commit(fromEpoch)`.
+  - Staging never advances the active epoch.
+  - A duplicate confirm is idempotent. Confirming after a discard, or at the wrong epoch, fails with `no_staged_commit` (-23).
+  - While a commit is staged, sending, other commits and ABI v4 membership calls are refused with `commit_pending` (-22). Application messages may still be processed.
+  - Discarding an unconfirmed new group deletes it.
+  - ABI v4 functions keep their immediate-merge semantics for regression.
+- **Status:** Accepted for development · 2026-10-19.
+
+### D-088 — First commit wins per epoch
+- **Decision:**
+  - `conversations/{c}/commits/{epoch}` is create-only. It is written in one batch with the conversation `epoch` moving to `epoch + 1` and with that commit's Welcomes.
+  - Rules check both halves of the batch, and that the writer is a member using an `active` device.
+  - Messages are accepted only at the current epoch.
+  - The server orders and authorizes; it never parses or validates MLS. Every device validates the winning commit itself and rejects an invalid one.
+- **Status:** Accepted for development · 2026-10-19. Emulator-tested only.
+
+### D-089 — Message envelope and authenticated data
+- **Decision:**
+  - A message document carries `schemaVersion`, `protocolVersion`, `senderAccountId`, `senderDeviceId`, `epoch`, `ciphertext` and `serverTime`. Its ID is a 16-byte random message ID generated in Rust.
+  - Rust builds the MLS AAD `"SirfHum-MessageAAD" | 1 | schema | protocol | conversation id | message id | sender device id`.
+  - On receipt, Rust compares that AAD with the envelope fields and the authenticated sender, inside the rollback transaction (`envelope_mismatch`, -25).
+  - The envelope epoch must equal the MLS message epoch.
+  - `senderAccountId` is checked against the verified lineage.
+- **Status:** Accepted for development · 2026-10-19.
+
+### D-090 — Local encrypted message history
+- **Decision:**
+  - Sent and received messages are sealed core records (kind 5) in the account's slot directory, written in the same checkpoint as the MLS state change.
+  - A queued message's ciphertext lives in the same record until the server accepts it.
+  - Any persistence failure fails the operation. There is no plaintext fallback.
+- **Status:** Accepted for development · 2026-10-19.
+
+### D-091 — Ordering, past-epoch window, offline
+- **Decision:**
+  - Receivers process per epoch: all messages of epoch L, then commit L.
+  - The server accepts messages only at the current epoch and moves the epoch atomically with the commit. The past-epoch window therefore stays **0**, which resolves D-060 for messaging.
+  - The sender-ratchet out-of-order tolerance is 32 generations (the default is 5).
+  - Messages are encrypted at compose time. After a stale-epoch refusal, the same message ID is re-encrypted from the sealed record.
+  - No global or causal order is promised; display order is server time.
+- **Status:** Accepted for development · 2026-10-19.
