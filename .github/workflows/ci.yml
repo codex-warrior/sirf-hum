@@ -160,7 +160,9 @@ jobs:
     name: Crypto core (policy, fmt, clippy, tests, audit; Dart package)
     runs-on: ubuntu-24.04
     env:
-      CARGO_AUDIT_VERSION: 0.21.2
+      # 0.22.x parses CVSS 4.0 advisories; 0.21.2 failed on RUSTSEC-2026-0124
+      # (a database parse error, not a finding). Exact version, --locked.
+      CARGO_AUDIT_VERSION: 0.22.2
     steps:
       - uses: actions/checkout@v4
       # The crypto core's build hook runs cargo; rust-toolchain.toml pins the

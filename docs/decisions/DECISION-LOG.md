@@ -532,4 +532,8 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
   - a logging/printing macro or crate appears;
   - `cargo audit --deny warnings` reports a RustSec advisory (vulnerability, unmaintained, unsound or yanked).
 - **What it does not guarantee:** cargo-audit only knows *published* advisories. It finds no unknown bugs and is no substitute for review.
+- **Tool pin:** cargo-audit **0.22.2** (exact, `--locked`).
+  - 0.21.2 could not parse the current RustSec database (CVSS 4.0 vector in RUSTSEC-2026-0124) and failed closed. That was a tool failure, not a finding.
+  - Assessed: RUSTSEC-2026-0124 affects `libcrux-chacha20poly1305 < 0.0.8`. We lock 0.0.9 (patched), so it does not apply.
+  - A database-format break must be fixed by updating the tool, never by skipping the audit.
 - **Status:** Accepted · 2026-10-18
