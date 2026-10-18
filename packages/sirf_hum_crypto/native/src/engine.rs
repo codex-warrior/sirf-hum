@@ -67,6 +67,17 @@ pub enum Incoming {
     RemovedFromGroup,
 }
 
+// Never print decrypted content.
+impl core::fmt::Debug for Incoming {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Incoming::Application(_) => f.write_str("Application(<redacted>)"),
+            Incoming::CommitApplied { epoch } => write!(f, "CommitApplied {{ epoch: {epoch} }}"),
+            Incoming::RemovedFromGroup => f.write_str("RemovedFromGroup"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RosterEntry {
     pub device_id: DeviceId,
@@ -76,6 +87,12 @@ pub struct RosterEntry {
 pub struct AddResult {
     pub commit: Vec<u8>,
     pub welcome: Vec<u8>,
+}
+
+impl core::fmt::Debug for AddResult {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("AddResult(<redacted>)")
+    }
 }
 
 struct Identity {

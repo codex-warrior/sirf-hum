@@ -1,6 +1,6 @@
 # Cryptographic Boundaries
 
-Status: **Design (Prompt 04); crypto core, KeyStore, persistence and agility boundaries defined and platform feasibility measured (Prompt 05). Not implemented in the app.** Where plaintext and keys may
+Status: **Design (Prompt 04); boundaries defined and feasibility measured (Prompt 05); crypto-core foundation implemented in `packages/sirf_hum_crypto` (Prompt 06, [CRYPTO-CORE-ARCHITECTURE](../security/CRYPTO-CORE-ARCHITECTURE.md)). Not production E2EE: test key stores only, unreviewed, unused by features.** Where plaintext and keys may
 exist in code, and how the crypto core connects to Flutter and Firebase.
 Labels follow [E2EE-ARCHITECTURE](../security/E2EE-ARCHITECTURE.md#labels).
 
@@ -11,11 +11,11 @@ Labels follow [E2EE-ARCHITECTURE](../security/E2EE-ARCHITECTURE.md#labels).
 │ features/*/presentation   ◄── plaintext for display only         │
 │ features/*/application                                            │
 │ lib/security/  (Dart facade: small typed API, no key material)   │
-│      │  narrow C ABI + dart:ffi, or flutter_rust_bridge (D-063)   │
+│      │  narrow C ABI + dart:ffi, native assets (D-063, decided)   │
 ├──────┼───────────────────── Rust crypto core ────────────────────┤
 │ sirf_hum_crypto (our crate, thin):                                │
 │   - OpenMLS 0.9.1 (pinned, D-054) + crypto provider               │
-│   - storage provider → encrypted SQLite (KEK from platform)       │
+│   - sealed atomic state records (D-065; KEK provider, D-066)      │
 │   - credential validation (PIK certificates, roster policy)       │
 │   - media AEAD (secretstream) — binding UNRESOLVED                 │
 │   - exports: EncryptedEnvelope bytes, plaintext to facade only    │
@@ -61,7 +61,15 @@ This is feasibility only, not the production bridge.
 | Dart ↔ Rust | ✔ `dart:ffi` test (3/3) calls the C ABI on Linux and macOS: create, add, join, encrypt, decrypt, remove, commit processing; tamper/replay rejected through FFI | Opaque handles only; panics caught at the boundary |
 | Web | ✔ all scenarios pass on wasm32 under Node (wasm-bindgen-test); release wasm 2.70 MB (OpenMLS) | "WASM works" is **not** "web E2EE is acceptable"; see below |
 
-### Flutter integration path (UNRESOLVED; decide in Prompt 06)
+### Flutter integration path (DECIDED in Prompt 06: own C ABI + native assets, D-063)
+
+Implemented in `packages/sirf_hum_crypto`:
+
+- `hook/build.dart` runs cargo per target;
+- `lib/src/core_ffi.dart` holds the `@Native` bindings;
+- `lib/src/core_unsupported.dart` is the Web stub.
+
+The table below is the comparison that led to D-063.
 
 | Option | For | Against |
 | --- | --- | --- |

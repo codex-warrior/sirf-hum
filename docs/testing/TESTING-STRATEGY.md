@@ -14,7 +14,7 @@ the product is minimal. No coverage claims are made.
 | Cloud Functions | `node --test` on compiled output (+ `firebase-functions-test` later) | `functions/test/` | Environment/project guard; later server logic and authorization | ✅ environment guard tests |
 | Environment safety | `flutter_test` | `test/app/environment_guard_test.dart` | Builds cannot cross environments | ✅ |
 | Logging privacy | `flutter_test` | `test/core/logging/` | Redaction, error-type-only, sink isolation | ✅ |
-| E2EE | Known-answer vectors, cross-platform interop, negative tests ([E2EE-TEST-PLAN](E2EE-TEST-PLAN.md)) | Rust crypto core + `test/security/` | Cryptographic correctness | Planned; decision-gate prototype tests both MLS libraries (`prototypes/mls-decision-gate`) |
+| E2EE | Known-answer vectors, cross-platform interop, negative tests ([E2EE-TEST-PLAN](E2EE-TEST-PLAN.md)) | Rust crypto core + `test/security/` | Cryptographic correctness | Crypto-core foundation tests in `packages/sirf_hum_crypto` (Rust, Dart, device) and the decision-gate regression suite (`prototypes/mls-decision-gate`); vectors, interop and review still planned |
 | End-to-end | TBD (Patrol / integration_test on device farms) | — | Critical cross-platform flows (pair, message, call) | Future |
 
 ## Conventions
@@ -44,12 +44,15 @@ the product is minimal. No coverage claims are made.
 flutter test                                   # unit + widget
 flutter test integration_test --flavor development -d <device-id>   # integration (device/emulator)
 (cd firebase && npm ci && npm test)            # Security Rules (needs Java + firebase-tools)
+(cd packages/sirf_hum_crypto && dart test)     # crypto package (native tests need a Linux/macOS host)
+(cd packages/sirf_hum_crypto/native && cargo test --locked)   # Rust crypto core
 tool/verify.sh --all                           # everything runnable locally
 ```
 
 ## Gaps (honest)
 
-- Integration test not executed in CI (requires emulator or web driver setup). Locally: keep the emulator screen awake (`adb shell svc power stayon true`) or it renders no frames and the test hangs.
+- App smoke integration test not executed in CI (the crypto-core integration test is: Android emulator + iOS simulator). Locally: keep the emulator screen awake (`adb shell svc power stayon true`) or it renders no frames and the test hangs.
 - No golden (screenshot) tests yet — add once visual identity is set.
 - No Functions tests (no functions exist).
 - No coverage thresholds configured.
+- Rust crypto tests cannot link on Windows without the MSVC Build Tools; they run in CI (Linux).

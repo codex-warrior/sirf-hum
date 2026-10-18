@@ -116,6 +116,23 @@ partner re-verifies.
 escrow with Sirf Hum or Google, as a recovery mechanism. It would make the
 operator able to read content, contradicting the core promise (D-011).
 
+## Part 4: What the Prompt 06 crypto core implements
+
+Revocation and wipe exist; recovery does not.
+
+- **Device removal:** `removeMember` commits a Remove. On receipt, the
+  removed device gets `IncomingRemoved` and deletes its group state.
+  Tests cover the removed device online and offline, and restored
+  pre-removal state, none of which can decrypt the new epoch.
+- **Revocation:** `revokeDevice` adds a device ID to the local trust policy.
+  The core then refuses to add it again or accept it in a Welcome or commit.
+- **Wipe:** `wipe` deletes every local record and zeroizes memory. Deleting
+  the KEK as well is the platform adapter's job (D-066). Until then, wipe
+  is file deletion, not cryptographic erasure.
+- **Recovery: not implemented.** No recovery key, no backup and no archive.
+  There is no server key, no escrow and no export function, and none may be
+  added (Prompt 06 rules 7–8).
+
 Interaction with the MLS core (D-054):
 - Recovery restores the **identity** (PIK), never MLS group secrets.
 - A recovered device joins groups as a *new* member via Add/Welcome, so

@@ -271,7 +271,7 @@ fn replay_is_rejected() {
 fn tampering_anywhere_is_rejected() {
     let (mut alice, mut bob, gid) = couple();
     let ct = bob.core.encrypt(&gid, b"integrity").unwrap();
-    for pos in (0..ct.len()).step_by(3).chain([ct.len() - 1]) {
+    for pos in 0..ct.len() {
         let mut forged = ct.clone();
         forged[pos] ^= 1;
         assert!(alice.open(&forged).is_err(), "byte {pos} accepted");
@@ -541,6 +541,22 @@ fn identities_never_print_key_material() {
         .map(|b| format!("{b:02x}"))
         .collect();
     assert!(!text.contains(&hex[..16]));
+}
+
+#[test]
+fn decrypted_content_and_handshake_outputs_never_print() {
+    let (mut alice, mut bob, gid) = couple();
+    let ct = bob.core.encrypt(&gid, b"secret words").unwrap();
+    let incoming = alice.core.process_incoming(&ct).unwrap();
+    let text = format!("{incoming:?}");
+    assert_eq!(text, "Application(<redacted>)");
+    let mut carol = Device::new("c");
+    alice.trust(&carol);
+    let added = alice
+        .core
+        .add_member(&gid, &carol.core.key_package().unwrap())
+        .unwrap();
+    assert_eq!(format!("{added:?}"), "AddResult(<redacted>)");
 }
 
 // -------------------------------------------------------------------- logging
