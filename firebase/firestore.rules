@@ -12,5 +12,62 @@ service cloud.firestore {
     match /{document=**} {
       allow read, write: if false;
     }
+
+    // Device registry (Prompt 07, docs/security/DEVICE-IDENTITY.md).
+    //
+    // A record is public, server-visible metadata about one device of one
+    // account. It is a directory entry, never proof of trust: activation
+    // requires proof of possession of the device key, verified by the
+    // activateDevice Cloud Function (server-only writes for "active").
+    //
+    // Clients may only:
+    //   - create their own record in state "pending" with an exact schema;
+    //   - read their own records;
+    //   - revoke their own record (pending/active -> revoked, one way).
+    // Nobody may delete a record, so a revoked device ID can never be
+    // re-created and re-activated. Server-only collections
+    // (deviceChallenges, deviceIdIndex, deviceKeyIndex) stay default-deny.
+    match /users/{accountId}/devices/{deviceId} {
+      allow read: if isAccountOwner(accountId);
+      allow create: if isAccountOwner(accountId) && isValidPendingDevice(deviceId);
+      allow update: if isAccountOwner(accountId) && isValidSelfRevocation();
+      allow delete: if false;
+    }
+
+    function isAccountOwner(accountId) {
+      return request.auth != null && request.auth.uid == accountId;
+    }
+
+    // Exactly the fields of a v1 pending registration; every one justified in
+    // DEVICE-IDENTITY.md ("Server-visible fields").
+    function isValidPendingDevice(deviceId) {
+      let d = request.resource.data;
+      let fields = ['schemaVersion', 'status', 'platform', 'certificate',
+                    'ciphersuite', 'implementation', 'createdAt'];
+      return deviceId.matches('^[0-9a-f]{32}$')
+        && d.keys().hasAll(fields)
+        && d.keys().hasOnly(fields)
+        && d.schemaVersion == 1
+        && d.status == 'pending'
+        && d.platform in ['android', 'ios']
+        && d.certificate is bytes
+        && d.certificate.size() > 0
+        && d.certificate.size() <= 512
+        && d.ciphersuite == 1
+        && d.implementation == 'openmls/0.9.1'
+        && d.createdAt == request.time;
+    }
+
+    // The owner may retire a device; nothing else about the record changes,
+    // and a revoked record can never change again.
+    function isValidSelfRevocation() {
+      let before = resource.data;
+      let after = request.resource.data;
+      return before.status in ['pending', 'active']
+        && after.status == 'revoked'
+        && after.diff(before).affectedKeys().hasOnly(['status', 'revokedAt', 'revokedReason'])
+        && after.revokedAt == request.time
+        && after.revokedReason == 'user_removed';
+    }
   }
 }
