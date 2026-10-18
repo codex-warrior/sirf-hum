@@ -17,6 +17,10 @@ dependencies:
   go_router: ^17.5.0
   firebase_app_check: ^0.4.8
   firebase_crashlytics: ^5.4.0
+  # Device registry (Prompt 07, D-069): the pending record in Firestore and
+  # the challenge/activation callables. Imported only by lib/infrastructure.
+  cloud_firestore: ^6.10.0
+  cloud_functions: ^6.5.0
   # Crypto core (Rust + OpenMLS 0.9.1, D-063). Builds via its native-assets
   # hook, so Android/iOS builds need the Rust toolchain (rustup).
   sirf_hum_crypto:

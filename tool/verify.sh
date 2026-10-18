@@ -5,7 +5,8 @@
 #                             + crypto package analyze/tests
 #   tool/verify.sh --all      also the Rust crypto core (needs a native Rust
 #                             toolchain; on Windows that means MSVC Build
-#                             Tools), Functions (typecheck, lint, build, test),
+#                             Tools), Functions (typecheck, lint, build, test,
+#                             device-registration emulator tests),
 #                             Security Rules emulator tests, web build and
 #                             Android development + production builds
 set -euo pipefail
@@ -42,7 +43,7 @@ if [[ "${1:-}" == '--all' ]]; then
   )
 
   step 'Cloud Functions: typecheck, lint, build, test'
-  (cd functions && npm ci && npm run check)
+  (cd functions && npm ci && npm run check && npm run test:emulator)
 
   step 'Security Rules tests (emulators)'
   (cd firebase && npm ci && npm test)
