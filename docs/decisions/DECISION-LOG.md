@@ -80,6 +80,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-070 | Device proof of possession: server challenge (single-use, 5 min) signed by the device key over a domain-separated payload built in Rust | Accepted (development) | 2026-10-18 |
 | D-071 | Device identity is per (installation, account): one local slot per account, account re-checked in the core, logout keeps, explicit removal is crypto-erasure | Accepted | 2026-10-18 |
 | D-072 | `lib/platform` may implement ports defined by `lib/security` (e.g. `DeviceKeyStore`) | Accepted | 2026-10-18 |
+| D-073 | Platform priority: "iOS supported from day one; iOS optimized/hardened at the end." Android is the primary development platform | **Accepted** (owner direction, Prompt 07) | 2026-10-18 |
 
 ---
 
@@ -594,4 +595,24 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 ### D-072 — Platform implements security ports
 - **Decision:** `lib/platform` may depend on `lib/security` *only* to implement ports that `lib/security` defines (first: `DeviceKeyStore`). Security never imports platform or infrastructure.
 - **Reason:** keeps platform channels (`MethodChannel`, `kIsWeb`) out of the security layer while the security layer owns the contract. Previously the platform layer could depend on `core` only.
+- **Status:** Accepted · 2026-10-18
+
+### D-073 — Platform priority: iOS supported from day one, hardened at the end
+- **Decision (owner direction, during Prompt 07):** "iOS supported from day one; iOS optimized/hardened at the end."
+  - Android is the primary platform for rapid development and verification. Flutter/Web continues where applicable (Web V1 still has no private E2EE, D-046).
+  - **iOS security-critical functionality and compatibility remain required in every prompt:**
+    - device identity;
+    - Keychain key storage;
+    - persistence and corruption behaviour;
+    - crypto-core integration;
+    - no secret leakage;
+    - iOS security tests and iOS CI jobs.
+  - iOS-specific performance and build optimization (Xcode/Rust compile times, CI speed) is **not** a development blocker. Slow iOS CI is allowed to finish, never skipped.
+  - A dedicated **iOS Hardening & Release Pass** before production will cover:
+    - Keychain edge cases;
+    - background/foreground behaviour and device migration;
+    - crypto integration and push notifications;
+    - permissions and performance;
+    - App Store requirements and CI optimization.
+- **Never used to justify:** skipping, disabling or weakening an iOS security test or job, or dropping iOS support.
 - **Status:** Accepted · 2026-10-18
