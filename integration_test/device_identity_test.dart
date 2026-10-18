@@ -136,4 +136,88 @@ void main() {
       a.core.close();
     },
   );
+  test(
+    'revocation, trust epoch and lineage run natively (Prompt 09)',
+    () async {
+      final a = await ready(accountA);
+      const slot = 'itSecondDevice';
+      final dir = await keyStore.slotDirectory(slot);
+      final key = (await keyStore.storeKey(slot, create: true))!;
+      final b = CryptoCore.initializeWithPlatformKey(
+        directory: dir,
+        storeKey: key,
+      )..createIdentity(accountA);
+      addTearDown(() async {
+        b.close();
+        await keyStore.removeSlot(slot);
+      });
+      Uint8List bytes(int v) => Uint8List.fromList(List.filled(32, v));
+      final certA = a.identity.certificate;
+      final certB = b.publicIdentity().certificate;
+      final approval = a.core.approveDevice(
+        newCertificate: certB,
+        challenge: bytes(1),
+        expiresAtUnix: 1900000000,
+      );
+      final revocation = a.core.signRevocation(
+        revokedCertificate: certB,
+        reason: RevocationReason.lost,
+        challenge: bytes(2),
+        expiresAtUnix: 1900000000,
+      );
+      expect(revocation, hasLength(64));
+      expect(
+        b.signResetCancellation(challenge: bytes(3), expiresAtUnix: 1900000000),
+        hasLength(64),
+      );
+      final chain = LineageRequest(
+        accountId: accountA.value,
+        rootCertificate: certA,
+        links: [
+          ApprovalLink(
+            approverCertificate: certA,
+            newCertificate: certB,
+            challenge: bytes(1),
+            expiresAtUnix: 1900000000,
+            signature: approval,
+          ),
+        ],
+      );
+      expect(CryptoCore.verifyLineage(chain), hasLength(2));
+      final revoked = LineageRequest(
+        accountId: accountA.value,
+        rootCertificate: certA,
+        links: chain.links,
+        revocations: [
+          SignedRevocation(
+            revokerCertificate: certA,
+            revokedCertificate: certB,
+            reason: RevocationReason.lost.wireValue,
+            challenge: bytes(2),
+            expiresAtUnix: 1900000000,
+            signature: revocation,
+          ),
+        ],
+      );
+      expect(CryptoCore.verifyLineage(revoked).map((d) => d.bytes), [
+        a.identity.deviceId.bytes,
+      ]);
+      // The epoch survives a restart under the platform key (D-083).
+      a.core.observeTrustEpoch(5);
+      a.core.close();
+      final again = await ready(accountA);
+      expect(again.core.observeTrustEpoch(5), 5);
+      expect(
+        () => again.core.observeTrustEpoch(4),
+        throwsA(
+          isA<CryptoException>().having(
+            (e) => e.code,
+            'code',
+            CryptoErrorCode.trustStateStale,
+          ),
+        ),
+      );
+      again.core.close();
+    },
+  );
 }

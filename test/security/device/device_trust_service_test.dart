@@ -1,6 +1,7 @@
-// Multi-device trust service (Prompt 08 §5, §9–12, §15–16): approval by a
-// trusted device, rejection, revocation, recovery key, offline revocation,
-// and secret-safe logging. Real native cores; fake registry (server
+// Multi-device trust service (Prompt 08 §5, §9–12, §15–16; Prompt 09):
+// approval by a trusted device, rejection, signed revocation, recovery key,
+// offline revocation, identity reset, trust epoch, lineage verification and
+// secret-safe logging. Real native cores; fake registry (server
 // signature checks are tested in functions/test).
 import 'dart:io';
 import 'dart:typed_data';
@@ -153,13 +154,204 @@ void main() {
       },
     );
 
-    test('revocation is one call and shows in the device list', () async {
-      await service.revoke(account: account, deviceIdHex: id(a));
-      final records = await service.devices(account);
-      expect(
-        records.singleWhere((r) => r.deviceIdHex == id(a)).status,
-        DeviceStatus.revoked,
+    Future<void> approveB() async {
+      await enroll(b);
+      final candidate = (await service.pendingApprovals(
+        core: a,
+        account: account,
+      )).single;
+      await service.approve(core: a, account: account, candidate: candidate);
+    }
+
+    Matcher failsWith(DeviceRegistryFailure f) => throwsA(
+      isA<DeviceRegistryException>().having((e) => e.failure, 'failure', f),
+    );
+
+    Matcher cryptoFails(CryptoErrorCode c) =>
+        throwsA(isA<CryptoException>().having((e) => e.code, 'code', c));
+
+    test(
+      'signed revocation: A revokes B; it shows in the device list',
+      () async {
+        await approveB();
+        await service.revoke(
+          core: a,
+          account: account,
+          deviceIdHex: id(b),
+          reason: RevocationReason.stolen,
+        );
+        expect(registry.submitted['revoke'], hasLength(64));
+        expect(registry.revocations.single.reason, 3);
+        final records = await service.devices(account);
+        expect(
+          records.singleWhere((r) => r.deviceIdHex == id(b)).status,
+          DeviceStatus.revoked,
+        );
+        // Peers re-verify the signed chain: B is out, A stays.
+        expect(await service.verifyLineage(account), {id(a)});
+      },
+    );
+
+    test('self-revocation is signed by the device itself', () async {
+      await service.revoke(
+        core: a,
+        account: account,
+        deviceIdHex: id(a),
+        reason: RevocationReason.removed,
       );
+      expect(registry.statuses[id(a)], DeviceStatus.revoked);
+    });
+
+    test('a revoked device cannot revoke: nothing is signed or sent', () async {
+      await approveB();
+      registry.statuses[id(b)] = DeviceStatus.revoked;
+      await expectLater(
+        service.revoke(
+          core: b,
+          account: account,
+          deviceIdHex: id(a),
+          reason: RevocationReason.compromised,
+        ),
+        failsWith(DeviceRegistryFailure.deviceNotTrusted),
+      );
+      expect(registry.calls, isNot(contains('revoke')));
+      expect(registry.statuses[id(a)], DeviceStatus.active);
+    });
+
+    test('revoking an unknown device fails before signing', () async {
+      await expectLater(
+        service.revoke(
+          core: a,
+          account: account,
+          deviceIdHex: 'f' * 32,
+          reason: RevocationReason.lost,
+        ),
+        failsWith(DeviceRegistryFailure.deviceNotFound),
+      );
+      expect(registry.calls, isNot(contains('challenge:revocation')));
+    });
+
+    test('lineage: approval and recovery links verify on device', () async {
+      await approveB();
+      await service.createRecoveryKey(core: b, account: account);
+      final c = device('c', 24);
+      addTearDown(c.close);
+      final secret = await service.createRecoveryKey(core: b, account: account);
+      final waiting = await enroll(c) as EnrollmentAwaitingApproval;
+      await service.recover(
+        core: c,
+        account: account,
+        enrollment: waiting,
+        recoveryKey: secret,
+      );
+      expect(await service.verifyLineage(account), {id(a), id(b), id(c)});
+    });
+
+    test('lineage: a tampered link fails closed', () async {
+      await approveB();
+      final link = registry.links[id(b)]! as ApprovalLink;
+      final forged = Uint8List.fromList(link.signature)..[0] ^= 1;
+      registry.links[id(b)] = ApprovalLink(
+        approverCertificate: link.approverCertificate,
+        newCertificate: link.newCertificate,
+        challenge: link.challenge,
+        expiresAtUnix: link.expiresAtUnix,
+        signature: forged,
+      );
+      await expectLater(
+        service.verifyLineage(account),
+        cryptoFails(CryptoErrorCode.trustChainInvalid),
+      );
+    });
+
+    test(
+      'lineage: a device the server calls active without a link fails closed',
+      () async {
+        await enroll(b);
+        registry.statuses[id(b)] = DeviceStatus.active; // no signed approval
+        await expectLater(
+          service.verifyLineage(account),
+          cryptoFails(CryptoErrorCode.trustChainInvalid),
+        );
+      },
+    );
+
+    test(
+      'trust epoch: a rolled-back server view is refused before acting',
+      () async {
+        await enroll(b);
+        await service.refreshTrustState(core: a, account: account);
+        final seen = registry.trustEpoch;
+        registry.trustEpoch = seen - 1; // stale replica or rollback
+        final before = registry.calls.length;
+        await expectLater(
+          service.pendingApprovals(core: a, account: account),
+          cryptoFails(CryptoErrorCode.trustStateStale),
+        );
+        expect(
+          registry.calls.skip(before),
+          isNot(contains('pendingApprovals')),
+        );
+        registry.trustEpoch = seen;
+        expect(
+          await service.pendingApprovals(core: a, account: account),
+          hasLength(1),
+        );
+      },
+    );
+
+    test(
+      'identity reset: requested, then cancelled by a trusted device',
+      () async {
+        final at = await service.requestIdentityReset(account);
+        expect(
+          (await service.refreshTrustState(
+            core: a,
+            account: account,
+          )).resetEffectiveAt,
+          at,
+        );
+        await service.cancelIdentityReset(core: a, account: account);
+        expect(registry.submitted['cancelIdentityReset'], hasLength(64));
+        expect(
+          (await service.refreshTrustState(
+            core: a,
+            account: account,
+          )).resetPending,
+          isFalse,
+        );
+        await expectLater(
+          service.completeIdentityReset(account),
+          failsWith(DeviceRegistryFailure.resetUnavailable),
+        );
+        expect(registry.statuses[id(a)], DeviceStatus.active);
+      },
+    );
+
+    test(
+      'identity reset: completing revokes every device; a new identity bootstraps',
+      () async {
+        await approveB();
+        await service.requestIdentityReset(account);
+        await service.completeIdentityReset(account);
+        expect(registry.statuses[id(a)], DeviceStatus.revoked);
+        expect(registry.statuses[id(b)], DeviceStatus.revoked);
+        expect(await enroll(a), isA<EnrollmentTerminal>());
+        final fresh = device('fresh', 25);
+        addTearDown(fresh.close);
+        expect(await enroll(fresh), isA<EnrollmentActive>());
+        expect(await service.verifyLineage(account), {id(fresh)});
+      },
+    );
+
+    test('a revoked device cannot cancel a reset', () async {
+      await service.requestIdentityReset(account);
+      registry.statuses[id(a)] = DeviceStatus.revoked;
+      await expectLater(
+        service.cancelIdentityReset(core: a, account: account),
+        failsWith(DeviceRegistryFailure.deviceNotTrusted),
+      );
+      expect(registry.resetEffectiveAt, isNotNull);
     });
 
     test(
@@ -273,8 +465,29 @@ void main() {
       ]) {
         expect(logs, isNot(contains(chunk)));
       }
+      await service.revoke(
+        core: a,
+        account: account,
+        deviceIdHex: id(b),
+        reason: RevocationReason.lost,
+      );
+      await service.verifyLineage(account);
+      await service.requestIdentityReset(account);
+      await service.cancelIdentityReset(core: a, account: account);
+      final all = sink.records.join('\n');
+      for (final chunk in [id(a), id(b), registry.issuedChallenges.last]) {
+        expect(all, isNot(contains(chunk)));
+      }
       expect(logs, contains('recovery_key_created'));
       expect(logs, contains('device_approved'));
+      for (final event in [
+        'device_revoked',
+        'device_lineage_verified',
+        'identity_reset_requested',
+        'identity_reset_cancelled',
+      ]) {
+        expect(all, contains(event));
+      }
     });
 
     test('approval candidates and states print redacted', () async {

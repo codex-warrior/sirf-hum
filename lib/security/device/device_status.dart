@@ -7,7 +7,8 @@
 ///                      │           or the recovery key                 │
 ///                      ├─server─► rejected (owner rejected it)          │
 ///                      ├─server─► expired  (never activated in time)    │
-///                      └─owner or server─────────────► revoked ◄────────┘
+///                      └─signed by a trusted device ─► revoked ◄────────┘
+///                        (D-081) or identity reset (D-082)
 /// ```
 ///
 /// `revoked`, `rejected` and `expired` are terminal: there is no way back,
@@ -44,8 +45,8 @@ enum DeviceStatus {
     (pending, active): DeviceTransitionActor.server,
     (pending, rejected): DeviceTransitionActor.server,
     (pending, expired): DeviceTransitionActor.server,
-    (pending, revoked): DeviceTransitionActor.clientOrServer,
-    (active, revoked): DeviceTransitionActor.clientOrServer,
+    (pending, revoked): DeviceTransitionActor.trustedDeviceSignature,
+    (active, revoked): DeviceTransitionActor.trustedDeviceSignature,
   };
 
   bool canTransitionTo(DeviceStatus next) =>
@@ -64,4 +65,12 @@ enum DeviceStatus {
   };
 }
 
-enum DeviceTransitionActor { client, server, clientOrServer }
+/// No transition is a client write (firebase/firestore.rules deny them all).
+enum DeviceTransitionActor {
+  /// The server decides (bootstrap proof, approval, recovery, expiry).
+  server,
+
+  /// The server executes a trusted device's signed request (revocation;
+  /// identity reset revokes as the server).
+  trustedDeviceSignature,
+}
