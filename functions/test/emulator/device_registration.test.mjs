@@ -1,6 +1,8 @@
 // Device registration against the Firestore emulator (Prompt 07 §10–11):
 // challenge issuance, proof of possession, replay, cloning and revocation.
 // Run: npm run test:emulator (needs Java + firebase-tools; builds first).
+import { Buffer } from 'node:buffer';
+import process from 'node:process';
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { deleteApp, initializeApp } from 'firebase-admin/app';

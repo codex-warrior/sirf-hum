@@ -1,6 +1,7 @@
 // Test-only helpers: deterministic Ed25519 keys and certificates built per
 // the D-064 / D-070 formats, using node:crypto (no custom primitives).
 // Runs against the compiled output (`npm run build` first).
+import { Buffer } from 'node:buffer';
 import { createPrivateKey, createPublicKey, sign } from 'node:crypto';
 import certModule from '../lib/device/certificate.js';
 import proofModule from '../lib/device/proof.js';

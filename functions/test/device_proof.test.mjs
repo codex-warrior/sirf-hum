@@ -1,5 +1,7 @@
 // Device certificate (D-064) and proof-of-possession (D-070) verification.
 // Runs against the compiled output (`npm run build` first).
+import { Buffer } from 'node:buffer';
+import { URL } from 'node:url';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
