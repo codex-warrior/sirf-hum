@@ -1,7 +1,9 @@
 # E2EE Architecture
 
-Status: **Design (Prompt 04, 2026-10-16). Nothing here is implemented in the
-app.** Sirf Hum is **not** end-to-end encrypted and must not say it is.
+Status: **Design (Prompt 04, 2026-10-16). Crypto-core foundation implemented
+in Prompt 06 ([CRYPTO-CORE-ARCHITECTURE](CRYPTO-CORE-ARCHITECTURE.md)); no
+feature uses it, and it runs only with insecure test key stores.** Sirf Hum
+is **NOT production E2EE yet** and must not say it is.
 
 Companion documents:
 [KEY-MANAGEMENT](KEY-MANAGEMENT.md) ·
@@ -34,7 +36,7 @@ are marked *unverified*.
 | Ciphersuite | `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519` (RFC 9420 mandatory-to-implement) | **RECOMMENDED** |
 | Post-quantum | Not available in standard MLS ciphersuites; Signal has it (PQXDH + SPQR) | **APPROVED**: not a V1 launch blocker; crypto agility + migration path required (D-050) |
 | Library | **OpenMLS 0.9.1** selected for development, **medium confidence**; mls-rs 0.56.0 kept as tested fallback ([MLS-DECISION](MLS-DECISION.md)) | **RECOMMENDED (D-054)**; production conditional on the review gates |
-| Platform integration | One small Rust crate wrapping OpenMLS, bridged to Dart with flutter_rust_bridge; built for Android, iOS and wasm32 | **RECOMMENDED**, not yet prototyped through Flutter |
+| Platform integration | One small Rust crate wrapping OpenMLS behind a hand-written C ABI, bundled by Flutter native assets for Android and iOS (D-063). No Web build (D-046) | **Implemented (Prompt 06)**: runs in the real app on an Android emulator and an iOS simulator; *superseded the Prompt 04 flutter_rust_bridge recommendation* |
 | Key storage (mobile) | Encrypted local store whose wrapping key is non-exportable in Android Keystore / iOS Keychain | **RECOMMENDED** ([KEY-MANAGEMENT](KEY-MANAGEMENT.md)) |
 | Key distribution | Device KeyPackages in Firestore, authenticated by a per-person identity key; partner identity verified out of band | **RECOMMENDED** ([PAIRING](PAIRING-AND-DEVICE-TRUST.md)) |
 | Backend authorization | Firestore/Storage rules and Functions authorize *access to ciphertext*; they never decrypt | **APPROVED** principle; rules **UNRESOLVED** until designed per feature |
@@ -174,8 +176,8 @@ custom protocol layer, which our rules forbid.
   Before a decision:
   1. Search for, or commission, an independent security review of the exact
      OpenMLS version and crypto provider we ship.
-  2. Prototype through flutter_rust_bridge on Android, iOS and Web.
-  3. Decide the storage provider (encrypted SQLite) and audit its use.
+  2. Prototype through flutter_rust_bridge on Android, iOS and Web. *(Done differently: own C ABI + native assets, D-063, Prompt 06.)*
+  3. Decide the storage provider (encrypted SQLite) and audit its use. *(Decided for development: sealed whole-state records, D-065; audit pending.)*
   4. Compare once more with mls-rs on the same criteria.
 - **Crypto provider (UNRESOLVED):** OpenMLS ships `openmls_rust_crypto`
   (RustCrypto crates) and `openmls_libcrux_crypto` (formally verified

@@ -4,12 +4,14 @@ name: Prototypes
 # Prompt 05 MLS decision gate: same scenarios against OpenMLS and mls-rs,
 # interop, wasm32, Dart FFI, Android/iOS packaging, upstream test vectors.
 
+# Also re-run when the app's crypto core changes: the decision-gate suite is the
+# library-switch safety net and regression baseline for it (D-062).
 on:
   push:
     branches: [main]
-    paths: ['prototypes/**', '.github/workflows/prototypes.yml']
+    paths: ['prototypes/**', 'packages/sirf_hum_crypto/native/**', '.github/workflows/prototypes.yml']
   pull_request:
-    paths: ['prototypes/**', '.github/workflows/prototypes.yml']
+    paths: ['prototypes/**', 'packages/sirf_hum_crypto/native/**', '.github/workflows/prototypes.yml']
 
 permissions:
   contents: read

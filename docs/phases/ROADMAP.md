@@ -57,6 +57,25 @@ Branch protection and production reviewers are blocked by the GitHub plan.
 
 [MLS-DECISION](../security/MLS-DECISION.md)
 
+## Phase 06 — Crypto core foundation ✅
+
+- Rust crypto core (`packages/sirf_hum_crypto`) on OpenMLS 0.9.1 behind a
+  19-function C ABI, bundled by a first-party native-assets hook (D-063).
+- Mandatory behaviours implemented and tested:
+  - boundary credential validation (D-057, D-064);
+  - checkpoint/rollback (D-056);
+  - sealed atomic local state (D-058, D-065);
+  - input limits (D-059);
+  - stable error codes;
+  - no logging.
+- Runs inside the real app on an Android emulator and an iOS simulator in
+  CI. Web compiles a fail-closed stub.
+- **Sirf Hum is NOT production E2EE yet.** There are only test key stores
+  (production adapter open, D-066), no review, and no product feature uses
+  the core.
+
+[CRYPTO-CORE-ARCHITECTURE](../security/CRYPTO-CORE-ARCHITECTURE.md)
+
 ## Proposed sequence
 
 Ordering principle: identity and cryptography come **before** any feature

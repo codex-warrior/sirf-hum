@@ -18,6 +18,9 @@ analyzer:
     - build/**
     # Experimental spikes are separate packages, never part of the app (D-052).
     - prototypes/**
+    # Local packages are analyzed with their own dev dependencies
+    # (tool/verify.sh, CI crypto-core job).
+    - packages/**
 
 linter:
   rules:

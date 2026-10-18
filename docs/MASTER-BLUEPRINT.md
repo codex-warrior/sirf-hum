@@ -3,7 +3,7 @@
 The index of record. Each section summarises what is **decided** and links
 to the detailed source of truth. Updated at the end of every phase.
 
-Last updated: **Prompt 05 — 2026-10-16**.
+Last updated: **Prompt 06 — 2026-10-18**.
 
 ## 1. Vision
 
@@ -54,7 +54,13 @@ trust boundaries and threat actors. → [THREAT-MODEL](security/THREAT-MODEL.md)
 Requirements: private content is encrypted on the device; the server never
 holds content keys; established protocols only; versioned envelopes; the
 person → account → devices → cryptographic identity → couple model.
-**Not implemented. Sirf Hum is NOT production E2EE.**
+**Crypto-core foundation implemented (Prompt 06); no feature uses it.
+Sirf Hum is NOT production E2EE yet:**
+
+- only insecure test key stores exist (D-066);
+- no independent review has taken place.
+
+→ [CRYPTO-CORE-ARCHITECTURE](security/CRYPTO-CORE-ARCHITECTURE.md)
 
 **Authoritative for future prompts (Prompt 05 decision gate):**
 
@@ -69,9 +75,10 @@ person → account → devices → cryptographic identity → couple model.
   - Evidence: [MLS-IMPLEMENTATION-COMPARISON](security/MLS-IMPLEMENTATION-COMPARISON.md);
     decision and conditions: [MLS-DECISION](security/MLS-DECISION.md).
 - **Integration boundary:**
-  - Flutter → narrow Dart facade → a narrow C ABI or flutter_rust_bridge
-    (D-063 open) → Rust core (OpenMLS + credential policy + transactional
-    encrypted store) → platform KeyStore (Keystore / Keychain).
+  - Flutter → narrow Dart facade → hand-written C ABI bundled by
+    first-party native assets (D-063, decided in Prompt 06) → Rust core
+    (OpenMLS + credential policy + sealed atomic store) → KEK provider.
+    The platform KeyStore adapter (Keystore / Keychain) is open (D-066).
   - No API exports keys or state.
   - The core never depends on Firebase.
   - Measured: Android `.so`, iOS XCFramework, wasm32 and Dart FFI all work
@@ -83,6 +90,8 @@ person → account → devices → cryptographic identity → couple model.
   - input limits (D-059);
   - crypto agility: versioned records, fail-closed on unknown versions
     (D-061).
+  - all of the above are implemented and tested in the Prompt 06 core
+    (credential format D-064, state format D-065, dependency gate D-068).
 - **Web limitation:** Web V1 handles **no private E2EE content** (D-046
   APPROVED). WASM working is not web security approval.
 - **Recovery direction:** trusted-device recovery by default, plus an
@@ -237,7 +246,8 @@ designed with privacy — all **post-V1** and individually reviewed.
 | 2 | Release signing (Android upload key, Apple team) and store accounts | First store build |
 | 3 | Initial market, languages (Hindi/English/other), and segments | Visual identity, copy, localisation |
 | 4 | Sign-in methods (baseline email link or email/password; phone optional) | Identity phase |
-| 5 | Commission the independent OpenMLS delta + crypto-core review (D-054 conditions); decide D-060 (past-epoch window) and D-063 (Flutter bridge) | Before production E2EE / during Prompt 06 |
+| 5 | Commission the independent OpenMLS delta + crypto-core review (D-054 conditions, now including `packages/sirf_hum_crypto`); decide D-060 (past-epoch window) | Before production E2EE |
+| 5a | Platform key-store adapter (Android Keystore / iOS Keychain) and local rollback protection (D-066) | Before any real user's private content |
 | 6 | Shared history after unpairing | Pairing phase (product + legal) |
 | 7 | LiveKit Cloud vs. self-hosted | Calls phase |
 | 8 | Analytics vendor and consent posture | First analytics event |

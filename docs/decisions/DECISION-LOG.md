@@ -70,7 +70,12 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-060 | Past-epoch key retention window | **Open** | 2026-10-16 |
 | D-061 | Crypto agility: explicit protocol/ciphersuite/implementation/schema versions on every record | Accepted | 2026-10-16 |
 | D-062 | Keep the backend-neutral harness + interop suite as a library-switch safety net | Accepted | 2026-10-16 |
-| D-063 | Flutter bridge: own C ABI + native assets vs flutter_rust_bridge | **Open** (Prompt 06) | 2026-10-16 |
+| D-063 | Flutter bridge: own hand-written C ABI + first-party Flutter native assets (not flutter_rust_bridge) | **Accepted** (Prompt 06) | 2026-10-18 |
+| D-064 | Device certificate v1: PIK-signed, domain-separated, carried in the MLS BasicCredential; trust = verified person keys − revoked devices | Accepted (development) | 2026-10-18 |
+| D-065 | Local crypto state: sealed records (XChaCha20-Poly1305, AAD = header + name), one atomic whole-state record, fail closed on corruption | Accepted (development) | 2026-10-18 |
+| D-066 | Key-encryption key via a provider interface; only insecure test adapters exist; production needs a platform adapter (Android Keystore / iOS Keychain) | **Open** (production adapter) | 2026-10-18 |
+| D-067 | Native build: Rust 1.96.0 pinned by `rust-toolchain.toml`; `hooks`/`code_assets` pinned to the versions Flutter's tool uses (1.0.0) | Accepted | 2026-10-18 |
+| D-068 | Crypto dependency gate: exact pins, decided OpenMLS versions, `--locked`, banned secret-logging features, `cargo audit --deny warnings` | Accepted | 2026-10-18 |
 
 ---
 
@@ -460,5 +465,84 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Status:** Accepted · 2026-10-16
 
 ### D-063 — Flutter bridge mechanism
-- **Open:** Our narrow C ABI + `dart:ffi` packaged with Flutter native assets (enabled by default on Flutter 3.41), vs flutter_rust_bridge 2.13.0. The `dart:ffi` path is proven on Linux/macOS hosts. The Android `.so` and iOS XCFramework builds are proven; app packaging is not yet.
-- **Status:** Open · 2026-10-16. Decide in Prompt 06.
+- **Decision:** a hand-written C ABI (`native/src/ffi.rs`, 19 functions, `ABI_VERSION = 1`) called from `dart:ffi` `@Native` bindings and packaged by a first-party native-assets build hook (`hook/build.dart`, `hooks`/`code_assets` from dart.dev). Not flutter_rust_bridge.
+- **Reason:**
+  - **smallest reviewable boundary:** opaque handle, `(ptr, len)` inputs, Rust-owned output buffers freed (and wiped) by one function, `i32` error codes. No generated code to audit, no serialization framework, no strings across the boundary;
+  - **no third-party build tool:** the hook calls `cargo` directly; `native_toolchain_rust` (third-party) is not used;
+  - **Web separation is a compile-time import split** (`dart.library.ffi`), with no runtime bridge on Web (D-046);
+  - flutter_rust_bridge 2.13.0 would add a code generator, a runtime and a wider generated surface (async, streams, opaque Rust types in Dart), all of which would need review, for features we do not want across this boundary.
+- **Evidence:** the hook builds Android (`.so` for arm64-v8a, armeabi-v7a and x86_64) and iOS (device + simulator) inside the real app. CI checks the bundled binaries and runs `integration_test/crypto_core_test.dart` on an Android emulator and an iOS simulator ([CRYPTO-CORE-ARCHITECTURE](../security/CRYPTO-CORE-ARCHITECTURE.md)).
+- **Cost:** ABI changes are manual on both sides; mitigated by the ABI version check and Dart tests through the real library.
+- **Status:** Accepted · 2026-10-18 (Prompt 06). Was Open since 2026-10-16.
+
+### D-064 — Device certificate v1
+- **Decision:** concretises D-045 for development.
+  - Each device's MLS `BasicCredential` identity is an encoded certificate: `"SirfHum-DeviceCertificate-v1"` ‖ version ‖ person key ‖ device ID (16 random bytes) ‖ device signature key ‖ issued-at.
+  - The certificate is signed by the Person Identity Key (Ed25519 through `OpenMlsCrypto`).
+  - Receivers accept a member only if:
+    - the signature verifies;
+    - the person key is trusted (own key, or verified via `trustVerifiedPersonKey`);
+    - the device is not revoked;
+    - the certified key equals the leaf signature key.
+- **Not decided here:** how person keys are verified by users (pairing phase), certificate expiry, and PIK rotation.
+- **Status:** Accepted for development · 2026-10-18. Format review is a condition of production use (D-054).
+
+### D-065 — Local crypto state format
+- **Decision:** refines D-058.
+  - Three local records:
+    - `identity_secret`;
+    - `public_metadata`;
+    - `mls_state`, which holds the whole OpenMLS storage map, group IDs and trust policy.
+  - Each record is sealed as `SHCR | format=1 | kind | nonce[24] | XChaCha20-Poly1305` under the KEK, with AAD = header + record name.
+  - Each record is replaced atomically (temp file + fsync + rename + directory fsync), once per operation, after a successful checkpointed operation.
+  - Unknown versions, a failed authentication, or a wrong kind or name fail closed (`stateCorruption`). There is never a silent reset.
+- **Reason:** one atomic record makes every operation all-or-nothing on disk (SRLabs S1-3; D-056), and the AEAD makes tampering detectable. The crate is `chacha20poly1305 =0.10.1`, already in OpenMLS's dependency tree; 192-bit random nonces make random-nonce reuse negligible.
+- **Trade-off:** each write re-seals the whole state. That is fine at couple scale (≤ 16 members, bounded record ≤ 8 MiB); revisit with history.
+- **Status:** Accepted for development · 2026-10-18
+
+### D-066 — Key-encryption key storage
+- **Decision:** the core gets its KEK from a `KeyEncryptionKeyProvider` that reports `is_production_secure()`.
+  - Two adapters exist, both **insecure and test-only**: `EphemeralTestKeyStore` (memory) and `InsecureFileTestKeyStore` (a plaintext file).
+  - `KeyStoreKind.platform` returns `unsupported`.
+  - The app classifies native support as `nativeDevelopmentOnly`.
+- **Open:** a platform adapter (Android Keystore with StrongBox where available / iOS Keychain with `ThisDeviceOnly` accessibility) that wraps or holds the KEK and can destroy it on wipe. It must also address whole-directory rollback (no monotonic counter exists today).
+- **Status:** **Open** · 2026-10-18. Required before any real user's content.
+
+### D-067 — Native build pinning
+- **Decision:**
+  - Rust 1.96.0 with the Android/iOS targets is pinned in `native/rust-toolchain.toml`; CI fails if another `rustc` is active.
+  - `hooks` and `code_assets` are pinned to 1.0.0, the versions Flutter 3.41.5's tool depends on. 2.x conflicts with Flutter's pinned `meta`.
+  - Builds are always `cargo build --locked --release`.
+- **Consequence:** Android and iOS app builds need rustup. On Windows, local Android builds also need the MSVC Build Tools.
+- **Invariant (enforced):** the `hooks` and `code_assets` versions in `packages/sirf_hum_crypto/pubspec.yaml` are exact pins equal to the versions in the installed Flutter SDK's `packages/flutter_tools/pubspec.yaml`.
+  - `tool/check_flutter_hook_pins.sh` compares them and fails closed. It runs from `tool/check_crypto_core.sh` (CI `crypto-core` job, after Flutter is installed and before any Rust build) and from `tool/verify.sh`.
+  - Tests: `tool/test_check_flutter_hook_pins.sh` (fixtures: match passes; hooks/code_assets mismatch, ranges and missing entries fail).
+- **Why the invariant exists:**
+  - the build hook talks to `flutter_tools` through those packages' hook protocol, so a different version can drift from what the SDK speaks;
+  - newer majors can also be unresolvable. Prompt 06's first draft pinned `hooks 2.2.0`, whose `record_use` dependency needs `meta ^1.19.0` against Flutter 3.41.5's pinned `meta 1.17.0`.
+  - Upgrading Flutter therefore means re-pinning both packages to the new SDK's versions in the same change.
+- **Status:** Accepted · 2026-10-18 · invariant added 2026-10-18
+
+### D-068 — Crypto dependency gate
+- **Decision:** CI (`tool/check_crypto_core.sh` plus the `crypto-core` job) fails when:
+  - a direct dependency is not `=`-pinned;
+  - OpenMLS or its companions resolve to anything other than the D-054 versions;
+  - `Cargo.lock` is out of sync or changed by the build;
+  - OpenMLS `crypto-debug` / `content-debug` is enabled;
+  - a logging/printing macro or crate appears;
+  - `cargo audit --deny warnings` reports a RustSec advisory (vulnerability, unmaintained, unsound or yanked).
+- **What it does not guarantee:** cargo-audit only knows *published* advisories. It finds no unknown bugs and is no substitute for review.
+- **Tool pin:** cargo-audit **0.22.2** (exact, `--locked`).
+  - 0.21.2 could not parse the current RustSec database (CVSS 4.0 vector in RUSTSEC-2026-0124) and failed closed. That was a tool failure, not a finding.
+  - Assessed: RUSTSEC-2026-0124 affects `libcrux-chacha20poly1305 < 0.0.8`. We lock 0.0.9 (patched), so it does not apply.
+  - A database-format break must be fixed by updating the tool, never by skipping the audit.
+- **Documented ignores** (`tool/crypto_audit.sh`; each is re-verified on every run, and the script fails if the reason stops holding):
+  - **RUSTSEC-2026-0330, RUSTSEC-2026-0331** (`libcrux-kem 0.0.9`: panics on short hybrid seeds and keys; medium and high).
+    - Why inapplicable: the crate is locked only as an inactive optional dependency (`hpke-rs` feature `libcrux` is off; `openmls_rust_crypto 0.6.0` uses the RustCrypto HPKE backend). It is never compiled, which CI build logs confirm.
+    - Why not bumped: `hpke-rs-libcrux 0.7.0` pins `=0.0.9`, and the fix needs `hpke-rs 0.8`, outside the D-054 pins.
+    - Check: `cargo tree --target all -e normal,build -i libcrux-kem` (and `hpke-rs-libcrux`) must be empty.
+  - **RUSTSEC-2026-0173** (`proc-macro-error2 2.0.1` unmaintained; not a vulnerability).
+    - Why inapplicable: it is used only by proc-macro crates (`hax-lib-macros`), so it runs at compile time and never ships in the binary. No maintained release exists.
+    - Check: every user of the crate in `cargo metadata` must be a proc-macro target.
+  - **Revisit:** any OpenMLS/provider upgrade (the D-054 delta review) must try to remove all three ignores. A new ignore needs the same treatment: a written reason, an automated re-check, and an entry here.
+- **Status:** Accepted · 2026-10-18

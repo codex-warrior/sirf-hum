@@ -1,7 +1,7 @@
 # E2EE Test Plan
 
-Status: **Plan (Prompt 04).** Only the experimental spike tests exist today
-(`prototypes/mls-device-roster`, not part of the app).
+Status: **Plan (Prompt 04); crypto-core foundation tests exist (Prompt 06,
+below).** Passing them is not an E2EE claim (see gates).
 
 Principle: never prove only that our code agrees with itself. Correctness
 evidence comes from:
@@ -39,7 +39,53 @@ evidence comes from:
    Rust core.
 4. Threat model and these docs updated to match what was built.
 
-## Decision-gate tests (exist; experimental)
+## Crypto-core foundation tests (exist; Prompt 06)
+
+Code: `packages/sirf_hum_crypto`. CI jobs: `crypto-core`,
+`crypto-android-device`, `crypto-ios-device`, plus packaging checks in
+`android` and `ios`.
+
+Mandatory rollback scenarios (Prompt 06 Part 5), as Rust tests in
+`native/tests/crypto_core.rs`:
+
+| | Scenario | Test |
+| --- | --- | --- |
+| A | Valid message succeeds | `group_add_commit_encrypt_decrypt` |
+| B | Tampered message fails | `tampering_anywhere_is_rejected` (every byte position) |
+| C | Valid after tampered still succeeds | `forged_then_valid_message_still_decrypts` |
+| D | Replay rejected | `replay_is_rejected` |
+| E | State usable after rejected input | `malformed_then_valid_message_still_decrypts`, `failed_write_rolls_back_and_core_stays_usable` |
+| F | Removed device can't decrypt new epoch | `removed_device_cannot_decrypt_new_epoch` |
+| G | Restored pre-removal state can't decrypt new epoch | `restored_pre_removal_state_cannot_decrypt_new_epoch` |
+| H | Outsider message rejected | `outsider_message_is_rejected` |
+| I | Malformed message can't corrupt persistent state | `malformed_input_cannot_corrupt_persistent_state`, `persistence_failure_during_processing_rolls_back` |
+
+The Rust tests also cover:
+
+- **Identity:** create/reload, double-create, account vs device identity.
+- **Credentials:** trusted accepted, untrusted add rejected, untrusted
+  Welcome member rejected, revoked device not re-addable, a receiver
+  rejecting an untrusted device added by a member who bypasses policy.
+- **Persistence:** restart round trip, overwrite, corruption, unknown
+  version, record swap, wrong KEK, wipe.
+- **Limits:** exact limit and one byte over; oversize input rejected before
+  parsing.
+- **Errors and logging:** stable error table, redacted `Debug`, source scan
+  for logging.
+
+Above the Rust layer:
+
+- **Dart, through the real library:** two-device exchange, restart, commit,
+  tamper, replay, limits, garbage input, removal, untrusted add, wipe,
+  corrupted state fails closed, platform keystore `unsupported`, closed
+  handle, redaction. CI sets `SIRF_HUM_REQUIRE_NATIVE_CRYPTO=1` so a missing
+  library fails.
+- **Device:** `integration_test/crypto_core_test.dart` on an Android
+  emulator and an iOS simulator inside the real app.
+- **Web:** the stub fails closed with `unsupported`, and the app classifies
+  Web as `unavailableOnWeb`.
+
+## Decision-gate tests (exist; experimental; regression suite)
 
 `prototypes/mls-decision-gate` (`.github/workflows/prototypes.yml`), run
 against OpenMLS 0.9.1 **and** mls-rs 0.56.0, natively and on wasm32:

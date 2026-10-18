@@ -1,6 +1,6 @@
 # Threat Model
 
-Status: **Foundation (Prompt 01); E2EE analysis added (Prompt 04).** A living document. Each phase that adds
+Status: **Foundation (Prompt 01); E2EE analysis added (Prompt 04); crypto-core threats added (Prompt 06).** A living document. Each phase that adds
 data, endpoints or devices must update it. Not every threat can be
 eliminated; the goal is that each one is *explicit*.
 
@@ -99,6 +99,10 @@ private content. "Not implemented" applies to every mitigation below.
 | E16 | Malicious browser extension | — | Web v1: no private content | Same | — |
 | E17 | XSS / browser storage compromise | — | Web v1: no private content; CSP/Trusted Types before any future web E2EE | Same | — |
 | E18 | Loss of all trusted devices | Honest outcome | Recovery key (opt-in); otherwise new identity, visible to the partner | Without recovery, history is lost; this must be stated plainly | — |
+| E20 | Malicious MLS input (server, network or member): oversized, malformed, forged, replayed, from outsiders | Reject without crashing, exhausting memory or damaging valid state | Size limits before parsing; OpenMLS validation; checkpoint/rollback on every rejection; panics caught at the ABI; boundary credential validation on every receiver (Prompt 06, tested) | Parser bugs in OpenMLS within the limits (three 2026 advisories fixed in 0.9.1; RustSec monitored by `cargo audit`) | OpenMLS 0.9.1 parsers behave within limits |
+| E21 | Local crypto-state theft or tampering (backup extraction, file edit, record swap) | Files reveal nothing; tampering is detected | XChaCha20-Poly1305-sealed records with name/kind-bound AAD; fail closed on any mismatch; app-private directory | **The KEK currently comes from insecure test key stores (a plaintext file or memory): there is no protection until the platform adapter exists (D-066)** | Platform keystore protects the KEK (future) |
+| E22 | Local rollback: an older copy of the whole state directory is restored | Old state can't be resurrected to reuse keys | None yet: no monotonic counter or hardware binding | Open (D-066). An attacker with file access could restore an older epoch's state. MLS removal still blocks reading new epochs (tested: restored pre-removal state cannot decrypt) | — |
+| E23 | Secret leakage through logs, errors or the Dart boundary | No secrets outside the Rust core | No logging in the core (CI scan + clippy deny); OpenMLS debug features banned; error codes only; no export/dump function in the ABI; redacted Debug/toString; native buffers wiped | Decrypted plaintext in the Dart heap can't be reliably wiped (GC) | — |
 | E19 | Abusive partner seeking access after unpairing | No access after unpairing | Unilateral instant unpair; partner leaves removed; rules cut access; new group on re-pair; roster changes visible while paired | Content already received by the abuser stays with them; coercion with physical access can't be solved technically | — |
 
 ## Assumptions
@@ -116,6 +120,9 @@ private content. "Not implemented" applies to every mitigation below.
 4. Metadata minimisation — schema-level decisions pending.
 5. Abuse/safety design for presence and location-like features — per-feature.
 6. No independent security review has been performed.
-7. MLS library choice (OpenMLS vs mls-rs): no public independent audit found for either (E2EE-ARCHITECTURE §4).
+7. MLS library: OpenMLS 0.9.1 selected (D-054, medium confidence). The SRLabs review covered an earlier commit and excluded providers; the delta review is pending. *(Prompt 04's "no audit found" was corrected in Prompt 05.)*
 8. No post-quantum protection in standard MLS ciphersuites ("harvest now, decrypt later").
 9. Server message *withholding* detection (gap detection) not designed.
+10. No production key store: the crypto core runs only with insecure test key stores (D-066). It must not handle real users' content.
+11. Local whole-state rollback is undetected (E22).
+12. The Prompt 06 crypto core (credential policy, record format, FFI, rollback) is unreviewed.

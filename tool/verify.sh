@@ -2,7 +2,10 @@
 # Local quality gate. Mirrors .github/workflows/ci.yml (except iOS, which
 # needs macOS, and the history secret scan).
 #   tool/verify.sh            format + analyze + unit/widget tests
-#   tool/verify.sh --all      also Functions (typecheck, lint, build, test),
+#                             + crypto package analyze/tests
+#   tool/verify.sh --all      also the Rust crypto core (needs a native Rust
+#                             toolchain; on Windows that means MSVC Build
+#                             Tools), Functions (typecheck, lint, build, test),
 #                             Security Rules emulator tests, web build and
 #                             Android development + production builds
 set -euo pipefail
@@ -19,7 +22,25 @@ flutter analyze
 step 'Unit + widget tests'
 flutter test
 
+step 'Hook pins match the installed Flutter SDK (D-067) + their tests'
+bash tool/test_check_flutter_hook_pins.sh
+flutter_root="${FLUTTER_ROOT:-$(cd "$(dirname "$(readlink -f "$(command -v flutter)")")/.." && pwd)}"
+bash tool/check_flutter_hook_pins.sh packages/sirf_hum_crypto/pubspec.yaml \
+  "$flutter_root/packages/flutter_tools/pubspec.yaml"
+
+step 'Crypto package: analyze + Dart tests (native tests skip without a host build)'
+(cd packages/sirf_hum_crypto && dart pub get && dart analyze --fatal-infos && dart test)
+
 if [[ "${1:-}" == '--all' ]]; then
+  step 'Crypto core (Rust): policy, fmt, clippy, tests'
+  bash tool/check_crypto_core.sh
+  (
+    cd packages/sirf_hum_crypto/native
+    cargo fmt --check
+    cargo clippy --locked --all-targets -- -D warnings
+    cargo test --locked
+  )
+
   step 'Cloud Functions: typecheck, lint, build, test'
   (cd functions && npm ci && npm run check)
 
