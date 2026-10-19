@@ -307,8 +307,12 @@ describe('server-only collections', () => {
     );
   });
 
-  test('the account document itself stays closed', async () => {
-    await assertFails(getDoc(doc(asUser(A), `users/${A}`)));
+  // Since Prompt 12 the account document holds the owner's minimal profile
+  // (couple.test.js covers it); it stays closed to everything else.
+  test('the account document accepts only the profile, and only from its owner', async () => {
     await assertFails(setDoc(doc(asUser(A), `users/${A}`), { a: 1 }));
+    await assertFails(setDoc(doc(asUser(A), `users/${A}`), { status: 'active', certificate: 'x' }));
+    await assertFails(getDoc(doc(asUser(B), `users/${A}`)));
+    await assertFails(getDoc(doc(anonymous(), `users/${A}`)));
   });
 });
