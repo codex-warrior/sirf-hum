@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sirf_hum/app/product_area.dart';
 import 'package:sirf_hum/security/couple/pairing.dart';
+import 'package:sirf_hum_crypto/sirf_hum_crypto.dart';
 
 import '../support/session_fakes.dart';
 
@@ -114,6 +117,45 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(NavigationBar), findsNothing);
     expect(find.text('A private home for the two of you.'), findsOneWidget);
+  });
+
+  testWidgets('switching account never shows the previous couple', (
+    tester,
+  ) async {
+    setPhoneWindow(tester);
+    final session = FakeAccountSession(alice);
+    final bobAnswer = Completer<PairingState>();
+    var calls = 0;
+    final backend = FakePairingBackend(() {
+      calls++;
+      return calls == 1 ? Future.value(paired) : bobAnswer.future;
+    });
+    await pumpSirfHum(
+      tester,
+      session: session,
+      backend: backend,
+      initialLocation: ProductArea.us.path,
+    );
+    expect(find.text('Asha'), findsOneWidget);
+
+    session.emit(AccountId('uidBob'));
+    // One frame for the auth event to reach the session, one to rebuild.
+    await tester.pump();
+    await tester.pump();
+    // From then on: nothing of the previous couple.
+    expect(find.textContaining('Asha'), findsNothing);
+    expect(find.textContaining('Ravi'), findsNothing);
+    // Once the route transition ends, the shell is gone while Bob's answer
+    // is still pending.
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.bySemanticsLabel('Opening Sirf Hum'), findsOneWidget);
+    expect(find.textContaining('Asha'), findsNothing);
+
+    bobAnswer.complete(const PairingNone());
+    await tester.pumpAndSettle();
+    expect(find.text('Invite your person.'), findsOneWidget);
+    expect(find.textContaining('Asha'), findsNothing);
   });
 
   group('accessibility guidelines', () {

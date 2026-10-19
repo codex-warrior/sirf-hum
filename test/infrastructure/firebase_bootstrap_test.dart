@@ -64,6 +64,20 @@ void main() {
     },
   );
 
+  test(
+    'an immediate failure returns at once, without waiting the bound',
+    () async {
+      // With a one-hour bound, this test would time out if failure waited.
+      final bootstrap = FirebaseBootstrap(
+        initializer: (_) async => throw FirebaseException(plugin: 'core'),
+        timeout: const Duration(hours: 1),
+      );
+      final watch = Stopwatch()..start();
+      expect(await bootstrap.initialize(_config()), FirebaseStatus.failed);
+      expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
+    },
+  );
+
   test('the default bound is short enough to show the app', () {
     expect(
       FirebaseBootstrap.defaultTimeout,

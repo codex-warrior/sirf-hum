@@ -342,6 +342,32 @@ void main() {
       expect(await settle(c), isA<SessionNotPaired>());
     });
 
+    test('a refresh in flight across an account switch is dropped', () async {
+      final bob = AccountId('uidBob');
+      final session = FakeAccountSession(alice);
+      Completer<PairingState>? pendingRefresh;
+      final backend = FakePairingBackend(() async {
+        // Alice's first answer: not paired. Her refresh: held open, then a
+        // couple. Bob: not paired.
+        if (pendingRefresh case final p?) return p.future;
+        return const PairingNone();
+      });
+      final c = container(session: session, backend: backend);
+      expect(await settle(c), isA<SessionNotPaired>());
+
+      pendingRefresh = Completer<PairingState>();
+      final refresh = c.read(sessionProvider.notifier).refresh();
+      final aliceRefresh = pendingRefresh;
+      pendingRefresh = null;
+
+      session.emit(bob);
+      expect(await settle(c), isA<SessionNotPaired>());
+      aliceRefresh.complete(paired); // Alice's late answer
+      await refresh;
+      expect(await settle(c), isA<SessionNotPaired>());
+      expect(c.read(pairedCoupleProvider), isNull);
+    });
+
     test('signing out while an answer is in flight stays signed out', () async {
       final pending = Completer<PairingState>();
       final session = FakeAccountSession(alice);
