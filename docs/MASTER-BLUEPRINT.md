@@ -56,8 +56,9 @@ holds content keys; established protocols only; versioned envelopes; the
 person → account → devices → cryptographic identity → couple model.
 **Crypto-core foundation implemented (Prompt 06); messaging core added
 (Prompt 10: device-pinned trust, staged commits, authenticated text
-messages, sealed local history; development only, no chat UI). Sirf Hum is
-NOT production E2EE yet:**
+messages, sealed local history; development only, no chat UI); encrypted
+media and content-free notifications added (Prompt 11, undeployed, no UI).
+Sirf Hum is NOT production E2EE yet:**
 
 - the platform key store exists (Prompt 07, D-066) but nothing is reviewed;
 - device identity and registration exist (Prompt 07) but server activation

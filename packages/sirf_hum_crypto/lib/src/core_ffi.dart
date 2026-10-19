@@ -17,7 +17,7 @@ import 'package:sirf_hum_crypto/src/lineage.dart';
 import 'package:sirf_hum_crypto/src/types.dart';
 
 /// ABI version this Dart code was written against (native ABI_VERSION).
-const int expectedAbiVersion = 5;
+const int expectedAbiVersion = 6;
 
 // True in release (product) builds, where test key stores are refused.
 const bool _isReleaseBuild = bool.fromEnvironment('dart.vm.product');
@@ -699,6 +699,62 @@ external int _deleteLocalMessage(
   int cl,
   Pointer<Uint8> m,
   int ml,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint8>,
+    Size,
+    Uint32,
+    Pointer<_ShBuf>,
+    Pointer<Uint64>,
+    Pointer<_ShBuf>,
+    Pointer<_ShBuf>,
+    Pointer<Uint64>,
+  )
+>(symbol: 'sh_crypto_send_media')
+external int _sendMedia(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> c,
+  int cl,
+  Pointer<Uint8> input,
+  int inputLen,
+  Pointer<Uint8> output,
+  int outputLen,
+  int mediaClass,
+  Pointer<_ShBuf> messageId,
+  Pointer<Uint64> epoch,
+  Pointer<_ShBuf> ciphertext,
+  Pointer<_ShBuf> mediaId,
+  Pointer<Uint64> objectLength,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint8>,
+    Size,
+    Pointer<_ShBuf>,
+  )
+>(symbol: 'sh_crypto_open_media')
+external int _openMedia(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> c,
+  int cl,
+  Pointer<Uint8> m,
+  int ml,
+  Pointer<Uint8> path,
+  int pathLen,
+  Pointer<_ShBuf> plaintext,
 );
 
 @Native<Int32 Function(Pointer<_ShCore>)>(symbol: 'sh_crypto_wipe')
@@ -1542,6 +1598,86 @@ final class CryptoCore implements Finalizable {
       (m, ml) => _check(_deleteLocalMessage(_h, c, cl, m, ml)),
     ),
   );
+
+  /// Encrypts the plaintext file at [inputPath] into a new ciphertext
+  /// object in [mediaDirectory] (named [mediaObjectFileName]) under a fresh
+  /// key, and queues the message that delivers the key (D-094). The key
+  /// never leaves the core. Upload the object first, then the message. On
+  /// failure neither exists.
+  SentMedia sendMedia(
+    ConversationId conversation, {
+    required String inputPath,
+    required String mediaDirectory,
+    required MediaClass mediaClass,
+  }) => _input(
+    conversation.bytes,
+    (c, cl) => _input(
+      utf8.encode(inputPath),
+      (i, il) => _input(utf8.encode(mediaDirectory), (o, ol) {
+        final id = calloc<_ShBuf>();
+        final epoch = calloc<Uint64>();
+        final ct = calloc<_ShBuf>();
+        final media = calloc<_ShBuf>();
+        final length = calloc<Uint64>();
+        try {
+          _check(
+            _sendMedia(
+              _h,
+              c,
+              cl,
+              i,
+              il,
+              o,
+              ol,
+              mediaClass.wireValue,
+              id,
+              epoch,
+              ct,
+              media,
+              length,
+            ),
+          );
+          return SentMedia(
+            message: SentMessage(
+              messageId: MessageId(_copy(id.ref)),
+              epoch: epoch.value,
+              ciphertext: _copy(ct.ref),
+            ),
+            mediaId: MediaId(_copy(media.ref)),
+            objectLength: length.value,
+          );
+        } finally {
+          _bufFree(id.ref);
+          _bufFree(ct.ref);
+          _bufFree(media.ref);
+          calloc
+            ..free(id)
+            ..free(epoch)
+            ..free(ct)
+            ..free(media)
+            ..free(length);
+        }
+      }),
+    ),
+  );
+
+  /// Decrypts the media object of message [id] (in this device's history)
+  /// from the ciphertext file at [path]. Returns private content for
+  /// display only: wipe it when done. Throws
+  /// [CryptoErrorCode.authenticationFailure] for any modified, truncated or
+  /// foreign object, [CryptoErrorCode.invalidInput] when the message is not
+  /// media here or the file is missing.
+  Uint8List openMedia(ConversationId conversation, MessageId id, String path) =>
+      _input(
+        conversation.bytes,
+        (c, cl) => _input(
+          id.bytes,
+          (m, ml) => _input(
+            utf8.encode(path),
+            (p, pl) => _output((o) => _openMedia(_h, c, cl, m, ml, p, pl, o)),
+          ),
+        ),
+      );
 
   /// Deletes all local crypto records for this device and resets the core.
   void wipe() => _check(_wipe(_h));

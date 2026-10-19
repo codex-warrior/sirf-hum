@@ -866,3 +866,72 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Supersedes:** D-073; the iOS part of D-003.
 - **Risk accepted:** iOS breakage can go unnoticed (no CI). A future iOS version will need its own security work: Keychain adapter review, build hook, platform key store tests, push and store requirements.
 - **Status:** Accepted · 2026-10-19
+
+### D-093 — Media encryption construction (Prompt 11)
+- **Decision:**
+  - Media objects use **STREAM** (Hoang–Reyhanitabar–Rogaway–Vizár 2015, `aead 0.5.2` `StreamBE32`) over **XChaCha20-Poly1305**: 64 KiB chunks, 16-byte tag each, last-block flag, random 19-byte nonce prefix in a 25-byte header (`"SHMD" | format 1 | prefix`).
+  - Every object has a fresh random 32-byte key and a random 16-byte media ID, both from the OS CSPRNG inside Rust.
+  - The per-chunk AAD is built in Rust: `"SirfHum-MediaAAD" | 1 | schema 1 | conversation | media ID | sender device | class | plaintext length | header`.
+  - The SHA-256 of the whole object is committed in the MLS-authenticated `media_ref` and checked before any decryption.
+  - Plaintext is limited to 64 MiB, and empty media is refused.
+- **Dependencies:** no new crate. The change enables the `stream` feature of the already-pinned `chacha20poly1305 =0.10.1` and adds `sha2 =0.10.9` as a direct, exact-pinned dependency. `openmls_rust_crypto 0.6.0` already compiles that version. The D-054 pins are unchanged (`tool/check_crypto_core.sh`).
+- **Supersedes:** the Prompt 04 recommendation of libsodium `crypto_secretstream` (E2EE-ARCHITECTURE §7). The properties are the same: chunked, per-chunk authentication, truncation detection. There is no second native crypto library. **Trade-off:** libsodium had a published audit; the RustCrypto `aead::stream` module has none that we know of. It is listed as unaudited.
+- **Status:** Accepted for development · 2026-10-19. Unreviewed.
+
+### D-094 — Media keys never leave the core
+- **Decision:**
+  - The media key is delivered inside an MLS application message, the `media_ref` payload (kind 2, 107 bytes). That payload is built only by `send_media`; `send_message` refuses a caller-supplied kind 2.
+  - On receipt the reference is strictly validated, sealed in history (D-090), and returned to Dart as a 43-byte **key-free view**. `history` returns the same view.
+  - `open_media` takes the AAD fields from the history record of the authenticated message that delivered the key, so an object is bound to its conversation, media ID and **sender device**. Re-attribution by another member fails.
+  - Media keys never cross the FFI (ABI v6).
+- **Status:** Accepted for development · 2026-10-19.
+
+### D-095 — Media storage model
+- **Decision:**
+  - Objects live at `conversations/{c}/media/{m}`: opaque IDs, `application/octet-stream`, custom metadata exactly `{sd: uploading device}`. There is no Firestore media document.
+  - Storage rules: members read (`get`); nobody lists. Create-only, by an `active` device of the caller's own account in an `active` conversation, size 1..67,125,273 B. No update or delete. Membership and device status are checked with cross-service `firestore.get`.
+  - The object is uploaded before its message. After a lost acknowledgement, the refused retry counts as uploaded only if the stored size and `sd` match this device.
+  - Server deletion and retention are deferred.
+- **Deployment:** needs a Storage bucket (Blaze, D-025) and the Storage service agent's Firestore read permission. Emulator-tested only.
+- **Status:** Accepted for development · 2026-10-19.
+
+### D-096 — Local media cache
+- **Decision:**
+  - The cache holds **ciphertext only**: `<account slot>/media/<conversation hex>_<media hex>.shm`, inside the backup-excluded slot and deleted with it.
+  - The core names and writes outgoing objects atomically (temp, fsync, rename) before queueing the message, and deletes them if queueing fails.
+  - `open_media` decrypts to memory only (≤ 64 MiB): two streamed passes, hash then decrypt. The app never writes media plaintext.
+  - Downloads go to a temporary name and are size-checked against the authenticated reference before they enter the cache. An object that fails verification is deleted and downloaded once more, then reported `corrupted`.
+  - A device that is no longer active refuses new downloads; content it already cached stays, as text history does.
+- **Status:** Accepted for development · 2026-10-19.
+
+### D-097 — Content-free push notifications
+- **Decision:**
+  - FCM messages are constant except for the device token and a kind: `data {v: '1', k: 'm' | 's'}`, Android-only options, no topics.
+  - `m` (partner's new message): high priority, the generic notification "Sirf Hum" / "You have a new message", constant tag and collapse key, `visibility: private`.
+  - `s` (silent sync): sent for own-device messages, commits and revocations.
+  - No conversation, message, media, device or account IDs, and no names, counts, text, ciphertext or previews.
+  - Firestore triggers (`notifyOnMessage`, `notifyOnCommit`, `notifyOnDeviceStatus`) read only routing fields and log counts only. They target only devices that are `active` at send time.
+- **Deployment:** needs Functions and Eventarc (Blaze). Emulator-tested as pure functions with a recording FCM fake. Showing the notification on Android 13+ needs the POST_NOTIFICATIONS permission (UI, deferred).
+- **Status:** Accepted for development · 2026-10-19.
+
+### D-098 — Push token lifecycle with proof of possession
+- **Decision:**
+  - Tokens live in server-only `pushTokens/{deviceId}` (rules deny all client access).
+  - Registering or clearing a token takes a single-use challenge bound to the token's hash (`requestPushTokenChallenge`). The device then signs it with its device key under the new proof purpose **`push_token` = 3** (D-070 format). `registerPushToken` verifies the proof against the stored certificate, in one transaction, for an `active` device.
+  - One token maps to one device: registering a token removes it from any other device.
+  - Revocation and every other move out of `active` delete the token at once (trigger). A revocation also wakes the remaining devices of the account and its partner, so they refresh lineage and remove the device from MLS (narrows E33).
+  - Tokens FCM reports unregistered, or older than 60 days, are deleted.
+  - Rate limit: `pushToken` 20 per hour per account.
+- **Reason:** a Firebase session alone must not redirect or silence another device's wake-ups (E24 principle). Tokens are never identity.
+- **Status:** Accepted for development · 2026-10-19.
+
+### D-099 — Deferred media features
+- **Decision:**
+  - **Thumbnails and previews:** deferred. They will never be generated on the server. When added, they will be generated on device and encrypted as their own objects with D-093.
+  - **Size padding:** deferred. Exact object sizes are visible; format v2 can add bucketed padding after a review of the scheme.
+  - **EXIF stripping** (privacy from the *partner*; the server never sees EXIF in clear): media UI phase.
+  - **Streaming playback** of objects over 64 MiB: deferred.
+  - **Server-side retention and deletion:** deferred.
+  - **Web:** no private media and no push registration (D-046).
+  - **iOS:** excluded (D-092).
+- **Status:** Accepted · 2026-10-19.

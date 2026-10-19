@@ -6,7 +6,7 @@ import 'dart:typed_data';
 import 'package:sirf_hum_crypto/src/lineage.dart';
 import 'package:sirf_hum_crypto/src/types.dart';
 
-const int expectedAbiVersion = 5;
+const int expectedAbiVersion = 6;
 
 Never _unsupported() =>
     throw const CryptoException(CryptoErrorCode.unsupported);
@@ -168,6 +168,16 @@ final class CryptoCore {
   List<LocalMessage> history(ConversationId conversation) => _unsupported();
 
   void deleteLocalMessage(ConversationId conversation, MessageId id) =>
+      _unsupported();
+
+  SentMedia sendMedia(
+    ConversationId conversation, {
+    required String inputPath,
+    required String mediaDirectory,
+    required MediaClass mediaClass,
+  }) => _unsupported();
+
+  Uint8List openMedia(ConversationId conversation, MessageId id, String path) =>
       _unsupported();
 
   void wipe() => _unsupported();

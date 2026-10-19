@@ -274,7 +274,14 @@ unless routing requires it.
 | Key/roster changes | Every Add/Remove/Update is a Commit visible to all members; the UI announces roster changes ("Bob added a device") | RECOMMENDED |
 | Failure | See §10. Never show fake content; never bypass verification | APPROVED principle |
 
-## 7. Media encryption model (future; not implemented)
+## 7. Media encryption model (Prompt 04 design)
+
+**Implemented in Prompt 11 with changes:**
+[E2EE-MEDIA-AND-NOTIFICATIONS](E2EE-MEDIA-AND-NOTIFICATIONS.md) is
+authoritative. In particular, STREAM over XChaCha20-Poly1305 from the
+already-pinned RustCrypto crates replaces libsodium secretstream (D-093).
+The media key never reaches Dart (D-094), and padding and thumbnails are
+deferred (D-099).
 
 | Topic | Design | Label |
 | --- | --- | --- |
@@ -330,6 +337,12 @@ Minimization (padding, coarse timestamps, short retention) reduces it but
 doesn't remove it.
 
 ## 9. Notifications
+
+**Implemented in Prompt 11 (infrastructure, undeployed):** see
+[E2EE-MEDIA-AND-NOTIFICATIONS §8–§9](E2EE-MEDIA-AND-NOTIFICATIONS.md)
+(D-097, D-098). Payloads carry no group reference at all (one conversation
+per couple), and tokens live in a server-only collection, registered with
+a device-key proof.
 
 **RECOMMENDED:**
 - **Payload:** data-only FCM message `{ "t": "new", "g": <opaque short group ref>, "s": <server seq> }`. The visible notification text is

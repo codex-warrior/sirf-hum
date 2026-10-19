@@ -256,7 +256,9 @@ message still decrypts.
 
 **Payload (encrypted):** `version u8 = 1 | kind u8 (1 = text) | client time
 ms u64 | u32 len | UTF-8 text`. Media kinds later reuse the same envelope
-with a `media_ref` kind (Prompt 11).
+with a `media_ref` kind: kind 2, built only by the core; Dart sees a
+key-free view (Prompt 11, [E2EE-MEDIA-AND-NOTIFICATIONS](E2EE-MEDIA-AND-NOTIFICATIONS.md),
+D-094).
 
 ## 7. Local encrypted history (D-090)
 
@@ -342,9 +344,10 @@ device that still has the account's Firebase session can decrypt messages
 sent by devices that have **not yet** refreshed lineage. `sendText` checks
 only this device's own server status on every send; refreshing lineage
 (`refreshTrust`, two reads per member account) is the caller's job, e.g. on
-app resume and before syncing. Until revocation notifications exist
-(Prompt 11, content-free push), this window lasts until the sender's next
-`refreshTrust`.
+app resume and before syncing. Since Prompt 11 a revocation triggers a
+content-free sync wake-up of the remaining devices (D-098). Once deployed,
+that shrinks this window to push latency; until then it lasts until the
+sender's next `refreshTrust`.
 
 ## 10. Server knowledge
 

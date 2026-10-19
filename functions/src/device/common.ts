@@ -34,6 +34,8 @@ export const Collections = {
   deviceIdIndex: 'deviceIdIndex',
   deviceKeyIndex: 'deviceKeyIndex',
   rateLimits: 'rateLimits',
+  /** Server-only: one FCM token per active device (Prompt 11, D-098). */
+  pushTokens: 'pushTokens',
 } as const;
 
 /** Device lifecycle (DEVICE-IDENTITY §3). `revoked`, `rejected`, `expired` are terminal. */
@@ -62,7 +64,8 @@ export type DeviceFailure =
   | 'revocation_invalid'
   | 'reset_unavailable'
   | 'reset_not_ready'
-  | 'rate_limited';
+  | 'rate_limited'
+  | 'device_not_active';
 
 export class DeviceError extends Error {
   constructor(readonly failure: DeviceFailure) {

@@ -2,13 +2,66 @@ rules_version = '2';
 
 // Sirf Hum Cloud Storage rules.
 //
-// Default: deny everything. Private media will only ever be stored as
-// client-side ciphertext (docs/security/E2EE-REQUIREMENTS.md); rules control
-// who may fetch ciphertext, they do not provide confidentiality.
+// Default: deny everything. Private media is only ever stored as client-side
+// ciphertext (docs/security/E2EE-MEDIA-AND-NOTIFICATIONS.md, D-093–D-095):
+// these rules decide WHO may fetch or create ciphertext objects; they
+// provide neither confidentiality nor integrity (the crypto core does).
+//
+// Cross-service reads (firestore.get/exists) check conversation membership
+// and device status in Firestore. Deploying needs a bucket (Blaze, D-025)
+// and the Storage service agent's Firestore read permission.
 service firebase.storage {
   match /b/{bucket}/o {
     match /{allPaths=**} {
       allow read, write: if false;
+    }
+
+    // conversations/{c}/media/{m}: one immutable ciphertext object.
+    //   get    a member of the conversation (account level: reads cannot
+    //          see devices; the media key travels only through MLS)
+    //   list   never (no enumeration)
+    //   create a member of an ACTIVE conversation, writing as an ACTIVE
+    //          device of their own account; opaque content type; metadata
+    //          exactly {sd}; size bounded by the 64 MiB plaintext limit
+    //   update never (no overwrite, no metadata change)
+    //   delete never in Phase 0 (server retention is deferred)
+    match /conversations/{conversationId}/media/{mediaId} {
+      allow get: if isMember(conversationId);
+      allow list: if false;
+      allow create: if validMediaCreate(conversationId, mediaId);
+      allow update, delete: if false;
+    }
+
+    function hex32(value) {
+      return value is string && value.matches('^[0-9a-f]{32}$');
+    }
+
+    function conversationPath(conversationId) {
+      return /databases/(default)/documents/conversations/$(conversationId);
+    }
+
+    function isMember(conversationId) {
+      return request.auth != null
+        && hex32(conversationId)
+        && firestore.exists(conversationPath(conversationId))
+        && request.auth.uid in firestore.get(conversationPath(conversationId)).data.members;
+    }
+
+    function validMediaCreate(conversationId, mediaId) {
+      let meta = request.resource.metadata;
+      let device = /databases/(default)/documents/users/$(request.auth.uid)/devices/$(meta.sd);
+      return isMember(conversationId)
+        && firestore.get(conversationPath(conversationId)).data.state == 'active'
+        && hex32(mediaId)
+        && resource == null
+        && request.resource.size > 0
+        && request.resource.size <= 67125273
+        && request.resource.contentType == 'application/octet-stream'
+        && meta != null
+        && meta.keys().hasOnly(['sd'])
+        && hex32(meta.sd)
+        && firestore.exists(device)
+        && firestore.get(device).data.status == 'active';
     }
   }
 }

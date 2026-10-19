@@ -211,6 +211,8 @@ enum DeviceRegistryFailure {
         'reset_unavailable' => resetUnavailable,
         'reset_not_ready' => resetNotReady,
         'rate_limited' => rateLimited,
+        // Prompt 11 (push tokens): the device is not active on the server.
+        'device_not_active' => deviceNotTrusted,
         _ => unavailable,
       };
 }

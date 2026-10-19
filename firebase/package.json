@@ -5,7 +5,7 @@
   "type": "module",
   "engines": { "node": ">=24.12.0" },
   "scripts": {
-    "test": "firebase emulators:exec --config ../firebase.json --only firestore,storage --project demo-sirf-hum \"node --test tests/*.test.js\""
+    "test": "firebase emulators:exec --config ../firebase.json --only firestore,storage --project demo-sirf-hum \"node --test tests/*.test.js && node --test tests/storage/*.test.js\""
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^6.0.0",

@@ -33,6 +33,8 @@ export const LIMITS = {
   revocation: { max: 10, windowMs: HOUR },
   /** Identity reset requests and completions (D-082). */
   identityReset: { max: 3, windowMs: 7 * 24 * HOUR },
+  /** Push token challenges (Prompt 11, D-098): start-ups and rotations. */
+  pushToken: { max: 20, windowMs: HOUR },
 } as const satisfies Record<string, Limit>;
 
 export type LimitName = keyof typeof LIMITS;

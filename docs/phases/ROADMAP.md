@@ -144,8 +144,21 @@ Branch protection and production reviewers are blocked by the GitHub plan.
 - Firestore rules and emulator tests; development messaging service; no
   chat UI, text only.
 - **Not done / BLOCKED:** deployment (Blaze not enabled), pairing, chat UI,
-  media and notifications (Prompt 11), independent review. **Sirf Hum is NOT
-  production E2EE yet.**
+  independent review. **Sirf Hum is NOT production E2EE yet.**
+
+**Prompt 11 (Phase 0 step 11): encrypted media + secure notifications.**
+Infrastructure only, no media or notification UI
+([E2EE-MEDIA-AND-NOTIFICATIONS](../security/E2EE-MEDIA-AND-NOTIFICATIONS.md),
+D-093–D-099):
+- ABI v6: media objects (STREAM over XChaCha20-Poly1305, per-object keys
+  that never leave the core, SHA-256 commitment, AAD binding), ciphertext-only
+  local cache, media send/open in the development messaging service.
+- Storage rules (create-only ciphertext objects) and emulator tests.
+- Content-free FCM wake-ups, push tokens registered with a device-key
+  proof, revocation-aware fan-out triggers (emulator-tested).
+- **Not done / BLOCKED:** deployment (Blaze: Storage bucket, Functions,
+  triggers), thumbnails, size padding, notification permission and
+  channels (UI), independent review.
 
 ## Proposed sequence
 

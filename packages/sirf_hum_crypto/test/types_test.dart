@@ -68,6 +68,7 @@ void main() {
     expect(KeyStoreKind.platform.wireValue, 100);
     expect(DeviceProofPurpose.activation.wireValue, 1);
     expect(DeviceProofPurpose.enrollment.wireValue, 2);
+    expect(DeviceProofPurpose.pushToken.wireValue, 3);
   });
 
   test('Web implementation is unavailable and fails closed', () {

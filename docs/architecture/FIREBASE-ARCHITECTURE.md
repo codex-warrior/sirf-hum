@@ -7,6 +7,10 @@ Messaging (Prompt 10): `conversations/*` with keyPackages, commits,
 Welcomes and messages; server-only `pairings`, `accountPartners` and the
 `provisionConversation` primitive (emulator-only; no callable). See
 [E2EE-MESSAGING-DESIGN](../security/E2EE-MESSAGING-DESIGN.md).
+Media and notifications (Prompt 11): Storage rules for ciphertext objects,
+server-only `pushTokens`, signed token callables and fan-out triggers
+(emulator-only). See
+[E2EE-MEDIA-AND-NOTIFICATIONS](../security/E2EE-MEDIA-AND-NOTIFICATIONS.md).
 
 ## Principle
 
@@ -131,6 +135,28 @@ deletion and FCM wake-ups are not implemented yet (Prompt 11 and later).
 Tests: `firebase/tests/messaging.test.js` (own `demo-` project, so parallel
 test files cannot interfere), `functions/test/emulator/conversation.test.mjs`.
 
+## Encrypted media and push (Prompt 11)
+
+Full design: [E2EE-MEDIA-AND-NOTIFICATIONS](../security/E2EE-MEDIA-AND-NOTIFICATIONS.md)
+(D-093–D-099).
+
+| Path / function | Client access | Server |
+| --- | --- | --- |
+| Storage `conversations/{c}/media/{m}` | Members: `get`. **Create-only** by a member's own `active` device in an `active` conversation, `application/octet-stream`, metadata exactly `{sd}`, 1..67,125,273 B. No list, update or delete | Cross-service `firestore.get` of the conversation and device |
+| `pushTokens/{deviceId}` | **None** (rules deny every client) | `registerPushToken` writes; fan-out reads; triggers delete |
+| `requestPushTokenChallenge`, `registerPushToken` (callables) | Active device, device-key proof (`push_token` purpose 3) | Challenge bound to the token hash; one token per device; rate limit `pushToken` |
+| `notifyOnMessage`, `notifyOnCommit`, `notifyOnDeviceStatus` (Firestore triggers) | — | Read routing fields only; send content-free FCM messages to devices active at send time; delete tokens of devices leaving `active` |
+
+Ciphertext objects, the message documents and FCM payloads carry no
+plaintext. Storage needs a bucket and Functions/Eventarc need Blaze
+(D-025): **not deployed**. Cross-service rules also need the Storage
+service agent's Firestore read permission on first deploy.
+
+Tests: `firebase/tests/storage/media_storage.test.js` (runs after the
+parallel rules tests: cross-service reads use the emulators' own project),
+`firebase/tests/push_tokens.test.js`, `functions/test/notification.test.mjs`,
+`functions/test/emulator/notification.test.mjs`.
+
 ## Cloud Functions policy
 
 - TypeScript, strict mode, in `functions/`. Region `asia-south1` (D-016),
@@ -164,6 +190,10 @@ are **outside** the trust boundary.
   separate reviewed decision.
 - Must support: preferences per category, quiet hours, batching/collapse
   keys, delivery handling, and token cleanup on device revocation.
+- Prompt 11 implements: the content-free payloads (generic text, constant
+  tag and collapse keys, no IDs), signed token registration, cleanup on
+  revocation, unregistered tokens and stale tokens. Preferences and quiet
+  hours are UI work, deferred.
 
 ## Emulators and local development
 
