@@ -2,7 +2,7 @@ name: Prototypes
 
 # Experimental spikes only (prototypes/**). Never part of the app build (D-052).
 # Prompt 05 MLS decision gate: same scenarios against OpenMLS and mls-rs,
-# interop, wasm32, Dart FFI, Android/iOS packaging, upstream test vectors.
+# interop, wasm32, Dart FFI, Android packaging, upstream test vectors.
 
 # Also re-run when the app's crypto core changes: the decision-gate suite is the
 # library-switch safety net and regression baseline for it (D-062).
@@ -135,46 +135,8 @@ jobs:
             "$NDK/bin/llvm-readelf" -h "$so" | grep -E "Machine|Class"
           done
 
-  ios:
-    name: iOS packaging (${{ matrix.backend }})
-    runs-on: macos-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        backend: [openmls, mlsrs]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
-          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
-      - name: Static libraries for device and simulators
-        run: |
-          set -euo pipefail
-          for target in aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios; do
-            cargo build --locked --release --target "$target" -p sh-crypto-ffi-spike --no-default-features --features ${{ matrix.backend }}
-            echo "IOS_STATICLIB ${{ matrix.backend }} $target $(stat -f %z target/$target/release/libsh_crypto_ffi_spike.a) bytes"
-          done
-      - name: Package an XCFramework (device + universal simulator)
-        run: |
-          set -euo pipefail
-          mkdir -p out/sim
-          lipo -create target/aarch64-apple-ios-sim/release/libsh_crypto_ffi_spike.a \
-                       target/x86_64-apple-ios/release/libsh_crypto_ffi_spike.a \
-               -output out/sim/libsh_crypto_ffi_spike.a
-          xcodebuild -create-xcframework \
-            -library target/aarch64-apple-ios/release/libsh_crypto_ffi_spike.a \
-            -library out/sim/libsh_crypto_ffi_spike.a \
-            -output out/ShCryptoSpike.xcframework
-          ls out/ShCryptoSpike.xcframework
-          echo "XCFRAMEWORK ${{ matrix.backend }} $(du -sk out/ShCryptoSpike.xcframework | cut -f1) KiB (unstripped static archives)"
-      - uses: dart-lang/setup-dart@v1
-        with:
-          sdk: 3.11.3
-      - name: Dart FFI on the macOS host (same C ABI)
-        run: |
-          cargo build --locked --release -p sh-crypto-ffi-spike --no-default-features --features ${{ matrix.backend }}
-          cd ffi/dart && dart pub get && SH_FFI_LIB="$PWD/../../target/release/libsh_crypto_ffi_spike.dylib" dart test
+  # iOS packaging removed (D-092): iOS is not a current product platform.
+  # The Dart FFI path is covered on Linux by the `dart-ffi` jobs.
 
   upstream-kats:
     name: Upstream test vectors (${{ matrix.name }})

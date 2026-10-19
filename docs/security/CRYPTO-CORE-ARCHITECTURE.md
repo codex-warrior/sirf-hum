@@ -279,10 +279,10 @@ made from this foundation.**
 | Dart facade through the real library | `test/crypto_core_test.dart` (`SIRF_HUM_REQUIRE_NATIVE_CRYPTO=1` turns skip into failure) | CI `crypto-core` |
 | Types, error table, redaction, Web stub | `test/types_test.dart` | Everywhere |
 | App classification | `test/security/private_content_crypto_test.dart` | `flutter test` |
-| Real app on device | `integration_test/crypto_core_test.dart`, `integration_test/messaging_test.dart` (platform key store) | CI Android emulator + iOS simulator |
+| Real app on device | `integration_test/crypto_core_test.dart`, `integration_test/messaging_test.dart` (platform key store) | CI Android emulator (iOS not run, D-092) |
 | Trust unit (D-085), adversarial: forged and re-minted certificates, revoked PIKs, pins, stale lineage, v1 state migration | `native/src/engine/trust_tests.rs` | CI `crypto-core` |
 | Messaging core (ABI v5): staged commits, first-commit-wins, AAD binding, replay, ordering, epochs, multi-device, revocation, sealed history, limits, baseline | `native/tests/messaging.rs`, `engine/conversation.rs` golden vectors, `test/messaging_native_test.dart`, `test/messaging_types_test.dart` | CI `crypto-core` |
-| Packaging | `.so` per ABI in the APK; framework in `Runner.app` | CI Android + iOS builds |
+| Packaging | `.so` per ABI in the APK | CI Android builds (iOS not built, D-092) |
 | Regression (Prompt 05) | `prototypes/mls-decision-gate` | `prototypes.yml` |
 
 The full list is in [E2EE-TEST-PLAN](../testing/E2EE-TEST-PLAN.md).

@@ -7,9 +7,9 @@ import 'package:sirf_hum/platform/secure_key_store.dart';
 import 'package:sirf_hum/security/device/local_device_identity.dart';
 import 'package:sirf_hum_crypto/sirf_hum_crypto.dart';
 
-/// The ABI v5 messaging core on a real device (Android emulator / iOS
-/// simulator in CI) with the REAL platform key store: two accounts' device
-/// identities in their own Keystore/Keychain-protected slots, a staged
+/// The ABI v5 messaging core on a real device (Android emulator in CI) with
+/// the REAL platform key store: two accounts' device identities in their own
+/// Keystore-protected slots, a staged
 /// conversation group, authenticated messages and sealed history that
 /// survives reopening. Throwaway account IDs; slots are removed again.
 /// Run: `flutter test integration_test/messaging_test.dart -d <device>`.

@@ -10,7 +10,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | --- | --- | --- | --- |
 | D-001 | Product name: Sirf Hum | Accepted | 2026-10-15 |
 | D-002 | Flutter + Dart as the frontend framework | Accepted | 2026-10-15 |
-| D-003 | Targets: Android, iOS, Web from one codebase | Accepted | 2026-10-15 |
+| D-003 | Targets: Android, iOS, Web from one codebase | **iOS part superseded by D-092** (Android + Web) | 2026-10-15 |
 | D-004 | Firebase as the backend foundation | Accepted | 2026-10-15 |
 | D-005 | Cloud Firestore as the primary database (not a plaintext private-content store) | Accepted | 2026-10-15 |
 | D-006 | Cloud Storage for media (ciphertext only) | Accepted | 2026-10-15 |
@@ -80,7 +80,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-070 | Device proof of possession: server challenge (single-use, 5 min) signed by the device key over a domain-separated payload built in Rust | Accepted (development) | 2026-10-18 |
 | D-071 | Device identity is per (installation, account): one local slot per account, account re-checked in the core, logout keeps, explicit removal is crypto-erasure | Accepted | 2026-10-18 |
 | D-072 | `lib/platform` may implement ports defined by `lib/security` (e.g. `DeviceKeyStore`) | Accepted | 2026-10-18 |
-| D-073 | Platform priority: "iOS supported from day one; iOS optimized/hardened at the end." Android is the primary development platform | **Accepted** (owner direction, Prompt 07) | 2026-10-18 |
+| D-073 | Platform priority: "iOS supported from day one; iOS optimized/hardened at the end." Android is the primary development platform | **Superseded by D-092** | 2026-10-18 |
 | D-074 | Multi-device model: every device keeps its own PIK and keys (no key sharing or transfer); trust between a person's devices is a chain of PIK-signed approvals (Option C) | Accepted (development) | 2026-10-18 |
 | D-075 | Device approval protocol: bootstrap-only proof of possession for an account's first device; later devices need an approval statement by an active device, verified server-side; six-digit comparison code | Accepted (development) | 2026-10-18 |
 | D-076 | V1 recovery: trusted-device approval + optional single-use user-held recovery key (public half registered); no server/support recovery; no history recovery; identity reset without devices or key **open** | Accepted (development) — reset **Open** | 2026-10-18 |
@@ -98,6 +98,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-088 | First commit wins per conversation epoch (create-only, rules-enforced); messages only at the current epoch; server arbitration never replaces MLS validation | Accepted (development) | 2026-10-19 |
 | D-089 | Versioned message envelope; routing fields bound in MLS authenticated data built by Rust; Rust-generated random message IDs | Accepted (development) | 2026-10-19 |
 | D-090 | Local message history as sealed core records in the account slot, atomic with MLS state; no plaintext fallback | Accepted (development) | 2026-10-19 |
+| D-092 | iOS is not part of the current product: Android P0, Web P1 where applicable, iOS undecided; iOS CI jobs removed; shared code stays platform-neutral | Accepted (owner decision) | 2026-10-19 |
 | D-091 | Per-epoch receive order; past-epoch window 0 (resolves D-060 for messaging); out-of-order tolerance 32; encrypt at compose, re-encrypt the same ID after a stale-epoch refusal | Accepted (development) | 2026-10-19 |
 
 ---
@@ -636,7 +637,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
     - permissions and performance;
     - App Store requirements and CI optimization.
 - **Never used to justify:** skipping, disabling or weakening an iOS security test or job, or dropping iOS support.
-- **Status:** Accepted · 2026-10-18
+- **Status:** **Superseded by D-092** (2026-10-19): iOS is not part of the current product.
 
 ### D-074 — Multi-device model: independent device identities linked by approvals
 - **Decision:**
@@ -853,3 +854,15 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
   - Messages are encrypted at compose time. After a stale-epoch refusal, the same message ID is re-encrypted from the sealed record.
   - No global or causal order is promised; display order is server time.
 - **Status:** Accepted for development · 2026-10-19.
+
+### D-092 — iOS is not part of the current product
+- **Decision (owner, 2026-10-19):** Sirf Hum does not support, maintain or build iOS now.
+  - Platform priority: **P0 Android**; **P1 Web** where it is already useful (Web V1 still has no private E2EE, D-046); **iOS: future, undecided**.
+  - Whether to build iOS at all is evaluated only after the Android product is complete, secure, launched and validated: user demand, business case, cost and approach.
+  - No iOS-specific features, fixes, compatibility work, optimisation or platform code, unless shared architecture strictly requires it.
+  - **CI:** the iOS compile job, the iOS simulator integration job and the prototype iOS packaging job are removed. They are not merge gates and are not run.
+  - **Kept, unmaintained:** the existing `ios/` project, the iOS Keychain adapter and the build hook's iOS targets stay in the repository as they are. They are not built, tested or promised. Removing or repairing them is a later decision.
+  - **Not weakened:** every shared Rust, Dart, crypto, Firebase and security check still runs. Domain, security and crypto code stays platform-neutral where that is natural; no iOS abstraction layer is built in advance.
+- **Supersedes:** D-073; the iOS part of D-003.
+- **Risk accepted:** iOS breakage can go unnoticed (no CI). A future iOS version will need its own security work: Keychain adapter review, build hook, platform key store tests, push and store requirements.
+- **Status:** Accepted · 2026-10-19

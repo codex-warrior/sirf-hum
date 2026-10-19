@@ -53,7 +53,7 @@ tool/verify.sh --all                           # everything runnable locally
 
 ## Gaps (honest)
 
-- App smoke integration test not executed in CI (the crypto-core integration test is: Android emulator + iOS simulator). Locally: keep the emulator screen awake (`adb shell svc power stayon true`) or it renders no frames and the test hangs.
+- App smoke integration test not executed in CI (the crypto-core, device identity and messaging integration tests are, on the Android emulator; iOS is not run, D-092). Locally: keep the emulator screen awake (`adb shell svc power stayon true`) or it renders no frames and the test hangs.
 - No golden (screenshot) tests yet — add once visual identity is set.
 - No Functions tests (no functions exist).
 - No coverage thresholds configured.

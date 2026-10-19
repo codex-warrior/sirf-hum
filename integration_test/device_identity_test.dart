@@ -6,7 +6,7 @@ import 'package:sirf_hum/platform/secure_key_store.dart';
 import 'package:sirf_hum/security/device/local_device_identity.dart';
 import 'package:sirf_hum_crypto/sirf_hum_crypto.dart';
 
-/// Device identity on a real device (Android emulator / iOS simulator in CI)
+/// Device identity on a real device (Android emulator in CI)
 /// with the REAL platform key store: Android Keystore-wrapped / iOS Keychain
 /// store keys. Uses throwaway test account IDs; every slot is removed again.
 /// Run: `flutter test integration_test/device_identity_test.dart -d <device>`.

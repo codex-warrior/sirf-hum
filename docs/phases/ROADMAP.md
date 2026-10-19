@@ -5,6 +5,11 @@ will be confirmed prompt by prompt. Each phase gets its own document in
 `docs/phases/` when it starts (scope, out of scope, decisions, Definition
 of Done).
 
+**Platform priority (D-092, 2026-10-19):** P0 Android · P1 Web where
+applicable · iOS not part of the current product (decided after the Android
+product is launched and validated). Phase notes below that mention iOS are
+history.
+
 ## Phase 01 — Foundation ✅
 
 Product constitution, documentation system, Flutter project (Android, iOS,

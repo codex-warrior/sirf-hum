@@ -142,7 +142,8 @@ account. No schemas yet. → [FIREBASE-ARCHITECTURE](architecture/FIREBASE-ARCHI
 
 ## 10. Platform architecture
 
-One Flutter codebase for Android, iOS (≥15) and Web; adaptive layouts by
+One Flutter codebase for Android (P0) and Web (P1, where applicable); iOS is
+not part of the current product (D-092, supersedes D-073); adaptive layouts by
 window size; web key-storage limits acknowledged. →
 [PLATFORM-STRATEGY](architecture/PLATFORM-STRATEGY.md)
 

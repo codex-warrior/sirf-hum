@@ -81,7 +81,8 @@ Above the Rust layer:
   handle, redaction. CI sets `SIRF_HUM_REQUIRE_NATIVE_CRYPTO=1` so a missing
   library fails.
 - **Device:** `integration_test/crypto_core_test.dart` on an Android
-  emulator and an iOS simulator inside the real app.
+  emulator inside the real app (it also ran on an iOS simulator until
+  D-092).
 - **Web:** the stub fails closed with `unsupported`, and the app classifies
   Web as `unavailableOnWeb`.
 
@@ -98,7 +99,7 @@ cloning matrix is in §6 of that document.
 | Server flows | `functions/test/emulator/device_registration.test.mjs` | Activation; replayed proof; reused or stale challenge; cross-account challenge; copied records; duplicate device ID and key; altered device ID; revoked devices; malformed input | CI `functions` (emulator) |
 | Rules | `firebase/tests/devices.test.js` | The 8 required cases plus schema, immutability, no client activation, one-way revocation, no deletes, server-only collections | CI `security-rules` |
 | App | `test/security/device/`, `test/platform/`, `test/infrastructure/` | State machine; persistence; account switching; corruption; partial write; stale-key rotation; removal; key wiping; Web; registration flow (no challenge reuse, revoked terminal, account mismatch); log redaction; rules ↔ client field drift | CI `flutter` (native required) |
-| Device | `integration_test/device_identity_test.dart` | Real Keystore/Keychain: key store, persistence, isolation, removal, missing key fails closed | CI Android emulator + iOS simulator |
+| Device | `integration_test/device_identity_test.dart` | Real Keystore/Keychain: key store, persistence, isolation, removal, missing key fails closed | CI Android emulator |
 
 ## Multi-device trust tests (exist; Prompt 08)
 
@@ -112,7 +113,7 @@ Design: [MULTI-DEVICE-TRUST](../security/MULTI-DEVICE-TRUST.md).
 | Server flows | `functions/test/emulator/multi_device.test.mjs` | A approves B; chain A→B→C with B revoked (C stays, B can't approve); revoked B can't return; A lost, B approves C; unproven requests; enrollment proof purpose; rejection terminal; expired, consumed, pre-revocation, target-revoked, altered, wrong-account and wrong-device approvals; cross-account; offline revocation; copied stale state; copied metadata; forged certificate; recovery once and single-use; no recovery key; wrong key; revoked registrar; replayed challenge; pending cap; rate limits; failure budget; lazy and scheduled expiry; cleanup idempotent | CI `functions` (emulator) |
 | Rules | `firebase/tests/devices.test.js` | No client create; terminal states immutable; no server-controlled fields from clients; revoked device can't restore; cross-account revocation; all server-only collections closed | CI `security-rules` |
 | App | `test/security/device/` | State machine (new terminal states); enrollment flow (bootstrap vs approval, code, terminal); trust service (codes match, approve, reject, untrusted device refused, offline revocation, revoke, recovery, typo caught locally, unregistered key, log redaction of recovery key/IDs/codes); drift tests against server inputs, rules and failure categories | CI `flutter` |
-| Device | `integration_test/device_identity_test.dart` | Approval, comparison code and recovery key with real platform keys | CI Android emulator + iOS simulator |
+| Device | `integration_test/device_identity_test.dart` | Approval, comparison code and recovery key with real platform keys | CI Android emulator |
 
 ## Device trust hardening tests (exist; Prompt 09)
 
@@ -124,12 +125,12 @@ Design: [MULTI-DEVICE-TRUST](../security/MULTI-DEVICE-TRUST.md).
 | Server flows | `functions/test/emulator/hardening.test.mjs` | Signed revocation (evidence, epoch, self, revoked/pending/foreign revoker, forgery, replay, twice, cross-account, stale, bad reason); stored lineage evidence verifies; epoch monotonic; identity reset (cancel, delay, completion, one new bootstrap, old identity never returns, revoked/forged cancel); state edges (after rejection/expiry/revocation, v2 header, pending cap); races (double approval, double bootstrap, challenge reuse, double recovery, approval vs revocation, concurrent registrations); rate-limit boundaries (exact, one over, window reset, concurrent, per account) | CI `functions` (emulator) |
 | Rules | `firebase/tests/devices.test.js` | No client revocation in any shape; `accountTrust` owner-read only; no epoch rollback, bootstrap reopen or fake reset | CI `security-rules` |
 | App | `test/security/device/`, `test/infrastructure/` | Signed revoke, self-revoke, revoked/unknown target refused before signing; lineage with real signatures (approval + recovery), tamper and unproven-active fail closed; stale epoch refused before acting; reset request/cancel/complete; log redaction; payload ↔ server drift; lineage and trust-state parsing fail closed | CI `flutter` |
-| Device | `integration_test/device_identity_test.dart` | Revocation, reset cancel, lineage and epoch persistence with real platform keys | CI Android emulator + iOS simulator |
+| Device | `integration_test/device_identity_test.dart` | Revocation, reset cancel, lineage and epoch persistence with real platform keys | CI Android emulator |
 
 ## Messaging core tests (exist; Prompt 10)
 
 Design: [E2EE-MESSAGING-DESIGN](../security/E2EE-MESSAGING-DESIGN.md).
-Counts are from the local run on 2026-10-19 (Windows host, gnu toolchain,
+iOS is not run (D-092). Counts are from the local run on 2026-10-19 (Windows host, gnu toolchain,
 native core loaded) and must match CI.
 
 | Layer | Where | Covers | Runs |
@@ -142,7 +143,7 @@ native core loaded) and must match CI.
 | Formats | `test/security/messaging/envelope_and_payload_test.dart` (7) | Text payload limits and strict decode; strict envelope parsing (plaintext fields, types, sizes); written fields equal the rules' allowed fields | CI `flutter` |
 | Rules | `firebase/tests/messaging.test.js` (22) | Prompt 10 attack scenarios 1–14: outsider, wrong account, revoked/pending/unknown device, fake membership, edits, deletes, server time, stale-epoch replay, plaintext fields, malformed envelopes; first commit wins; forged commits; Welcomes only beside their commit; key packages; partner directory reads | CI `security-rules` |
 | Provisioning | `functions/test/emulator/conversation.test.mjs` (6) | No callable; accepted pairing only; idempotent and concurrent; invalid pairings; one couple per account; ID collision never overwrites | CI `functions` |
-| Device | `integration_test/messaging_test.dart` (1) | Platform key store slots for two accounts, staged group, AAD binding, sealed history across reopen, timing baseline | CI Android emulator + iOS simulator |
+| Device | `integration_test/messaging_test.dart` (1) | Platform key store slots for two accounts, staged group, AAD binding, sealed history across reopen, timing baseline | CI Android emulator |
 
 **Not covered yet:** Firestore round-trip latency and real deployment
 (Blaze BLOCKED); notification payloads (Prompt 11); fuzzing of the new
