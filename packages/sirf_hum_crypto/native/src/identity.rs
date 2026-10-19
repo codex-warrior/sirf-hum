@@ -227,6 +227,11 @@ pub enum ProofPurpose {
     /// (Prompt 11, D-098). The server binds the challenge to the token's
     /// hash, so a proof for one token cannot register another.
     PushToken = 3,
+    /// An active device authorizing one step of pairing two accounts into a
+    /// couple (Prompt 12, D-102): create, accept, confirm, reject or cancel.
+    /// The server binds the challenge to the step and its subject. A new
+    /// accepted value only: ABI v6 functions and formats are unchanged.
+    Pairing = 4,
 }
 
 impl ProofPurpose {
@@ -235,6 +240,7 @@ impl ProofPurpose {
             1 => Ok(ProofPurpose::Activation),
             2 => Ok(ProofPurpose::Enrollment),
             3 => Ok(ProofPurpose::PushToken),
+            4 => Ok(ProofPurpose::Pairing),
             _ => Err(CoreError::InvalidInput),
         }
     }

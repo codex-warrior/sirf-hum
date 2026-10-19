@@ -157,6 +157,7 @@ fn proof_purposes_are_separate_signed_domains() {
         ProofPurpose::Activation,
         ProofPurpose::Enrollment,
         ProofPurpose::PushToken,
+        ProofPurpose::Pairing,
     ];
     for made in purposes {
         let proof = alice.core.device_proof(made, &challenge).unwrap();
@@ -219,11 +220,13 @@ fn challenge_must_be_exactly_32_bytes() {
         CoreError::InvalidInput
     );
     // Prompt 08 added purpose 2 (enrollment), Prompt 11 purpose 3 (push
-    // token, D-098); anything else stays invalid.
+    // token, D-098), Prompt 12 purpose 4 (pairing, D-102); anything else
+    // stays invalid.
     assert_eq!(ProofPurpose::from_u32(2).unwrap(), ProofPurpose::Enrollment);
     assert_eq!(ProofPurpose::from_u32(3).unwrap(), ProofPurpose::PushToken);
+    assert_eq!(ProofPurpose::from_u32(4).unwrap(), ProofPurpose::Pairing);
     assert_eq!(
-        ProofPurpose::from_u32(4).unwrap_err(),
+        ProofPurpose::from_u32(5).unwrap_err(),
         CoreError::InvalidInput
     );
 }
