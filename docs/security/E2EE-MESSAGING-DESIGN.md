@@ -128,6 +128,10 @@ flowchart LR
   with `status: 'accepted'` and two distinct valid accounts. It is
   idempotent and transactional. It writes the conversation, the two
   `accountPartners` records and links the pairing.
+- *Prompt 12:* the signed, two-consent pairing confirmation now creates the
+  couple and provisions its conversation in one transaction, and the
+  conversation carries `coupleId` ([COUPLE-AND-PAIRING §8](COUPLE-AND-PAIRING.md#8-binding-to-mls-conversations-d-104),
+  D-104). The paragraph below describes Prompt 10.
 - **Nothing in the product creates pairings yet**, so no ordinary client can
   reach provisioning. Tests seed a pairing with the Admin SDK to stand in
   for the future pairing phase. That is test scaffolding, not a fake couple

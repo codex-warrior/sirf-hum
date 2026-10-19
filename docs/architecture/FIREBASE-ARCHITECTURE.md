@@ -11,6 +11,9 @@ Media and notifications (Prompt 11): Storage rules for ciphertext objects,
 server-only `pushTokens`, signed token callables and fan-out triggers
 (emulator-only). See
 [E2EE-MEDIA-AND-NOTIFICATIONS](../security/E2EE-MEDIA-AND-NOTIFICATIONS.md).
+Couple and pairing (Prompt 12): `users/{uid}` profile, `couples/*`,
+server-only `pairings` and `pairingLocks`, signed pairing callables
+(emulator-only). See [COUPLE-AND-PAIRING](../security/COUPLE-AND-PAIRING.md).
 
 ## Principle
 
@@ -119,7 +122,7 @@ on Spark); only provisioning is server code.
 
 | Path | Client access | Server |
 | --- | --- | --- |
-| `pairings/{id}` | None | Written by the future pairing phase (`status: 'accepted'`, both accounts) |
+| `pairings/{id}` | None | Written by the Prompt 12 pairing callables (below); `accepted` carries both `accounts` |
 | `accountPartners/{uid}` | Owner: read | `provisionConversation` writes `partnerAccountId`, `conversationId` |
 | `conversations/{id}` | Members: read. Update **only** `epoch` → `epoch + 1`, in the same batch as the new `commits/{epoch}` | `provisionConversation` creates it: `members`, `state`, `epoch: 0`, versions, ciphersuite |
 | `.../keyPackages/{deviceId}` | Members: read. A member writes/deletes only for its own **active** device | — |
@@ -156,6 +159,27 @@ Tests: `firebase/tests/storage/media_storage.test.js` (runs after the
 parallel rules tests: cross-service reads use the emulators' own project),
 `firebase/tests/push_tokens.test.js`, `functions/test/notification.test.mjs`,
 `functions/test/emulator/notification.test.mjs`.
+
+## Couple and pairing (Prompt 12)
+
+Full design: [COUPLE-AND-PAIRING](../security/COUPLE-AND-PAIRING.md)
+(D-100–D-105).
+
+| Path / function | Client access | Server |
+| --- | --- | --- |
+| `users/{uid}` | Owner: create/update the profile (exactly `schemaVersion`, `displayName`, `createdAt`, `updatedAt`; server timestamps). Owner and partner: read. No delete, no listing | — |
+| `couples/{coupleId}` | Members: read. No write | Created by `confirmPairing`, in the same transaction as the conversation and `accountPartners` (D-104) |
+| `pairings/{id}`, `pairingLocks/{uid}` | **None** | The pairing callables; locks serialize one open pairing per account (D-103) |
+| `requestPairingChallenge`, `createPairingInvitation`, `acceptPairingInvitation`, `confirmPairing`, `rejectPairing`, `cancelPairing` (callables) | Active device, device-key proof (`pairing` purpose 4) per step (D-102) | Two consents; token hash only; fail closed on identity reset, inactive devices, already paired |
+| `getPairingState` (callable) | Signed-in account, own state only | No IDs, tokens or device data returned |
+
+Rate limits `pairing`, `pairingInvitation`, `pairingRedeemFailure` (D-103).
+Needs Functions (Blaze, D-025): **not deployed**.
+
+Tests: `firebase/tests/couple.test.js` (rules),
+`functions/test/pairing.test.mjs` (state machine, bindings, purpose
+separation), `functions/test/emulator/pairing.test.mjs` (flows, races,
+threat cases).
 
 ## Cloud Functions policy
 

@@ -160,6 +160,19 @@ D-093–D-099):
   triggers), thumbnails, size padding, notification permission and
   channels (UI), independent review.
 
+**Prompt 12 (Phase 0 step 12): couple / account system.** Server logic,
+rules and a client service; no UI
+([COUPLE-AND-PAIRING](../security/COUPLE-AND-PAIRING.md), D-100–D-105):
+- Account = Firebase UID; minimal `users/{uid}` profile (display name only).
+- Two-consent pairing: invite (hashed 128-bit token) → accept (bound
+  claimant, comparison code) → inviter confirms; explicit state machine.
+- Every step signed by an active device (proof purpose 4); fails closed on
+  identity reset, inactive devices, already paired; transactional locks.
+- Confirmation creates the couple and its conversation atomically
+  (`coupleId` on the conversation).
+- **Not done / BLOCKED:** deployment (Blaze), pairing UI, unpairing, account
+  deletion, PIK verification, independent review.
+
 ## Proposed sequence
 
 Ordering principle: identity and cryptography come **before** any feature

@@ -953,3 +953,81 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
   - **Web:** no private media and no push registration (D-046).
   - **iOS:** excluded (D-092).
 - **Status:** Accepted · 2026-10-19.
+
+### D-100 — Account and couple model (Prompt 12)
+- **Decision:**
+  - The Firebase Auth UID is the only account identifier. There is no second account identity, and the UID is never a cryptographic identity.
+  - `users/{uid}` holds a minimal profile: `displayName` only, plus version and server timestamps. The owner writes it under rules that check exact fields. The owner and, once paired, the partner read it. It carries no authority.
+  - `couples/{coupleId}` (16 random bytes) holds exactly two sorted member UIDs, `status: 'active'`, `pairingId`, `createdAt` and `schemaVersion`. It is server-created only, and members read it.
+  - V1 allows at most one active couple per account, enforced through `accountPartners/{uid}` (D-086).
+  - Couple membership is never inferred from Firebase Auth. It grants only what the existing rules already allow to a partner.
+- **Privacy:** no email, phone, contacts, location, presence, last-seen, activity or scoring fields (rules reject extra fields; tested).
+- **Status:** Accepted for development · 2026-10-19. Design: [COUPLE-AND-PAIRING](../security/COUPLE-AND-PAIRING.md).
+
+### D-101 — Two-consent pairing protocol and state machine
+- **Decision:**
+  - The inviter creates an invitation and receives a 128-bit server-generated token once. Only its SHA-256 hash is stored, and the hash is deleted on redemption or end.
+  - The invitee accepts with the token, which moves the pairing to `claimed`, bound to the invitee's account and device, with a 6-digit comparison code. The inviter then **confirms that account**, which moves it to `accepted`, or rejects it.
+  - States: `pending`, `claimed`, `accepted`, `rejected`, `cancelled`, `expired`, `invalidated`. The transition table in `functions/src/couple/state.ts` is enforced on every write. Terminal states never move.
+  - Lifetimes come from the server clock only: 24 h to accept, then 24 h to confirm.
+- **Reason:**
+  - A bearer link alone would let whoever intercepts it pair with the inviter.
+  - Requiring the inviter's confirmation of the specific claimant makes both consents explicit.
+- **Deviations from Prompt 04:**
+  - The token is generated on the server, not the device, which guarantees its entropy.
+  - Adds the inviter's confirmation step.
+  - PIK fingerprint verification stays a later UX step. The comparison code is a human check, not cryptographic verification.
+- **Status:** Accepted for development · 2026-10-19.
+
+### D-102 — Every pairing step is signed by an active device (proof purpose 4)
+- **Decision:**
+  - Each step (`create`, `accept`, `confirm`, `reject`, `cancel`) needs a single-use challenge from `requestPairingChallenge`. The challenge is bound server-side to the step and its subject: nothing, the token hash, or the pairing ID.
+  - The device signs it with its device key under the new D-070 proof purpose **`pairing` = 4**. The server verifies the proof against the stored certificate of an **active** device in the same transaction as the step.
+  - Failed proofs count toward `verificationFailure`.
+  - The step fails closed (`invalidated`) on any of these:
+    - a pending identity reset on either account;
+    - a changed identity epoch (D-082);
+    - a bound device (the inviter's creating device or the invitee's accepting device) no longer active;
+    - either account already paired.
+- **Crypto-core change:** one additive enum value (`ProofPurpose::Pairing`, `DeviceProofPurpose.pairing`, `ProofPurpose.pairing`).
+  - The proof format, the existing purposes, the ABI functions and version (v6), OpenMLS and every pin are unchanged.
+  - An older native library would refuse purpose 4 with `InvalidInput` (fails closed). Native assets ship with the Dart code, so they always match.
+  - Tests: the cross-purpose matrix in Rust, TypeScript and Dart.
+- **Reason:** a Firebase session or password alone must never pair, accept, confirm or end a pairing. This uses the existing device trust mechanism, with no second trust system.
+- **Status:** Accepted for development · 2026-10-19.
+
+### D-103 — Pairing concurrency, enumeration resistance and rate limits
+- **Decision:**
+  - Server-only `pairingLocks/{uid}` holds the one open pairing per account. Every transition is one Firestore transaction over the pairing, both locks, both `accountPartners` records, both `accountTrust` records and the bound devices.
+  - Locks are hints that are re-validated against the pairing they name, so stale locks never block.
+  - Accepting another person's invitation supersedes (cancels) one's own *unredeemed* invitation. An invitation someone has already accepted is never replaced: `pairing_in_progress`.
+  - Uniform failures:
+    - `invitation_invalid` for every unusable token;
+    - `pairing_not_found` for unknown pairings and for pairings of other accounts.
+  - There is no account lookup, and clients cannot list `users`, `couples` or `pairings`.
+  - Rate limits (per account, D-077 mechanism):
+    - `pairing` 30/h (step challenges);
+    - `pairingInvitation` 10/24 h;
+    - `pairingRedeemFailure` 10/h, checked before a challenge is issued.
+  - Rules deny every client access to `pairings` and `pairingLocks`.
+- **Status:** Accepted for development · 2026-10-19.
+
+### D-104 — Couple ↔ conversation binding
+- **Decision:**
+  - `confirmPairing` creates the couple and provisions its conversation and both `accountPartners` records in **one transaction**. It does this through `writeCoupleConversation`, extracted from Prompt 10's `provisionConversation`, whose behaviour and tests are unchanged and which is still not a callable.
+  - The conversation and the partner records carry `coupleId`. The couple does not list conversations, so later conversations can reference the same couple without changing it.
+  - MLS group membership is still devices, decided on device by MLS and lineage (D-085). The couple record authorizes server access only.
+- **No change to:** MLS, Prompt 10/11 message, commit or media formats, the ABI version, or the messaging rules.
+- **Status:** Accepted for development · 2026-10-19.
+
+### D-105 — Deferred couple and pairing features
+- **Decision:**
+  - **Unpairing / couple dissolution:** deferred. It needs open decision 6 (shared history), MLS removal and rules for dissolved conversations. When built it must be unilateral and instant.
+  - **Account deletion or disablement:** no flow exists yet. A disabled account's ID token can live up to 1 h, but every step still needs an active device proof. A deletion flow must end open pairings and dissolve the couple.
+  - **Also deferred:**
+    - pairing UI (link or QR, code comparison, profile editing);
+    - partner PIK verification (safety numbers);
+    - content-free pairing notifications;
+    - a retention policy for ended pairing records.
+  - **Deployment:** blocked on Blaze (D-025). Emulator-tested only.
+- **Status:** Accepted · 2026-10-19.

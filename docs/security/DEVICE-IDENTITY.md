@@ -394,7 +394,9 @@ an *account session* (non-cryptographic), which is not a device identity.
   plan (D-025). Until then deployed clients stay `pending` (`unavailable`
   on challenge). Activation logic is verified in the emulator only.
 - **Rate limits and expiry:** added in Prompt 08 (D-077, D-078). The
-  scheduled cleanup needs Blaze; lazy expiry works without it.
+  scheduled cleanup needs Blaze; lazy expiry works without it. Prompt 12
+  adds the pairing limits `pairing`, `pairingInvitation` and
+  `pairingRedeemFailure` (D-103) and proof purpose 4 (D-102).
 - **Local rollback:** not provided (D-079 open, MULTI-DEVICE-TRUST §10).
   The trust epoch (D-083) only refuses older *server* views.
   Restoring a whole older slot directory *together with* its key isn't

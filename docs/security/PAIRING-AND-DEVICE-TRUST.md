@@ -1,6 +1,6 @@
 # Pairing and Device Trust
 
-Status: **Design (Prompt 04). Own-device enrollment implemented in Prompt 08 as signed approvals without PIK transfer ([MULTI-DEVICE-TRUST](MULTI-DEVICE-TRUST.md), D-074); pairing two people not implemented; no UI.** Labels follow
+Status: **Design (Prompt 04). Own-device enrollment implemented in Prompt 08 as signed approvals without PIK transfer ([MULTI-DEVICE-TRUST](MULTI-DEVICE-TRUST.md), D-074); pairing two people implemented server-side in Prompt 12 ([COUPLE-AND-PAIRING](COUPLE-AND-PAIRING.md), D-100–D-105: server-generated token, inviter confirmation of the claimant, device-signed steps); no UI; PIK verification still open.** Labels follow
 [E2EE-ARCHITECTURE](E2EE-ARCHITECTURE.md#labels).
 
 ## Principles

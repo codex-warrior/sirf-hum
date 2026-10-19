@@ -2,10 +2,12 @@
  * Conversation provisioning (D-086). docs/security/E2EE-MESSAGING-DESIGN.md §3.
  *
  * A SERVER-INTERNAL primitive, deliberately NOT exported as a callable:
- * conversations exist only for a couple the server has authorized. The
- * future pairing phase writes `pairings/{pairingId}` with
- * `status: 'accepted'` once both accounts have consented, then calls this.
- * Nothing in the product creates pairings yet, so no client can reach it.
+ * conversations exist only for a couple the server has authorized. Since
+ * Prompt 12 the pairing confirmation (../couple/pairing.ts) provisions the
+ * couple's conversation through `writeCoupleConversation` in the SAME
+ * transaction that accepts the pairing and creates the couple (D-104), so a
+ * couple never exists without its conversation or vice versa.
+ * `provisionConversation` stays for pairings that are already accepted.
  *
  * It writes, in one transaction:
  * - `conversations/{conversationId}`: members, versions, `epoch: 0`, state;
@@ -16,7 +18,7 @@
  * data, keys or plaintext ever pass through here.
  */
 import { randomBytes } from 'node:crypto';
-import { FieldValue, type Firestore } from 'firebase-admin/firestore';
+import { FieldValue, type Firestore, type Transaction } from 'firebase-admin/firestore';
 import { ACCOUNT_ID_PATTERN } from '../device/common';
 
 export const CONVERSATION_SCHEMA_VERSION = 1;
@@ -71,27 +73,55 @@ export async function provisionConversation(db: Firestore, pairingId: string, ne
     // provisioned into another (unpairing, which would retire it, is deferred).
     if (partners.some((p) => p.exists)) throw new ProvisionError('already_paired');
 
-    const conversationId = newId();
-    tx.create(db.collection(ConversationCollections.conversations).doc(conversationId), {
-      schemaVersion: CONVERSATION_SCHEMA_VERSION,
-      protocolVersion: MESSAGE_PROTOCOL_VERSION,
-      ciphersuite: CIPHERSUITE,
-      members,
-      pairingId,
-      state: 'active',
-      epoch: 0,
-      createdAt: FieldValue.serverTimestamp(),
-    });
-    members.forEach((account, i) => {
-      tx.create(partnerRefs[i], {
-        schemaVersion: CONVERSATION_SCHEMA_VERSION,
-        partnerAccountId: members[1 - i],
-        conversationId,
-      });
-    });
+    const conversationId = writeCoupleConversation(tx, db, { pairingId, members: [members[0], members[1]] }, newId);
     tx.update(pairingRef, { conversationId });
     return { conversationId, created: true };
   });
+}
+
+export interface CoupleConversationSeed {
+  readonly pairingId: string;
+  /** Exactly two distinct, validated account IDs. */
+  readonly members: readonly [string, string];
+  /** The couple the conversation belongs to (Prompt 12, D-104). */
+  readonly coupleId?: string;
+}
+
+/**
+ * Writes the conversation and both `accountPartners` records inside the
+ * caller's transaction. The caller has already read both partner records in
+ * that transaction and checked that neither exists (one couple per account,
+ * V1), and does every read before calling this. Returns the conversation ID.
+ */
+export function writeCoupleConversation(
+  tx: Transaction,
+  db: Firestore,
+  seed: CoupleConversationSeed,
+  newId: () => string = randomConversationId,
+): string {
+  const members = [...seed.members].sort();
+  const couple = seed.coupleId === undefined ? {} : { coupleId: seed.coupleId };
+  const conversationId = newId();
+  tx.create(db.collection(ConversationCollections.conversations).doc(conversationId), {
+    schemaVersion: CONVERSATION_SCHEMA_VERSION,
+    protocolVersion: MESSAGE_PROTOCOL_VERSION,
+    ciphersuite: CIPHERSUITE,
+    members,
+    pairingId: seed.pairingId,
+    ...couple,
+    state: 'active',
+    epoch: 0,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  members.forEach((account, i) => {
+    tx.create(db.collection(ConversationCollections.accountPartners).doc(account), {
+      schemaVersion: CONVERSATION_SCHEMA_VERSION,
+      partnerAccountId: members[1 - i],
+      conversationId,
+      ...couple,
+    });
+  });
+  return conversationId;
 }
 
 /** 16 random bytes, lower-case hex: the conversation ID and MLS group ID. */

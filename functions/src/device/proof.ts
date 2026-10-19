@@ -23,7 +23,7 @@ export const PROOF_BYTES = 64;
 const PROOF_CONTEXT = Buffer.from('SirfHum-DeviceProof-v1', 'ascii');
 
 /** Signed domains, one per purpose (never reuse a value). */
-export const ProofPurpose = { activation: 1, enrollment: 2, pushToken: 3 } as const;
+export const ProofPurpose = { activation: 1, enrollment: 2, pushToken: 3, pairing: 4 } as const;
 export type ProofPurpose = (typeof ProofPurpose)[keyof typeof ProofPurpose];
 
 export class InvalidProofError extends Error {

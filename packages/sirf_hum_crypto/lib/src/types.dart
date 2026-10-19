@@ -91,7 +91,11 @@ enum DeviceProofPurpose {
 
   /// An active device registering or clearing its own push token (Prompt 11,
   /// D-098). The server binds the challenge to the token's hash.
-  pushToken(3);
+  pushToken(3),
+
+  /// An active device authorizing one pairing step (Prompt 12, D-102). The
+  /// server binds the challenge to the step and its subject.
+  pairing(4);
 
   const DeviceProofPurpose(this.wireValue);
 

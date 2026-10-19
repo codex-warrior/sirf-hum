@@ -35,6 +35,12 @@ export const LIMITS = {
   identityReset: { max: 3, windowMs: 7 * 24 * HOUR },
   /** Push token challenges (Prompt 11, D-098): start-ups and rotations. */
   pushToken: { max: 20, windowMs: HOUR },
+  /** Pairing step challenges (Prompt 12, D-103): every create/accept/confirm/reject/cancel. */
+  pairing: { max: 30, windowMs: HOUR },
+  /** Pairing invitations created. */
+  pairingInvitation: { max: 10, windowMs: 24 * HOUR },
+  /** Invitation tokens that did not redeem (unknown, used, expired, own). */
+  pairingRedeemFailure: { max: 10, windowMs: HOUR },
 } as const satisfies Record<string, Limit>;
 
 export type LimitName = keyof typeof LIMITS;

@@ -10,6 +10,8 @@
  * bootstrap, approval by a trusted device, recovery key, scheduled cleanup.
  * Notifications (Prompt 11, docs/security/E2EE-MEDIA-AND-NOTIFICATIONS.md):
  * signed push-token registration and content-free fan-out triggers.
+ * Couple pairing (Prompt 12, docs/security/COUPLE-AND-PAIRING.md): signed,
+ * two-consent invitation → acceptance → confirmation.
  * Deploying needs the Blaze plan (D-025); until then they run only in the
  * emulator.
  */
@@ -36,6 +38,16 @@ import {
   type SendResult,
 } from './notification/fanout';
 import { registerPushToken as registerToken, requestPushTokenChallenge as requestTokenChallenge } from './notification/tokens';
+import {
+  acceptPairingInvitation as acceptInvitation,
+  cancelPairing as cancelPairingStep,
+  confirmPairing as confirmPairingStep,
+  createPairingInvitation as createInvitation,
+  getPairingState as pairingState,
+  rejectPairing as rejectPairingStep,
+  requestPairingChallenge as requestPairingStepChallenge,
+} from './couple/pairing';
+import { PairingError, type PairingFailure } from './couple/state';
 import { cleanupExpired } from './device/cleanup';
 import { DeviceError, type DeviceFailure } from './device/common';
 import { activateDevice as activate, issueDeviceChallenge as issueChallenge, registerDevice as register } from './device/registration';
@@ -92,6 +104,17 @@ const FAILURE_CODES: Record<DeviceFailure, FunctionsErrorCode> = {
   device_not_active: 'failed-precondition',
 };
 
+const PAIRING_FAILURE_CODES: Record<PairingFailure, FunctionsErrorCode> = {
+  invitation_invalid: 'not-found',
+  pairing_not_found: 'not-found',
+  pairing_not_open: 'failed-precondition',
+  pairing_expired: 'deadline-exceeded',
+  pairing_invalidated: 'aborted',
+  pairing_in_progress: 'failed-precondition',
+  already_paired: 'already-exists',
+  identity_reset_pending: 'failed-precondition',
+};
+
 /** Maps domain failures to callable errors carrying only the category. */
 async function guarded<T>(event: string, run: () => Promise<T>): Promise<T> {
   try {
@@ -101,6 +124,11 @@ async function guarded<T>(event: string, run: () => Promise<T>): Promise<T> {
       // Category only: never challenges, proofs, signatures, keys or IDs.
       logger.info(event, { outcome: error.failure });
       throw new HttpsError(FAILURE_CODES[error.failure], error.failure);
+    }
+    if (error instanceof PairingError) {
+      // Category only: never tokens, confirmation codes or IDs.
+      logger.info(event, { outcome: error.failure });
+      throw new HttpsError(PAIRING_FAILURE_CODES[error.failure], error.failure);
     }
     logger.error(event, { outcome: 'internal' });
     throw new HttpsError('internal', 'internal');
@@ -186,6 +214,49 @@ export const cleanupExpiredDeviceRecords = onSchedule({ schedule: 'every 24 hour
   const result = await cleanupExpired(getFirestore(), new Date());
   logger.info('device_cleanup', { ...result });
 });
+
+// ------------------------------------------------ couple pairing (Prompt 12)
+
+/**
+ * Pairing steps (D-101–D-104). Each is signed by an active device of the
+ * caller (proof purpose `pairing` = 4). Successful transitions leave a
+ * category-only audit line; the pairing record itself keeps the acting
+ * device IDs and server timestamps (server-only).
+ */
+const audited = <T>(event: string, run: (uid: string | undefined, data: unknown, now: Date) => Promise<T>) =>
+  callable(event, async (uid, data, now) => {
+    const result = await run(uid, data, now);
+    logger.info(event, { outcome: 'ok' });
+    return result;
+  });
+
+export const requestPairingChallenge = callable('pairing_challenge_issued', (uid, data, now) =>
+  requestPairingStepChallenge(getFirestore(), uid, data, now),
+);
+
+export const createPairingInvitation = audited('pairing_invitation_created', (uid, data, now) =>
+  createInvitation(getFirestore(), uid, data, now),
+);
+
+export const acceptPairingInvitation = audited('pairing_invitation_accepted', (uid, data, now) =>
+  acceptInvitation(getFirestore(), uid, data, now),
+);
+
+export const confirmPairing = audited('pairing_confirmed', (uid, data, now) =>
+  confirmPairingStep(getFirestore(), uid, data, now),
+);
+
+export const rejectPairing = audited('pairing_rejected', async (uid, data, now) => {
+  await rejectPairingStep(getFirestore(), uid, data, now);
+  return done;
+});
+
+export const cancelPairing = audited('pairing_cancelled', async (uid, data, now) => {
+  await cancelPairingStep(getFirestore(), uid, data, now);
+  return done;
+});
+
+export const getPairingState = callable('pairing_state_read', (uid, _data, now) => pairingState(getFirestore(), uid, now));
 
 // ------------------------------------------------ notifications (Prompt 11)
 
