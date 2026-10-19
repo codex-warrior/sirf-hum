@@ -205,7 +205,8 @@ describe('single use, replay, expiry, cancellation, rejection', () => {
     const { b, invite } = await claimed();
     const c = await device();
     await rejectsWith(accept(c, invite.token), 'invitation_invalid');
-    await rejectsWith(accept(b, invite.token), 'invitation_invalid');
+    // The claimant itself is in an open pairing: refused before the token is looked at.
+    await rejectsWith(accept(b, invite.token), 'pairing_in_progress');
     // A consumed challenge cannot be replayed.
     const args = await signed(c, 'accept', { token: invite.token });
     await rejectsWith(acceptPairingInvitation(db, c.accountId, args, new Date()), 'invitation_invalid');
@@ -566,6 +567,34 @@ describe('server authority and enumeration resistance', () => {
     await rejectsWith(requestPairingChallenge(db, a.accountId, { deviceId: a.hex, action: 'confirm', pairingId: '../x' }, new Date()), 'invalid_argument');
     await rejectsWith(createPairingInvitation(db, a.accountId, { deviceId: a.hex, challengeId: 'ab'.repeat(16), proof: 'AA==' }, new Date()), 'invalid_argument');
     await rejectsWith(getPairingState(db, 'bad/uid', new Date()), 'invalid_argument');
+  });
+
+  test('an account in an open pairing learns nothing about tokens it presents (no non-consuming probe)', async () => {
+    const { b, invite } = await claimed();
+    const c = await device();
+    const live = await create(c);
+    const deadInviter = await device();
+    const dead = await create(deadInviter);
+    await cancel(deadInviter, dead.pairingId);
+    const random = Buffer.alloc(16, 0x3c).toString('base64url');
+    // A second device of the claimant's own account cannot re-bind the claim either.
+    const b2 = await device(b.accountId);
+    for (const [who, token] of [
+      [b, live.token],
+      [b, dead.token],
+      [b, random],
+      [b2, live.token],
+      [b2, invite.token],
+    ]) {
+      await rejectsWith(accept(who, token), 'pairing_in_progress');
+    }
+    // Nothing was consumed or rebound.
+    const liveDoc = await pairingDoc(live.pairingId);
+    assert.equal(liveDoc.status, 'pending');
+    assert.equal(typeof liveDoc.tokenHash, 'string');
+    const claimedDoc = await pairingDoc(invite.pairingId);
+    assert.equal(claimedDoc.inviteeAccountId, b.accountId);
+    assert.equal(claimedDoc.inviteeDeviceId, b.hex);
   });
 
   test('every unusable token looks the same, and failures are rate limited', async () => {

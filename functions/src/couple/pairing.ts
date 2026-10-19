@@ -381,6 +381,14 @@ export async function acceptPairingInvitation(
     if (stepFail !== null) return stepFail;
     if (partner.exists) return new PairingError('already_paired');
     if (resetPending(trust)) return new PairingError('identity_reset_pending');
+    // Caller-state refusals come before anything that depends on the token,
+    // so they never reveal whether a token is live (no non-consuming probe).
+    // The invitee's own unredeemed invitation gives way (below); anything
+    // that already involves another person does not.
+    const ownState = own === null ? null : liveness(own, now);
+    if (own !== null && ownState === 'live' && (own.get('status') !== 'pending' || own.get('inviterAccountId') !== accountId)) {
+      return new PairingError('pairing_in_progress');
+    }
 
     // From here on every token problem is the same `invitation_invalid`:
     // unknown, used, expired, cancelled, own, or an inviter that cannot pair.
@@ -407,17 +415,8 @@ export async function acceptPairingInvitation(
     }
 
     if (own !== null) {
-      const ownState = liveness(own, now);
-      if (ownState === 'live') {
-        // The invitee's own unredeemed invitation gives way; anything that
-        // already involves another person does not.
-        if (own.get('status') !== 'pending' || own.get('inviterAccountId') !== accountId) {
-          return new PairingError('pairing_in_progress');
-        }
-        end(tx, own, 'cancelled', 'superseded');
-      } else if (ownState === 'expired') {
-        end(tx, own, 'expired', 'expired');
-      }
+      if (ownState === 'live') end(tx, own, 'cancelled', 'superseded');
+      else if (ownState === 'expired') end(tx, own, 'expired', 'expired');
     }
 
     assertTransition(invitation.get('status'), 'claimed');
