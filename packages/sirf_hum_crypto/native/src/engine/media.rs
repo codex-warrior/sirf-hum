@@ -6,10 +6,13 @@
 //! XChaCha20-Poly1305, the AEAD the sealed records already use. This file is
 //! policy only:
 //! - a fresh random key, media ID and nonce prefix per object (OS CSPRNG);
-//! - the per-chunk AAD, built here and never by the caller, binding the
-//!   object to its conversation, media ID, sending device, class and length;
-//! - a SHA-256 commitment to the whole object inside the MLS-authenticated
-//!   `media_ref` payload, checked before anything is decrypted;
+//! - the media AAD, built here and never by the caller, binding the
+//!   object to its conversation, media ID, sending device, class and length.
+//!   It is the AD of the first STREAM chunk; later chunks use the empty AD,
+//!   as in the published construction (HRRV 2015, Fig. 8);
+//! - an authenticated ciphertext digest (SHA-256 of the whole object) inside
+//!   the MLS-authenticated `media_ref` payload, checked before anything is
+//!   decrypted (an integrity check, not key commitment);
 //! - media keys never leave Rust: the full `media_ref` lives only in MLS
 //!   ciphertext and sealed history, and Dart gets a key-free view.
 //!
@@ -80,7 +83,20 @@ pub fn media_ciphertext_len(plaintext_len: u64) -> u64 {
     MEDIA_HEADER_LEN as u64 + plaintext_len + TAG_LEN as u64 * chunks
 }
 
-/// The exact per-chunk AAD of a media object (D-093).
+/// The AD of one STREAM chunk, following the published construction's
+/// schedule (HRRV 2015, Fig. 8): the media AAD on the first chunk only, the
+/// empty string on every later chunk (D-093 review, F4). Chunk order and
+/// position are enforced by `StreamBE32` itself.
+fn chunk_aad(media_aad: &[u8], first: bool) -> &[u8] {
+    if first {
+        media_aad
+    } else {
+        &[]
+    }
+}
+
+/// The exact AAD of a media object (D-093), bound to its first STREAM chunk
+/// ([`chunk_aad`]).
 pub(crate) fn media_aad(
     conversation: &[u8],
     media: &[u8; MEDIA_ID_LEN],
@@ -274,6 +290,7 @@ fn encrypt_file(
             EncryptorBE32::<XChaCha20Poly1305>::new(key.into(), prefix.as_slice().into());
         let mut buf = Zeroizing::new(Vec::with_capacity(MEDIA_CHUNK_BYTES + TAG_LEN));
         let mut remaining = plaintext_len;
+        let mut first = true;
         loop {
             let this = remaining.min(MEDIA_CHUNK_BYTES as u64) as usize;
             remaining -= this as u64;
@@ -282,9 +299,11 @@ fn encrypt_file(
             // A file that shrinks while being read is refused (read_exact).
             src.read_exact(&mut buf)
                 .map_err(|_| CoreError::InvalidInput)?;
+            let ad = chunk_aad(&aad, first);
+            first = false;
             if remaining == 0 {
                 stream
-                    .encrypt_last_in_place(&aad, &mut *buf)
+                    .encrypt_last_in_place(ad, &mut *buf)
                     .map_err(|_| CoreError::InternalCryptoFailure)?;
                 out.write_all(&buf)
                     .map_err(|_| CoreError::PersistenceFailure)?;
@@ -292,7 +311,7 @@ fn encrypt_file(
                 break;
             }
             stream
-                .encrypt_next_in_place(&aad, &mut *buf)
+                .encrypt_next_in_place(ad, &mut *buf)
                 .map_err(|_| CoreError::InternalCryptoFailure)?;
             out.write_all(&buf)
                 .map_err(|_| CoreError::PersistenceFailure)?;
@@ -344,7 +363,7 @@ fn decrypt_file(
         return Err(CoreError::AuthenticationFailure);
     }
 
-    // Pass 1: the commitment, before any decryption.
+    // Pass 1: the authenticated ciphertext digest, before any decryption.
     let mut hash = Sha256::new();
     let mut buf = vec![0u8; MEDIA_CHUNK_BYTES + TAG_LEN];
     let mut left = len;
@@ -379,6 +398,7 @@ fn decrypt_file(
     let mut plaintext = Zeroizing::new(Vec::with_capacity(total));
     let mut chunk = Zeroizing::new(Vec::with_capacity(MEDIA_CHUNK_BYTES + TAG_LEN));
     let mut remaining = mref.plaintext_len;
+    let mut first = true;
     loop {
         let this = remaining.min(MEDIA_CHUNK_BYTES as u64) as usize;
         remaining -= this as u64;
@@ -386,15 +406,17 @@ fn decrypt_file(
         chunk.resize(this + TAG_LEN, 0);
         file.read_exact(&mut chunk)
             .map_err(|_| CoreError::AuthenticationFailure)?;
+        let ad = chunk_aad(&aad, first);
+        first = false;
         if remaining == 0 {
             stream
-                .decrypt_last_in_place(&aad, &mut *chunk)
+                .decrypt_last_in_place(ad, &mut *chunk)
                 .map_err(|_| CoreError::AuthenticationFailure)?;
             plaintext.extend_from_slice(&chunk);
             break;
         }
         stream
-            .decrypt_next_in_place(&aad, &mut *chunk)
+            .decrypt_next_in_place(ad, &mut *chunk)
             .map_err(|_| CoreError::AuthenticationFailure)?;
         plaintext.extend_from_slice(&chunk);
     }
@@ -588,7 +610,7 @@ mod tests {
     }
 
     // ---- the STREAM/AEAD layer on its own: the hash is recomputed for
-    // every modified object, as if the commitment were bypassed.
+    // every modified object, as if the digest check were bypassed.
 
     const CID: [u8; 16] = [0x11; 16];
     const MEDIA: [u8; 16] = [0x44; 16];
@@ -728,6 +750,234 @@ mod tests {
         reprefixed[10] ^= 1;
         check(reprefixed, n, "nonce prefix changed");
     }
+
+    // ---- STREAM AD schedule (D-093 review, F4): the media AAD on the first
+    // chunk only, the empty AD on every later chunk, checked chunk by chunk
+    // with a plain XChaCha20-Poly1305 independent of `decrypt_file`.
+
+    use chacha20poly1305::aead::{Aead, KeyInit, Payload};
+    use chacha20poly1305::XNonce;
+
+    /// The object's chunks (ciphertext ‖ tag), split by the format.
+    fn chunks(object: &[u8], plaintext_len: usize) -> Vec<Vec<u8>> {
+        let mut out = Vec::new();
+        let mut at = MEDIA_HEADER_LEN;
+        let mut left = plaintext_len;
+        while left > 0 {
+            let n = left.min(MEDIA_CHUNK_BYTES);
+            out.push(object[at..at + n + TAG_LEN].to_vec());
+            at += n + TAG_LEN;
+            left -= n;
+        }
+        assert_eq!(at, object.len());
+        out
+    }
+
+    /// One STREAM chunk opened by hand: nonce `prefix ‖ be32(index) ‖ flag`.
+    fn open_chunk(ct: &[u8], index: u32, last: bool, ad: &[u8]) -> bool {
+        let mut nonce = [0u8; 24];
+        nonce[..NONCE_PREFIX_LEN].copy_from_slice(&PREFIX);
+        nonce[19..23].copy_from_slice(&index.to_be_bytes());
+        nonce[23] = u8::from(last);
+        XChaCha20Poly1305::new((&KEY).into())
+            .decrypt(XNonce::from_slice(&nonce), Payload { msg: ct, aad: ad })
+            .is_ok()
+    }
+
+    fn object_aad(object: &[u8], len: usize) -> Vec<u8> {
+        let header: [u8; MEDIA_HEADER_LEN] = object[..MEDIA_HEADER_LEN].try_into().unwrap();
+        media_aad(
+            &CID,
+            &MEDIA,
+            &SENDER,
+            MediaClass::Image,
+            len as u64,
+            &header,
+        )
+    }
+
+    #[test]
+    fn a_single_chunk_object_binds_the_media_aad_to_its_only_chunk() {
+        let len = 1000;
+        let obj = encrypted(len);
+        let bytes = fs::read(&obj.path).unwrap();
+        let aad = object_aad(&bytes, len);
+        let [only] = <[Vec<u8>; 1]>::try_from(chunks(&bytes, len)).unwrap();
+        assert!(open_chunk(&only, 0, true, &aad), "media AAD, final flag");
+        assert!(!open_chunk(&only, 0, true, &[]), "never the empty AD");
+        let n = len as u64;
+        let opened = decrypt_file(&obj.path, &matching_ref(&obj.path, n, KEY), honest(n)).unwrap();
+        assert_eq!(&opened[..], &obj.data[..]);
+    }
+
+    #[test]
+    fn a_multi_chunk_object_uses_the_media_aad_first_and_empty_ad_after() {
+        let len = 3 * MEDIA_CHUNK_BYTES + 9; // 4 chunks
+        let obj = encrypted(len);
+        let bytes = fs::read(&obj.path).unwrap();
+        let aad = object_aad(&bytes, len);
+        let parts = chunks(&bytes, len);
+        assert_eq!(parts.len(), 4);
+        let last = parts.len() - 1;
+        for (i, ct) in parts.iter().enumerate() {
+            let is_last = i == last;
+            let index = i as u32;
+            if i == 0 {
+                assert!(open_chunk(ct, index, is_last, &aad), "chunk 0: media AAD");
+                assert!(!open_chunk(ct, index, is_last, &[]), "chunk 0: not empty");
+            } else {
+                assert!(open_chunk(ct, index, is_last, &[]), "chunk {i}: empty AD");
+                assert!(
+                    !open_chunk(ct, index, is_last, &aad),
+                    "chunk {i}: not the media AAD"
+                );
+            }
+            // J: the final flag is accepted on the final chunk only.
+            assert!(
+                !open_chunk(ct, index, !is_last, if i == 0 { &aad } else { &[] }),
+                "chunk {i}: wrong flag"
+            );
+        }
+        let n = len as u64;
+        let opened = decrypt_file(&obj.path, &matching_ref(&obj.path, n, KEY), honest(n)).unwrap();
+        assert_eq!(&opened[..], &obj.data[..]);
+    }
+
+    #[test]
+    fn the_old_every_chunk_aad_schedule_is_not_accepted() {
+        // E: an object written with the media AAD on EVERY chunk (the
+        // pre-correction schedule), hash made to match. It must not open.
+        let len = 2 * MEDIA_CHUNK_BYTES + 5;
+        let data: Vec<u8> = (0..len).map(|i| (i % 251) as u8).collect();
+        let header = header(&PREFIX);
+        let aad = media_aad(
+            &CID,
+            &MEDIA,
+            &SENDER,
+            MediaClass::Image,
+            len as u64,
+            &header,
+        );
+        let mut stream =
+            EncryptorBE32::<XChaCha20Poly1305>::new((&KEY).into(), PREFIX.as_slice().into());
+        let mut object = header.to_vec();
+        let mut pieces = data.chunks(MEDIA_CHUNK_BYTES).peekable();
+        while let Some(piece) = pieces.next() {
+            let mut buf = piece.to_vec();
+            if pieces.peek().is_none() {
+                stream.encrypt_last_in_place(&aad, &mut buf).unwrap();
+                object.extend_from_slice(&buf);
+                break;
+            }
+            stream.encrypt_next_in_place(&aad, &mut buf).unwrap();
+            object.extend_from_slice(&buf);
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("old");
+        fs::write(&path, &object).unwrap();
+        let n = len as u64;
+        assert_eq!(
+            decrypt_file(&path, &matching_ref(&path, n, KEY), honest(n)).unwrap_err(),
+            CoreError::AuthenticationFailure
+        );
+        // A one-chunk object is the same under both schedules (the only
+        // chunk is the first), so the correction changes multi-chunk
+        // objects only.
+        let one = encrypted(100);
+        let bytes = fs::read(&one.path).unwrap();
+        let only = &chunks(&bytes, 100)[0];
+        assert!(open_chunk(only, 0, true, &object_aad(&bytes, 100)));
+    }
+
+    #[test]
+    fn wrong_or_tampered_chunks_fail_under_the_schedule() {
+        let len = 2 * MEDIA_CHUNK_BYTES + 5; // 3 chunks
+        let obj = encrypted(len);
+        let n = len as u64;
+        let genuine = fs::read(&obj.path).unwrap();
+        // C: wrong first-chunk AAD.
+        assert_eq!(
+            decrypt_file(
+                &obj.path,
+                &matching_ref(&obj.path, n, KEY),
+                aad_with(|a| a[30] ^= 1, n)
+            )
+            .unwrap_err(),
+            CoreError::AuthenticationFailure
+        );
+        // D: later chunks carry no AAD; one opened with any non-empty AD fails.
+        let aad = object_aad(&genuine, len);
+        let parts = chunks(&genuine, len);
+        assert!(!open_chunk(&parts[1], 1, false, &aad));
+        assert!(!open_chunk(&parts[1], 1, false, &[0]));
+        assert!(open_chunk(&parts[1], 1, false, &[]));
+        // F, G: a flipped byte in the first or a later chunk (hash bypassed).
+        let c = MEDIA_CHUNK_BYTES + TAG_LEN;
+        for (what, at) in [
+            ("first chunk", MEDIA_HEADER_LEN + 7),
+            ("later chunk", MEDIA_HEADER_LEN + c + 7),
+        ] {
+            let mut bytes = genuine.clone();
+            bytes[at] ^= 1;
+            fs::write(&obj.path, &bytes).unwrap();
+            assert_eq!(
+                decrypt_file(&obj.path, &matching_ref(&obj.path, n, KEY), honest(n)).unwrap_err(),
+                CoreError::AuthenticationFailure,
+                "{what}"
+            );
+        }
+        // H: a later chunk moved to the first position (its AD and index
+        // both mismatch) and two later chunks swapped.
+        let head = &genuine[..MEDIA_HEADER_LEN];
+        let part = |i: usize| &genuine[MEDIA_HEADER_LEN + i * c..MEDIA_HEADER_LEN + (i + 1) * c];
+        for (what, bytes) in [
+            (
+                "later chunk first",
+                [head, part(1), part(0), &genuine[MEDIA_HEADER_LEN + 2 * c..]].concat(),
+            ),
+            (
+                "first chunk repeated",
+                [head, part(0), part(0), &genuine[MEDIA_HEADER_LEN + 2 * c..]].concat(),
+            ),
+        ] {
+            fs::write(&obj.path, &bytes).unwrap();
+            assert_eq!(
+                decrypt_file(&obj.path, &matching_ref(&obj.path, n, KEY), honest(n)).unwrap_err(),
+                CoreError::AuthenticationFailure,
+                "{what}"
+            );
+        }
+        // I: truncated after the second chunk, the reference claiming two
+        // chunks (only the final flag can catch it).
+        fs::write(&obj.path, [head, part(0), part(1)].concat()).unwrap();
+        let claimed = 2 * MEDIA_CHUNK_BYTES as u64;
+        assert_eq!(
+            decrypt_file(&obj.path, &matching_ref(&obj.path, claimed, KEY), honest(n)).unwrap_err(),
+            CoreError::AuthenticationFailure
+        );
+    }
+
+    /// K: golden vectors for the corrected schedule. SHA-256 of the whole
+    /// object for fixed key, prefix, context and plaintext `i % 251`.
+    #[test]
+    fn stream_objects_match_the_golden_vectors() {
+        for (len, expected) in [
+            (100usize, GOLDEN_ONE_CHUNK_SHA256),
+            (2 * MEDIA_CHUNK_BYTES + 5, GOLDEN_THREE_CHUNK_SHA256),
+        ] {
+            let obj = encrypted(len);
+            assert_eq!(
+                hex(&sha(&fs::read(&obj.path).unwrap())),
+                expected,
+                "{len} bytes"
+            );
+        }
+    }
+
+    const GOLDEN_ONE_CHUNK_SHA256: &str =
+        "45315964ed6dd04a36301231449f849e387966ec594469d4726fa6bb144fe468";
+    const GOLDEN_THREE_CHUNK_SHA256: &str =
+        "f33d61548ffb5d03f7004ea5dedfed4741ee75c87631b2bc3425cb69d4e94f23";
 
     #[test]
     fn encryption_writes_the_committed_object_atomically() {

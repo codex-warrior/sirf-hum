@@ -86,10 +86,24 @@ size          = 25 + plaintext_len + 16 × ceil(plaintext_len / 65,536)
 The size is a pure function of the plaintext length. Rust checks it before
 decrypting anything.
 
-### Associated data (every chunk)
+### Associated data: STREAM's schedule
+
+STREAM is the published construction's schedule (HRRV 2015, Fig. 8):
+the **media AAD** below is the AD of the **first** chunk only, and **every
+later chunk uses the empty AD**. The chunk's position (and so the binding of
+later chunks to the same stream) comes from the STREAM nonce
+`prefix ‖ be32(i) ‖ flag`, under the object's single fresh key.
+
+*Pre-production correction (2026-10-19, D-093 review F4):* the first
+implementation passed the media AAD to every chunk. That deviated from
+Fig. 8, so Theorem 2 did not literally apply. It was corrected before any
+release. **No compatibility mode exists:** objects written with the old
+schedule (two or more chunks) fail to open (`authentication_failure`).
+One-chunk objects are identical under both schedules. There is no
+production data, so nothing needs migrating.
 
 ```text
-"SirfHum-MediaAAD" | aad version u8 = 1 | media schema u16 = 1
+media AAD (101 bytes) = "SirfHum-MediaAAD" | aad version u8 = 1 | media schema u16 = 1
 | conversation id [16] | media id [16] | sender device id [16]
 | media class u8 | plaintext length u64 BE | header [25]
 ```
@@ -97,7 +111,9 @@ decrypting anything.
 Built only in Rust, never by the caller. On decryption every field comes
 from the **sealed history record of the MLS message that delivered the
 key**. That record's conversation and sender device were authenticated by
-MLS (D-089). So an object fails to decrypt unless it was encrypted:
+MLS (D-089). Because the first chunk carries it, and later chunks are
+tied to that chunk by the stream's nonce sequence under one fresh key, an
+object fails to decrypt unless it was encrypted:
 
 - for this conversation;
 - under this media ID;
@@ -138,14 +154,14 @@ sources in `Cargo.lock` on 2026-10-19.
 | Question | Answer |
 | --- | --- |
 | Implementation | RustCrypto **`aead` 0.5.2**, module `aead::stream`, type **`StreamBE32`** (`EncryptorBE32` / `DecryptorBE32`), in-place API. Enabled through the `stream` feature of **`chacha20poly1305` 0.10.1** (`chacha20 0.9.1`, `poly1305 0.8.0`). Lockfile checksums: `aead` `d122413f…62b0`, `chacha20poly1305` `10cd7943…dc35`. SHA-256: **`sha2` 0.10.9** (`a7507d81…b283`). All are exact pins, already in OpenMLS' dependency tree; no crate was added to the lockfile. Code: `packages/sirf_hum_crypto/native/src/engine/media.rs` |
-| Source of the construction | STREAM, "Rogaway-flavoured": Hoang, Reyhanitabar, Rogaway, Vizár, *Online Authenticated-Encryption and its Nonce-Reuse Misuse-Resistance*, CRYPTO 2015, ePrint 2015/189 (§7, Fig. 8, Theorem 2; read from the co-author's copy, see [D-093-SECURITY-REVIEW §13](D-093-SECURITY-REVIEW.md)). `StreamBE32` matches the paper's nonce encoding (`N ‖ i ‖ d`, with i counted from 0 as `be32(i−1)`), final flag and state machine. **Deviation:** the paper binds the AD on segment 1 only (ε afterwards); Sirf Hum passes the same AAD to every segment. That variant is not literally covered by Theorem 2 (finding F4, open) |
+| Source of the construction | STREAM, "Rogaway-flavoured": Hoang, Reyhanitabar, Rogaway, Vizár, *Online Authenticated-Encryption and its Nonce-Reuse Misuse-Resistance*, CRYPTO 2015, ePrint 2015/189 (§7, Fig. 8, Theorem 2; read from the co-author's copy, see [D-093-SECURITY-REVIEW §13](D-093-SECURITY-REVIEW.md)). `StreamBE32` as used matches the paper's nonce encoding (`N ‖ i ‖ d`, with i counted from 0 as `be32(i−1)`), final flag, state machine and **AD schedule (A on the first segment, ε afterwards)**. The AD schedule was corrected before release (F4, [review §14](D-093-SECURITY-REVIEW.md)) |
 | Independent audit of the implementation | **None known for `aead::stream`.** The `chacha20poly1305` README cites one NCC Group review (published 2020-02-26, "RustCrypto AES-GCM and ChaCha20+Poly1305 implementation review"). It predates 0.10.1 and did not cover the `aead::stream` module, so we claim **no** audit for the version or the module we use. Our use of it (format, AAD, composition) is also unreviewed. For comparison, libsodium's 2017 audit (1.0.12–1.0.13) also predates `crypto_secretstream` (added in 1.0.14), so neither stream construction has a known audit (finding F2) |
-| Security properties (Theorem 2, for the paper's AD schedule) | nOAE, nonce-based online authenticated encryption, assuming XChaCha20-Poly1305 is a secure nonce-based AEAD and nonces never repeat under one key: confidentiality of each chunk and integrity of the **whole segmented message**, including chunk order, no duplication, no deletion and no truncation (the last-block flag). For Sirf Hum's every-segment-AAD variant these properties are **argued, not proven** (F4, [review §13.6](D-093-SECURITY-REVIEW.md)). Not provided: nonce-misuse resistance; key commitment; hiding of length (exact sizes are visible, E45) |
+| Security properties (Theorem 2, which now applies to the implemented schedule) | nOAE, nonce-based online authenticated encryption, assuming XChaCha20-Poly1305 is a secure nonce-based AEAD, the encoding is injective, and no stream nonce repeats under a key: confidentiality of each chunk and integrity of the **whole segmented message**, including chunk order, no duplication, no deletion and no truncation (the last-block flag). The paper proves properties of STREAM only, not of Sirf Hum's AAD contents, object digest or MLS key transport. Not provided: nonce-misuse resistance; key commitment; hiding of length (exact sizes are visible, E45) |
 | Key commitment | **Not provided** by the AEAD (ChaCha20-Poly1305 is not key-committing), and **not provided by the SHA-256 digest either**: the digest is an *authenticated ciphertext digest* (an integrity check against an expected value that MLS already authenticated). Key commitment is unnecessary here for a different reason. The key and the digest arrive together in one MLS-signed reference that every member receives identically, so every recipient decrypts exactly that object with exactly that key. Key substitution is prevented by MLS authentication of the reference, not by the hash. See [D-093-SECURITY-REVIEW §6](D-093-SECURITY-REVIEW.md) (finding F1) |
 | Nonce generation and uniqueness | 24-byte XChaCha20 nonce = **19-byte prefix** ‖ **u32 BE chunk counter** ‖ **last-block flag byte**. The prefix comes from `OsRng` per object and is stored in the header. Uniqueness comes from the **key**: every object has a fresh 32-byte `OsRng` key and is encrypted exactly once, so within a key each (counter, flag) pair is used once (the counter starts at 0 and only increases; the flag is 1 only on the final chunk). The random prefix is defence in depth, not what uniqueness relies on. Re-sending a queued message re-encrypts only the small MLS message, never the object |
 | Chunk ordering and integrity | Each chunk is a separate XChaCha20-Poly1305 encryption with a 16-byte tag, under the nonce for its position. A reordered, repeated or swapped chunk decrypts under the wrong nonce and fails its tag. Tested both with and without the hash check (`media.rs` unit tests bypass the hash on purpose) |
 | Finalization and truncation | The final chunk alone is encrypted with flag = 1 (`encrypt_last_in_place`), and the decryptor demands flag = 1 at the expected final position. Dropping trailing chunks makes the new last chunk fail (it was sealed with flag 0); tested with the hash bypassed. Before decrypting we also check: exact size = `25 + len + 16·⌈len/64 KiB⌉`, SHA-256, magic and format version. Bytes after the final chunk cannot pass the size check |
-| AAD | The same AAD on every chunk, built only in Rust: `"SirfHum-MediaAAD"` ‖ AAD version u8 = 1 ‖ media schema u16 BE = 1 ‖ conversation ID[16] ‖ media ID[16] ‖ sender device ID[16] ‖ media class u8 ‖ plaintext length u64 BE ‖ header[25] (`"SHMD"` ‖ format u16 BE = 1 ‖ nonce prefix[19]). On decryption every field comes from the sealed history record of the MLS message that delivered the key (MLS-authenticated conversation and sender). Fixed-width fields only, so the encoding is unambiguous. Golden vector shared by Rust tests |
+| AAD | The **first chunk** carries the media AAD; **every later chunk uses the empty AD** (STREAM's published schedule; corrected before release, F4). The media AAD is built only in Rust: `"SirfHum-MediaAAD"` ‖ AAD version u8 = 1 ‖ media schema u16 BE = 1 ‖ conversation ID[16] ‖ media ID[16] ‖ sender device ID[16] ‖ media class u8 ‖ plaintext length u64 BE ‖ header[25] (`"SHMD"` ‖ format u16 BE = 1 ‖ nonce prefix[19]). On decryption every field comes from the sealed history record of the MLS message that delivered the key (MLS-authenticated conversation and sender). Fixed-width fields only, so the encoding is unambiguous. Golden vector shared by Rust tests |
 | Key lifecycle | **Generated:** 32 bytes from `OsRng` in `send_media`, held in `Zeroizing`. **Used:** once, to encrypt one object. **Delivered:** only inside the `media_ref` MLS application message (MLS encryption and signature, D-089 AAD). **Stored:** in the sealed history record (kind 5, platform store key) on the sender and on every recipient device. **Never:** returned over the FFI, given to Dart, written to Firestore or Storage, logged, or rotated. **Destroyed:** zeroized in memory after use; on disk when the history record is deleted ("delete for me") or the account slot is removed (crypto-erasure: store key first) |
 | Maximum size | Construction: 2³² − 1 chunks (the counter limit; the crate refuses past it) × 64 KiB, about 256 TiB. **Implementation limit: 64 MiB plaintext** (1,024 chunks; object ≤ 67,125,273 B), enforced before reading; empty input refused. The limit exists because decryption returns memory, not because of the construction |
 | Custom composition around STREAM | **Yes, and it is the part most in need of review:** (1) the object format (header, chunk layout) and the binding of the header into the AAD; (2) the AAD encoding and its fields; (3) the authenticated SHA-256 ciphertext digest, checked before decryption (an integrity check, not key commitment); (4) key transport inside an MLS application message, and the rule that the AAD's sender is the MLS sender of that message; (5) two-pass decryption (hash, then decrypt) with a re-opened file. **No new primitive** is designed: no own cipher, MAC, KDF, nonce scheme or chunking logic. Chunking and nonces are the crate's STREAM |
@@ -156,7 +172,7 @@ sources in `Cargo.lock` on 2026-10-19.
 - Should the AAD include the format version separately from the header (it is inside the header today)?
 - Size padding (D-099).
 
-- F4: accept the every-segment-AAD variant after a review of the adapted reduction, or switch to the paper's AD schedule (AAD on the first segment only). See [review §13.6](D-093-SECURITY-REVIEW.md).
+- F4 (AD schedule) was resolved by option (b): the implementation now follows the paper's schedule ([review §14](D-093-SECURITY-REVIEW.md)). The adapted-proof discussion of §13.6 is no longer needed for the design. Review the change itself as part of the sign-off.
 
 D-093 stays as recorded until that review; it is not replaced yet.
 

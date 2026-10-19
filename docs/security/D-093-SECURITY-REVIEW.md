@@ -31,12 +31,15 @@ amount of our own composition on top.
 | Composition (AAD, object digest, MLS key transport) | Sound for v1. Every AAD field except the header comes from an authenticated source; the header is bound by being in the AAD and by the digest | VERIFIED (source) |
 | SHA-256 "key commitment" | **The terminology is inaccurate.** It is an *authenticated ciphertext digest*. Key commitment is unnecessary in this design for a different reason (§6) | Finding F1 |
 | Audit status | `aead::stream` has **no** known audit. The libsodium alternative's 2017 audit also **predates** `crypto_secretstream` | Finding F2 |
-| Exact correspondence to the paper | **Resolved by the F4 pass (§13), with one deviation.** Nonce encoding, segment numbering (an injective encoding of the paper's i = 1, 2, …), final flag, state machine and expansion τ = 128 match Fig. 8 of the paper (primary source obtained). **Deviation:** the paper binds the AD A on segment 1 only (ε afterwards); Sirf Hum passes the same AAD to every segment. Theorem 2 does not literally cover that schedule | Finding F4 (re-graded, §13) |
+| Exact correspondence to the paper | **Established after the correction in §14.** The F4 pass (§13) found the nonce encoding (an injective encoding of the paper's i = 1, 2, …), final flag, state machine and τ = 128 matching Fig. 8, but the AD schedule deviating. **Option (b) was implemented (§14):** the media AAD is now the AD of the first segment only, ε afterwards, as in Fig. 8 | Finding F4 (resolved in code, §14; pending human review of the change) |
 
 **Decision: MERGE WITH SPECIFIC SECURITY CHANGES (§11).** The required
-changes are corrections of security claims in the documentation (made),
-**resolution of F4's AD-schedule deviation (§13)**, and human sign-off.
-Updated by the F4 evidence pass on 2026-10-19.
+changes were:
+- corrections of security claims in the documentation (made);
+- resolution of F4's AD-schedule deviation (made by option (b), §14);
+- human sign-off (pending).
+
+Updated on 2026-10-19 after the correction.
 
 ## 2. Exact dependency and implementation chain
 
@@ -90,8 +93,8 @@ the object.
 big endian counter and 1-byte 'last block' flag stored as the last 5-bytes
 of the AEAD nonce". *Superseded by §13:* the paper was obtained in the F4
 pass. The nonce encoding and state machine match Fig. 8. Sirf Hum's AD
-schedule (the same AAD on every segment) differs from Fig. 8 (A on segment
-1, ε afterwards).
+schedule originally differed from Fig. 8. It was corrected in §14 and is now
+A on segment 1, ε afterwards, as in Fig. 8.
 
 | Property | Implementation | Status |
 | --- | --- | --- |
@@ -100,7 +103,7 @@ schedule (the same AAD on every segment) differs from Fig. 8 (A on segment
 | Final-chunk flag | 1 only for `*_last*`, which consumes the object (no further chunks possible); 0 otherwise | VERIFIED (source, test) |
 | Chunk numbering | Position equals the zero-based chunk index; the decryptor advances in step and cannot skip | VERIFIED (source) |
 | Tag handling | 16-byte Poly1305 tag appended per chunk; constant-time verify before decryption; buffer untouched on failure | VERIFIED (source) |
-| Associated data | Caller-supplied, per chunk. We pass the **same** 101-byte AAD to every chunk. Per-chunk distinctness comes from the nonce, not the AAD | VERIFIED (source, test) |
+| Associated data | Caller-supplied, per chunk. **Since §14:** the 101-byte media AAD on the first chunk, ε on every later chunk (Fig. 8's schedule). Per-chunk distinctness comes from the nonce, not the AAD | VERIFIED (source, test) |
 | Ordering | A chunk moved to another position is decrypted under a different nonce → tag failure | VERIFIED (test: swapped, hash bypassed); ARGUED (INT-CTXT of the AEAD) |
 | Truncation | The final chunk must verify with flag 1 at its position. Dropping trailing chunks makes the new last chunk fail (sealed with flag 0). Our decryptor also takes the chunk count from the authenticated plaintext length | VERIFIED (test: truncated at a chunk boundary, hash bypassed) |
 | Duplication and replay within an object | A repeated chunk sits at a different index → wrong nonce → failure | VERIFIED (test: repeated) |
@@ -306,7 +309,7 @@ reviewer confirms §3 against the paper (F4) and accepts the unaudited status
 | F1 | **Medium (security claim accuracy)** | The SHA-256 digest was described as a key-commitment substitute and a key-substitution defence. Inaccurate (§6) | **Fixed (docs)** in this commit. Three code comments in `engine/media.rs` still say "commitment"; reword them with the next code change (this review changes no code) |
 | F2 | **Medium (security claim accuracy)** | The docs stated libsodium had a published audit as the trade-off against `aead::stream`. That audit predates `secretstream` (§9) | **Fixed (docs)** in this commit |
 | F3 | Low (pre-v2) | The media format version is bound only through the file header, not named in the authenticated `media_ref` | Open: required **before** any format v2; no change for v1 |
-| F4 | **Medium (assurance; no attack known)** | *Re-graded by the F4 pass (§13).* The paper's Theorem 2 covers STREAM with A on segment 1 and ε on later segments. Sirf Hum passes the same 101-byte AAD to **every** segment, so for objects of two or more chunks the implemented construction is a variant that Theorem 2 does not literally cover. Everything else maps exactly | Open: resolve by (a) or (b) in §13 before sign-off |
+| F4 | Medium (assurance; no attack known) | Theorem 2 covered STREAM with A on segment 1 and ε afterwards; Sirf Hum passed the AAD to every segment (§13) | **Resolved in code by option (b) (§14).** Pending human review of the change |
 | F5 | Low (memory hygiene) | Copies of the media key inside OpenMLS internal buffers (application plaintext) are not known to be zeroized: **NOT ESTABLISHED** | Open: same residual as text (E23); review with the OpenMLS delta review |
 | F6 | Informational | Media is bound to media ID and sender, not to the delivering message ID | Accepted (no attack found) |
 | F7 | Low (availability) | Lost-ack recognition trusts server metadata (`sd`, size); a malicious server can make an upload look complete | Accepted: DoS only; recipients fail closed (`unavailable`) |
@@ -323,11 +326,9 @@ truncation resistance or nonce uniqueness.
 Required before merge:
 1. **Documentation corrections F1 and F2.** Done in this review's commit:
    design doc §2 brief, D-093 entry, THREAT-MODEL E36/E37 wording.
-2. **Resolve F4 (§13):** either (a) a qualified reviewer accepts the
-   adapted reduction for the every-segment-AAD variant, or (b) the code is
-   changed to the paper's exact AD schedule (A on the first segment, ε on
-   later ones). (b) is a code and format change; it is **not** implemented
-   here.
+2. **Resolve F4 (§13).** **Done by option (b) (§14):** the code now uses
+   the paper's exact AD schedule (A on the first segment, ε on later ones),
+   with focused tests. The human review must cover this change.
 3. **Human security sign-off on D-093**, including acceptance of the
    unaudited status (F8). Until then D-093 stays **PROPOSED — PENDING HUMAN
    SECURITY REVIEW**.
@@ -340,11 +341,10 @@ Not required for merge (recommended follow-ups; **not implemented**):
 | F9 | Test-only hook to inject a kind-2 reference sent by device B naming device A's object; assert `open_media` fails | `native/tests/media.rs` (`#[cfg(test)]` helper) | That test | No | No |
 | T | Concurrency test: two cores and parallel `send_media` produce distinct keys and prefixes | `native/tests/media.rs` | That test | No | No |
 
-**Replacement is not recommended at this point (§9, §13).** The F4 pass
-found no security weakness. It found a gap between what the paper proves
-and what Sirf Hum uses. That gap is closed either by review of a short
-adapted reduction, or by a small change that makes the construction match
-the paper exactly.
+**Replacement is not recommended at this point (§9, §13, §14).** The F4
+pass found no security weakness, only a gap between what the paper proves
+and what Sirf Hum used. The correction in §14 closes that gap in code, so no
+adapted proof is needed.
 
 ## 12. Evidence
 
@@ -362,6 +362,11 @@ the paper exactly.
 - **CI on PR #10:** all 17 checks passed.
 
 ## 13. F4 evidence pass (second pass, 2026-10-19)
+
+> **Historical record.** This section describes the implementation *before*
+> the correction in §14. Its deviation, adapted reduction (§13.6) and
+> verdict (§13.9) are superseded for the design. They are kept so the
+> decision trail stays reviewable.
 
 Scope: F4 only, meaning whether `aead 0.5.2` `StreamBE32`, as Sirf Hum uses
 it, is the STREAM construction of Hoang, Reyhanitabar, Rogaway and Vizár.
@@ -417,7 +422,7 @@ injectivity in words; the proof relies on it.
 | Final flag | `last_block as u8`: `0x00` or `0x01`, nonce byte 23 |
 | Concatenation | `prefix[19] ‖ be32(position) ‖ flag[1]` (`aead_nonce`) |
 | Position | `Default` = 0 at `new`; `+= 1` after each successful `*_next*`; `*_next*` errors when `position == u32::MAX`; `*_last*` uses the current position and **consumes** the object |
-| AD | The caller's `associated_data` for **each** call (no state). Sirf Hum passes the same 101-byte AAD to every call |
+| AD | The caller's `associated_data` for **each** call (no state). Sirf Hum passed the same 101-byte AAD to every call at the time of this pass; corrected in §14 to the media AAD on the first call and ε on the rest |
 | Plaintext and chunks | One AEAD call per caller-supplied buffer; no internal chunking. Sirf Hum: 64 KiB, last 1..64 KiB |
 | Ciphertext and tag | `AeadInPlace::encrypt_in_place`: detached encryption, then the 16-byte tag appended. Decrypt: buffer < 16 → error; tag verified (constant time) before decryption; truncated only on success |
 | Failure | `aead::Error`. A `*_next*` failure leaves the object usable at the same position. Sirf Hum aborts the whole open on the first error |
@@ -464,13 +469,13 @@ authoritative specification. Its security argument is the expired
 | Encoding ⟨N, i, d⟩ | `N[19] ‖ be32(i − 1) ‖ u8(d)`, fixed length | **VERIFIED**, and injective (fixed-width fields), which the proof needs | `aead_nonce` source; temporary test (first pass) |
 | d = 0 for `next`, d = 1 for `last` | `last_block: false` in `*_next*`, `true` in `*_last*` | **VERIFIED** | Macro source |
 | State `(N, V, i)`; `next` → `(N, ε, i + 1)` | Encryptor holds (AEAD, N, position). **No V: AD is supplied per call** | **VERIFIED** for N and i. **AD: see next row** | Source |
-| **AD: V = A on segment 1, V = ε on segments ≥ 2** | **Sirf Hum passes A (101 B) on every segment** | **NOT ESTABLISHED as equal. Differs for objects with ≥ 2 chunks. Identical for 1-chunk objects (≤ 64 KiB)** | `media.rs` passes `&aad` to every call; Fig. 8 `S ← (N, ε, i + 1)` |
+| **AD: V = A on segment 1, V = ε on segments ≥ 2** | *Before §14:* A on every segment. **After §14: A on the first segment, ε on every later segment** | **VERIFIED after the correction** (§14: per-chunk hand decryption with A on chunk 0 and ε on chunks ≥ 1; A on chunk ≥ 1 and ε on chunk 0 both fail) | `chunk_aad` in `media.rs`; tests §14 |
 | `last` ends the stream (no further segments) | `*_last*` takes `self` by value | **VERIFIED** | Source |
 | `D.next` failure → (⊥, ⊥) (stream dead) | On error the decryptor is not poisoned (position unchanged). **Sirf Hum aborts immediately** | **VERIFIED as used**: the abort gives the paper's behaviour | Source; `decrypt_file` `?` on first error |
 | Receiver applies `D.last` to the final segment | Sirf Hum calls `decrypt_last` at the position given by the authenticated plaintext length | **VERIFIED as used** (application responsibility in the paper's syntax too) | `decrypt_file` |
 | No query with i > max | `next` refuses at `u32::MAX`; Sirf Hum ≤ 1,024 segments | **VERIFIED** | Source; `MAX_MEDIA_PLAINTEXT_BYTES` |
 | Nonce N not repeated under a key (nOAE game) | One stream per fresh random key (§4) | **VERIFIED** (code paths) | First-pass §4 |
-| Theorem 2 bound Adv_nae(B) + q/2^τ | q ≤ 1,024 per object; τ = 128 | Applies **only** to the paper's AD schedule (row above) | Theorem 2 |
+| Theorem 2 bound Adv_nae(B) + q/2^τ | q ≤ 1,024 per object; τ = 128 | Applies to the implemented schedule after §14 (under the stated assumptions) | Theorem 2; §14 |
 
 ### 13.6 The deviation, analysed (not fixed)
 
@@ -574,4 +579,88 @@ of §13.6 is done:
   that makes the paper's theorem apply verbatim.
 
 D-093 status is unchanged: **PROPOSED — PENDING HUMAN SECURITY REVIEW**.
+
+## 14. Correction: STREAM AD schedule (option (b), 2026-10-19)
+
+**What changed (code):** in `packages/sirf_hum_crypto/native/src/engine/media.rs`,
+`encrypt_file` and `decrypt_file` now pass `chunk_aad(&aad, first)` to
+every STREAM call. That is the 101-byte media AAD for the first chunk and
+the empty string for every later chunk. Nothing else changed:
+- key generation, XChaCha20-Poly1305 and `StreamBE32`;
+- the nonce prefix and counter, the final flag and the 64 KiB chunk size;
+- the header, the authenticated ciphertext digest, `media_ref`, MLS
+  delivery and the 64 MiB limit;
+- storage and notifications.
+
+Doc comments in the same file were reworded:
+- "the per-chunk AAD" became "the media AAD … of the first STREAM chunk";
+- "commitment" became "authenticated ciphertext digest" (the F1 residual
+  noted in §10).
+
+| | Before | After |
+| --- | --- | --- |
+| Chunk 0 (first; final if the object has one chunk) | media AAD (101 B) | media AAD (101 B) |
+| Chunks 1 … n−1 | media AAD (101 B) | **ε (empty)** |
+| Nonce, key, flag, header, digest | unchanged | unchanged |
+
+**Sequencing and fail-closed behaviour.** No new state machine was added.
+`StreamBE32` already starts at position 0, advances only on success, and
+consumes the object on `*_last*`. A local `first` flag is set before the
+first call and cleared right after it, so:
+- the media AAD cannot reach a later chunk;
+- ε cannot reach the first chunk;
+- no chunk can be skipped or processed out of order (decryption reads
+  chunks strictly sequentially and stops at the first failure).
+
+**Now matches the published construction.** With the encoding of §13.5,
+Sirf Hum's encryption of a media object is exactly STREAM[Π, ⟨·⟩] of Fig. 8:
+`E_K(⟨N,1,d⟩, A, M₁)`, then `E_K(⟨N,i,d⟩, ε, M_i)` for i ≥ 2, with Π =
+XChaCha20-Poly1305 and `⟨N,i,d⟩ = N ‖ be32(i−1) ‖ u8(d)`. Theorem 2 therefore
+applies to the implemented schedule under its stated assumptions:
+- Π is nAE-secure (assumption);
+- the encoding is injective (it is);
+- no stream nonce repeats under a key (one stream per fresh key, §4);
+- i ≤ max.
+
+The adapted reduction of §13.6 is **no longer required** for the design.
+
+**What the paper does not cover.** Theorem 2 is about STREAM. It proves
+nothing about:
+- the contents and binding semantics of the media AAD;
+- the authenticated ciphertext digest;
+- the object format;
+- MLS key delivery;
+- the 64 MiB limit.
+
+Those remain Sirf Hum's composition (§5) and remain under review.
+
+**Compatibility.** Pre-production format correction:
+- No compatibility mode and no dual-schedule support.
+- An object of two or more chunks written by the earlier build fails with
+  `authentication_failure` (tested).
+- A one-chunk object (≤ 64 KiB) is byte-identical under both schedules.
+- No media exists in any deployed environment (Storage needs Blaze, D-095),
+  so nothing needs migrating. Format version, payload version and ABI
+  version are unchanged, because no released artefact ever used the old
+  schedule.
+
+**Tests added (`engine/media.rs` unit tests):**
+
+| Test | Covers |
+| --- | --- |
+| `a_single_chunk_object_binds_the_media_aad_to_its_only_chunk` | A: only chunk opens by hand with the media AAD and final flag, not with ε; `decrypt_file` round trip |
+| `a_multi_chunk_object_uses_the_media_aad_first_and_empty_ad_after` | B, D, J: 4-chunk object; chunk 0 opens with the AAD and not ε; chunks 1–3 open with ε and not the AAD; every chunk fails with the wrong final flag; round trip |
+| `the_old_every_chunk_aad_schedule_is_not_accepted` | E: an object built with the old schedule (digest made to match) fails; one-chunk objects are schedule-independent |
+| `wrong_or_tampered_chunks_fail_under_the_schedule` | C (wrong first-chunk AAD), D (non-empty AD on a later chunk), F, G (tampered first or later chunk, digest bypassed), H (later chunk moved first, first chunk repeated), I (truncated at a chunk boundary) |
+| `stream_objects_match_the_golden_vectors` | K: SHA-256 of the whole object for a 1-chunk (100 B) and a 3-chunk (2 × 64 KiB + 5 B) object with fixed key, prefix, context and plaintext. These are **regression pins generated by this implementation**; their independent check is the per-chunk hand decryption above |
+
+Existing tests are unchanged and pass:
+- `native/tests/media.rs` (18), messaging (30), and all other Rust suites;
+- the previous STREAM-layer unit tests (wrong key, AAD fields, swap,
+  repeat, truncation, prefix).
+
+**Status.** F4 is resolved in code. D-093 remains **PROPOSED — PENDING
+HUMAN SECURITY REVIEW**. The sign-off should cover this change, F8 (no audit
+of `aead::stream` and the composition), and the open low findings (F3, F5,
+F7, F9).
 
