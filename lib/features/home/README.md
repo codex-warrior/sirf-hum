@@ -1,6 +1,18 @@
 # Home
 
-The emotional front door: partner presence, quick call, Start Together, quick message, today's ritual, upcoming plan, recent moment.
+The couple's front door (Prompt 13):
 
-Not implemented. Scope and principles: `docs/product/PRODUCT-CONSTITUTION.md`.
-Do not add code here outside the phase that owns this area (`docs/phases/ROADMAP.md`).
+- a greeting, the couple mark and names;
+- "Start something together", leading to Together;
+- deliberate empty states for Recently (Moments) and Coming up (Future).
+
+Files:
+
+- `presentation/home_screen.dart`: shown only for a paired session; takes
+  navigation as callbacks. Also holds `HomeSkeleton` (loading).
+- `domain/greeting.dart`: the greeting and the couple title.
+- `application/home_providers.dart`: an injectable clock.
+
+Not yet: partner presence, quick call, quick message, rituals, and real
+moment and plan previews. Design:
+`docs/architecture/APP-SHELL-AND-NAVIGATION.md`.

@@ -235,7 +235,7 @@ are **outside** the trust boundary.
 | Firestore `(default)`, Native, `asia-south1` | Created | Created | Created (delete protection on) |
 | Firestore rules | Deny-all deployed from repo | Firebase default (deny-all) | Firebase default (deny-all) |
 | APIs: Firestore, App Check, Identity Toolkit, Crashlytics, FCM | Enabled | Enabled | Enabled |
-| Auth sign-in providers | None (D-029) | None | None |
+| Auth sign-in providers | None (D-029; the client only observes sessions, D-107) | None | None |
 | Cloud Storage bucket | **Blocked: needs Blaze** | **Blocked** | **Blocked** |
 | Cloud Functions | **Blocked: needs Blaze** (device activation written and emulator-tested, Prompt 07) | **Blocked** | **Blocked** |
 | Hosting default site | Exists, nothing deployed | Exists | Exists |

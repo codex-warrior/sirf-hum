@@ -100,6 +100,11 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-090 | Local message history as sealed core records in the account slot, atomic with MLS state; no plaintext fallback | Accepted (development) | 2026-10-19 |
 | D-092 | iOS is not part of the current product: Android P0, Web P1 where applicable, iOS undecided; iOS CI jobs removed; shared code stays platform-neutral | Accepted (owner decision) | 2026-10-19 |
 | D-091 | Per-epoch receive order; past-epoch window 0 (resolves D-060 for messaging); out-of-order tolerance 32; encrypt at compose, re-encrypt the same ID after a stale-epoch refusal | Accepted (development) | 2026-10-19 |
+| D-106 | One server-authoritative, ID-free session state (`lib/session`) for auth + couple; widgets never construct it | Accepted (development) | 2026-10-19 |
+| D-107 | `firebase_auth` for session observation/restoration and sign-out only; sign-in method still open (D-029) | Accepted (development); sign-in method **Open** | 2026-10-19 |
+| D-108 | Entry routes outside a five-area shell; shell only for a paired session; bottom bar / rail, no drawer | Accepted (development) | 2026-10-19 |
+| D-109 | Small design-system component set; honest entry states instead of sample data; web private-content notices | Accepted (development) | 2026-10-19 |
+| D-110 | Bounded Firebase start-up wait; a failed start is "couldn't start", never "signed out" | Accepted | 2026-10-19 |
 
 ---
 
@@ -1030,4 +1035,36 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
     - content-free pairing notifications;
     - a retention policy for ended pairing records.
   - **Deployment:** blocked on Blaze (D-025). Emulator-tested only.
+- **Status:** Accepted · 2026-10-19.
+
+### D-106 — Session state: server-authoritative, ID-free (Prompt 13)
+- **Decision:**
+  - One `SessionController` (Riverpod) in a new `lib/session/` module produces a sealed `SessionState`: starting, signed out, not paired, pairing (stage), paired (display names), unavailable (`unreachable`, `signInAgain`, `startFailed`).
+  - The account comes from the `AccountSession` port. The couple comes only from `getPairingState` through the existing `PairingBackend`, read-only. A malformed or unknown answer, or no backend, is `unavailable`, never a state.
+  - States hold no account, couple, pairing, conversation or device IDs, tokens or codes. Display names are re-validated with the rules' constraint and never logged.
+  - Answers for an earlier account are dropped (generation counter). A failed refresh keeps the state on screen; a rejected sign-in always replaces it. Nothing is persisted locally.
+- **Reason:** the UI is never the authorization boundary (D-100, D-103). A single producer makes "UI cannot manufacture a couple" testable, and an ID-free model makes leaking internal IDs on screen structurally impossible.
+- **Alternatives considered:** reading `accountPartners` directly for couple state (rejected: duplicates server logic and would show "paired" without the pairing state machine); caching the last state on device (rejected: relationship metadata in insecure storage).
+- **Status:** Accepted for development · 2026-10-19. Design: [APP-SHELL-AND-NAVIGATION](../architecture/APP-SHELL-AND-NAVIGATION.md).
+
+### D-107 — Account session via Firebase Auth; sign-in method still open
+- **Decision:** add `firebase_auth` (imported only by `lib/infrastructure`) for `authStateChanges` (restored session first) and sign-out. `AccountSession` is a port in `lib/security/account/`. No sign-in UI and no provider: D-029 still holds, and the method (email link or email/password are the intended baseline) is a product decision for the identity/pairing UI prompt. The welcome screen says sign-in is coming instead of offering a dead button.
+- **Consequence:** a real build today can only reach the welcome screen. Paired, pairing and error screens are exercised by widget tests, on-device integration tests with fake ports, and a local preview harness that is never committed.
+- **Status:** Accepted for development · 2026-10-19. Sign-in method: **Open** (before the identity/pairing UI prompt).
+
+### D-108 — Navigation: entry routes + five-area shell
+- **Decision:** `/start`, `/welcome` and `/pair` live outside a `StatefulShellRoute` with the five V1 areas (Home, Together, Moments, Future, Us). There is a bottom `NavigationBar` on compact windows and a `NavigationRail` from 600 dp, with no drawer or nested tabs. One pure redirect function sends every non-paired state to its entry route. Area deep links survive loading via `?from=`, and only exact area paths are honoured. Features receive navigation as callbacks and do not import the router.
+- **Reason:** UX-PRINCIPLES rules 1–2 (zero learning curve, familiar bottom navigation). A user who is not paired never sees a broken Home.
+- **Status:** Accepted for development · 2026-10-19.
+
+### D-109 — Design-system components v1 and honest entry states
+- **Decision:**
+  - Components: `AppPage`, `AppSection`, `EmptyState`, `ErrorState`, `Skeleton`/`SkeletonBlock`, `Notice`, `CoupleMark`. Buttons are themed in `AppTheme`: one filled accent primary per screen, outlined and text otherwise, with touch-target heights.
+  - No new colors or fonts: the identity phase still owns them (D-020).
+  - Unbuilt areas show deliberate entry states ("… is on its way"), never sample data.
+  - On web, screens that will hold private content say it opens in the phone app (D-046).
+- **Status:** Accepted for development · 2026-10-19.
+
+### D-110 — Bounded Firebase start-up
+- **Decision:** `FirebaseBootstrap` waits at most 10 s for `Firebase.initializeApp`. On web this call also waits for Firebase Auth to restore its session from IndexedDB, and never returns where IndexedDB does not settle (seen in headless Chrome; also possible with blocked storage). Past the bound the status is `failed`. A configured build whose Firebase failed uses `UnavailableAccountSession`, so the user sees "Sirf Hum couldn't start", never a blank page and never "signed out".
 - **Status:** Accepted · 2026-10-19.

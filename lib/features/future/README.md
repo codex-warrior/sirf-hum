@@ -1,6 +1,4 @@
 # Future
 
-Where the couple is going: plans, dates, trips, bucket lists, dreams, goals, milestones, reminders.
-
-Not implemented. Scope and principles: `docs/product/PRODUCT-CONSTITUTION.md`.
-Do not add code here outside the phase that owns this area (`docs/phases/ROADMAP.md`).
+Entry state only (Prompt 13, `presentation/future_screen.dart`). Plans,
+dates and goals come in a later prompt.

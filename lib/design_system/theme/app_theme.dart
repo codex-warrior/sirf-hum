@@ -31,7 +31,9 @@ abstract final class AppTheme {
     final textTheme = const TextTheme(
       displaySmall: TypeScale.display,
       headlineSmall: TypeScale.title,
+      titleLarge: TypeScale.title,
       titleMedium: TypeScale.heading,
+      titleSmall: TypeScale.bodyStrong,
       bodyLarge: TypeScale.body,
       bodyMedium: TypeScale.body,
       labelLarge: TypeScale.label,
@@ -48,12 +50,83 @@ abstract final class AppTheme {
       materialTapTargetSize: MaterialTapTargetSize.padded,
       visualDensity: VisualDensity.standard,
       extensions: [colors],
+      // Buttons: one filled (accent) primary per screen, text buttons for
+      // everything else. Heights are touch-target tokens, never smaller.
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: colors.accent,
+          foregroundColor: colors.onAccent,
+          minimumSize: const Size(
+            TouchTargets.minimum,
+            TouchTargets.comfortable,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.xl),
+          textStyle: TypeScale.bodyStrong,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(Radii.md)),
+          ),
+          elevation: Elevation.flat,
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: colors.textPrimary,
+          minimumSize: const Size(TouchTargets.minimum, TouchTargets.minimum),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.lg),
+          side: BorderSide(color: colors.border),
+          textStyle: TypeScale.label,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(Radii.md)),
+          ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: colors.accent,
+          minimumSize: const Size(TouchTargets.minimum, TouchTargets.minimum),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
+          textStyle: TypeScale.label,
+        ),
+      ),
+      dividerTheme: DividerThemeData(color: colors.border, thickness: 1),
+      dialogTheme: DialogThemeData(
+        backgroundColor: colors.surface,
+        elevation: Elevation.modal,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(Radii.lg)),
+        ),
+      ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: colors.background,
         indicatorColor: colors.surfaceMuted,
         elevation: Elevation.flat,
-        labelTextStyle: WidgetStatePropertyAll(
-          TypeScale.label.copyWith(color: colors.textPrimary),
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        iconTheme: WidgetStateProperty.resolveWith(
+          (states) => IconThemeData(
+            size: IconSizes.md,
+            color: states.contains(WidgetState.selected)
+                ? colors.textPrimary
+                : colors.textSecondary,
+          ),
+        ),
+        labelTextStyle: WidgetStateProperty.resolveWith(
+          (states) => TypeScale.label.copyWith(
+            color: states.contains(WidgetState.selected)
+                ? colors.textPrimary
+                : colors.textSecondary,
+          ),
+        ),
+      ),
+      navigationRailTheme: NavigationRailThemeData(
+        backgroundColor: colors.background,
+        indicatorColor: colors.surfaceMuted,
+        selectedIconTheme: IconThemeData(color: colors.textPrimary),
+        unselectedIconTheme: IconThemeData(color: colors.textSecondary),
+        selectedLabelTextStyle: TypeScale.label.copyWith(
+          color: colors.textPrimary,
+        ),
+        unselectedLabelTextStyle: TypeScale.label.copyWith(
+          color: colors.textSecondary,
         ),
       ),
       focusColor: colors.focusRing.withValues(alpha: 0.24),

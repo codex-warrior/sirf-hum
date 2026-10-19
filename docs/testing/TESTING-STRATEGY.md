@@ -9,7 +9,7 @@ the product is minimal. No coverage claims are made.
 | --- | --- | --- | --- | --- |
 | Unit | `flutter_test` | `test/**` (mirrors `lib/`) | Business logic, config, tokens, security boundary types | ✅ in use |
 | Widget | `flutter_test` | `test/**` | UI behaviour, navigation, accessibility guidelines, text scaling | ✅ in use |
-| Integration | `integration_test` | `integration_test/` | Real entrypoint on device/emulator/browser | ✅ smoke test passes on Android API 36 emulator (locally); not in CI yet |
+| Integration | `integration_test` | `integration_test/` | Real entrypoint on device/emulator/browser; core UX over fake ports | ✅ `app_smoke_test` + `core_ux_test` run on the CI Android emulator (Prompt 13) |
 | Security Rules | `@firebase/rules-unit-testing` + emulators, `node --test` | `firebase/tests/` | Authorization and privacy boundaries | ✅ default-deny tests |
 | Cloud Functions | `node --test` on compiled output (+ `firebase-functions-test` later) | `functions/test/` | Environment/project guard; later server logic and authorization | ✅ environment guard tests |
 | Environment safety | `flutter_test` | `test/app/environment_guard_test.dart` | Builds cannot cross environments | ✅ |
@@ -34,8 +34,14 @@ the product is minimal. No coverage claims are made.
 ## Accessibility tests in place
 
 - Semantic color contrast ≥ 4.5:1 (text) and ≥ 3:1 (focus) in both themes.
-- Flutter guideline checks on the app shell in both themes.
-- 200% text scaling without overflow.
+- Flutter guideline checks on every area and on the entry screens, in both
+  themes.
+- 200% text scaling without overflow on every area.
+- Session security (Prompt 13), in `test/session/`, `test/app/` and
+  `test/features/home/`:
+  - the UI cannot produce a paired state;
+  - stale answers are dropped;
+  - no internal IDs, codes or errors are rendered or logged.
 - Reduced motion: `Motion.resolve` returns zero duration.
 
 ## Running
@@ -53,7 +59,8 @@ tool/verify.sh --all                           # everything runnable locally
 
 ## Gaps (honest)
 
-- App smoke integration test not executed in CI (the crypto-core, device identity and messaging integration tests are, on the Android emulator; iOS is not run, D-092). Locally: keep the emulator screen awake (`adb shell svc power stayon true`) or it renders no frames and the test hangs.
+- Integration tests run on the CI Android emulator; iOS is not run (D-092). Locally, keep the emulator screen awake (`adb shell svc power stayon true`) or it renders no frames and the test hangs.
+- No backend-backed UI test: Functions are not deployed (D-025), so screens are tested over fake ports. `FirestoreCoupleProfiles` has no automated test.
 - No golden (screenshot) tests yet — add once visual identity is set.
 - No Functions tests (no functions exist).
 - No coverage thresholds configured.
