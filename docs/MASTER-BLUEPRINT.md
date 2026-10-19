@@ -3,7 +3,7 @@
 The index of record. Each section summarises what is **decided** and links
 to the detailed source of truth. Updated at the end of every phase.
 
-Last updated: **Prompt 09 — 2026-10-18**.
+Last updated: **Prompt 12 — 2026-10-19**.
 
 ## 1. Vision
 
@@ -57,7 +57,10 @@ person → account → devices → cryptographic identity → couple model.
 **Crypto-core foundation implemented (Prompt 06); messaging core added
 (Prompt 10: device-pinned trust, staged commits, authenticated text
 messages, sealed local history; development only, no chat UI); encrypted
-media and content-free notifications added (Prompt 11, undeployed, no UI).
+media and content-free notifications added (Prompt 11, undeployed, no UI);
+couple / account foundation added (Prompt 12: two-consent, device-signed
+pairing, server-created couples; undeployed, no UI,
+[COUPLE-AND-PAIRING](security/COUPLE-AND-PAIRING.md)).
 Sirf Hum is NOT production E2EE yet:**
 
 - the platform key store exists (Prompt 07, D-066) but nothing is reviewed;
@@ -270,7 +273,7 @@ designed with privacy — all **post-V1** and individually reviewed.
 | 5a | Local rollback protection and review of the platform key store (D-066 residual) | Before any real user's private content |
 | 5b | Blaze plan to deploy device trust Functions and the cleanup schedule (D-025, D-069, D-078) | First real device activation |
 | 5c | Identity-reset notifications (D-082); local rollback protection (D-079) | Before production E2EE |
-| 6 | Shared history after unpairing | Pairing phase (product + legal) |
+| 6 | Shared history after unpairing (blocks unpairing, D-105) | Unpairing (product + legal) |
 | 7 | LiveKit Cloud vs. self-hosted | Calls phase |
 | 8 | Analytics vendor and consent posture | First analytics event |
 | 9 | Visual identity (typeface, palette, iconography) | Visual identity phase |
