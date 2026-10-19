@@ -1,6 +1,6 @@
 // Conversation provisioning against the Firestore emulator (Prompt 10,
-// D-086). The pairing record is seeded with the Admin SDK: it stands in for
-// the future pairing phase, which does not exist yet.
+// D-086). The pairing record is seeded with the Admin SDK so the primitive is
+// tested on its own; the real pairing flow (Prompt 12) is pairing.test.mjs.
 // Run: npm run test:emulator (needs Java + firebase-tools; builds first).
 import assert from 'node:assert/strict';
 import process from 'node:process';
@@ -47,8 +47,10 @@ describe('provisionConversation (D-086)', () => {
     const source = readFileSync(new URL('../../lib/index.js', import.meta.url), 'utf8');
     const exported = [...source.matchAll(/exports\.(\w+)\s*=/g)].map((m) => m[1]);
     assert.ok(exported.includes('revokeDevice'), 'export scan works');
+    // Since Prompt 12 the only way to a conversation is the signed,
+    // two-consent pairing confirmation (pairing.test.mjs covers its surface).
     for (const name of exported) {
-      assert.ok(!/conversation|pairing|provision/i.test(name), `unexpected export ${name}`);
+      assert.ok(!/conversation|provision/i.test(name), `unexpected export ${name}`);
     }
     assert.ok(!source.includes('provisionConversation'), 'not wired into any function');
   });

@@ -69,16 +69,21 @@ describe('identity reset cancellation (D-082)', () => {
 describe('secret-safe server logging (static guard)', () => {
   test('every logger call logs only an event name and an outcome category', () => {
     const src = new URL('../src/', import.meta.url);
-    const files = ['index.ts', ...readdirSync(new URL('device/', src)).map((f) => `device/${f}`)];
+    const files = [
+      'index.ts',
+      ...readdirSync(new URL('device/', src)).map((f) => `device/${f}`),
+      ...readdirSync(new URL('couple/', src)).map((f) => `couple/${f}`),
+    ];
     let calls = 0;
     for (const file of files) {
       const text = readFileSync(new URL(file, src), 'utf8');
       for (const m of text.matchAll(/logger\.(info|warn|error|debug|log)\(([^;]*)\);/gs)) {
         calls += 1;
         const args = m[2];
-        // Allowed: a string event and { outcome: ... } or a spread of the
-        // cleanup counters. Nothing derived from request data.
-        assert.match(args, /^\s*(event|'[a-z_]+'),\s*\{\s*(outcome: (error\.failure|'internal')|\.\.\.result)\s*\}\s*$/s, `${file}: ${args}`);
+        // Allowed: a string event and { outcome: ... } (a failure category or
+        // a constant), or a spread of the cleanup counters. Nothing derived
+        // from request data.
+        assert.match(args, /^\s*(event|'[a-z_]+'),\s*\{\s*(outcome: (error\.failure|'internal'|'ok')|\.\.\.result)\s*\}\s*$/s, `${file}: ${args}`);
       }
       assert.doesNotMatch(text, /console\./, `${file} uses console`);
     }
