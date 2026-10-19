@@ -281,7 +281,9 @@ unless routing requires it.
 authoritative. In particular, STREAM over XChaCha20-Poly1305 from the
 already-pinned RustCrypto crates replaces libsodium secretstream (D-093).
 The media key never reaches Dart (D-094), and padding and thumbnails are
-deferred (D-099).
+deferred (D-099). Note added 2026-10-19: the libsodium audit cited below
+(1.0.12/1.0.13) predates `crypto_secretstream`, which was added in 1.0.14
+([D-093-SECURITY-REVIEW](D-093-SECURITY-REVIEW.md), F2).
 
 | Topic | Design | Label |
 | --- | --- | --- |

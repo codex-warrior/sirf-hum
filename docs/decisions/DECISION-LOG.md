@@ -872,12 +872,13 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
   - Media objects use **STREAM** (Hoang–Reyhanitabar–Rogaway–Vizár 2015, `aead 0.5.2` `StreamBE32`) over **XChaCha20-Poly1305**: 64 KiB chunks, 16-byte tag each, last-block flag, random 19-byte nonce prefix in a 25-byte header (`"SHMD" | format 1 | prefix`).
   - Every object has a fresh random 32-byte key and a random 16-byte media ID, both from the OS CSPRNG inside Rust.
   - The per-chunk AAD is built in Rust: `"SirfHum-MediaAAD" | 1 | schema 1 | conversation | media ID | sender device | class | plaintext length | header`.
-  - The SHA-256 of the whole object is committed in the MLS-authenticated `media_ref` and checked before any decryption.
+  - The SHA-256 of the whole object (header and every chunk with its tag) is carried in the MLS-authenticated `media_ref` and checked before any decryption. This is an *authenticated ciphertext digest*, **not** key commitment (D-093 review, F1).
   - Plaintext is limited to 64 MiB, and empty media is refused.
 - **Dependencies:** no new crate. The change enables the `stream` feature of the already-pinned `chacha20poly1305 =0.10.1` and adds `sha2 =0.10.9` as a direct, exact-pinned dependency. `openmls_rust_crypto 0.6.0` already compiles that version. The D-054 pins are unchanged (`tool/check_crypto_core.sh`).
-- **Supersedes:** the Prompt 04 recommendation of libsodium `crypto_secretstream` (E2EE-ARCHITECTURE §7). The properties are the same: chunked, per-chunk authentication, truncation detection. There is no second native crypto library. **Trade-off:** libsodium had a published audit; the RustCrypto `aead::stream` module has none that we know of. It is listed as unaudited.
+- **Supersedes:** the Prompt 04 recommendation of libsodium `crypto_secretstream` (E2EE-ARCHITECTURE §7). The properties are the same: chunked, per-chunk authentication, truncation detection. There is no second native crypto library. **Audit status:** no audit of `aead::stream` is known. libsodium's published 2017 audit (1.0.12–1.0.13) **predates** `crypto_secretstream` (added in 1.0.14), so it does not give the alternative an audit advantage for the stream construction either. *Corrected 2026-10-19 by the D-093 review (F2); the earlier text implied it did.*
 - **Review brief:** E2EE-MEDIA-AND-NOTIFICATIONS §2, "D-093 review brief". It covers exact versions, the construction's source, audit status (none for `aead::stream`; NCC's 2020 review of `chacha20poly1305` predates 0.10.1 and did not cover it), properties, nonces, ordering, finalization, AAD, key lifecycle, size limits, and the custom composition around STREAM.
-- **Status:** Proposed for development · 2026-10-19. **Pending human security review;** not independently reviewed or audited. Not to be replaced before that review.
+- **Investigation:** [D-093-SECURITY-REVIEW](../security/D-093-SECURITY-REVIEW.md) (2026-10-19). Engineering recommendation: *merge with specific security changes*, meaning documentation corrections F1 and F2 (applied) plus human sign-off. Pre-v2 follow-up: F3. This is not an approval.
+- **Status:** PROPOSED — PENDING HUMAN SECURITY REVIEW · 2026-10-19. Not independently reviewed or audited. Not to be replaced before that review.
 
 ### D-094 — Media keys never leave the core
 - **Decision:**
