@@ -794,6 +794,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
   - Person keys verified out of band are **anchors**: roots for lineage verification. An anchor's own first certificate is accepted and **pinned**; a PIK certifies exactly one device ID.
   - `trustLineage(lineage, trustEpoch)` (ABI v5) verifies an account's chain (D-084) from an anchored root. It trusts every proven certificate for that account, drops that account's devices no longer proven, and refuses a trust epoch older than one already applied.
   - Revoking a device, locally or through lineage evidence, also revokes its PIK permanently.
+  - A device keeps the account a lineage first proved it for, permanently; a lineage that would re-label it is refused (Prompt 10 Part 2 review). A root-only lineage does not prove its account, so a root's first binding rests on the server and on out-of-band verification.
   - The state record moves to version 2. Version 1 still loads; its person keys become anchors.
 - **Rejected:**
   - keeping PIK trust with only device-ID revocation (the gap);

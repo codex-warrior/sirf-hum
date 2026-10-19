@@ -411,6 +411,38 @@ fn a_valid_certificate_with_an_invalid_lineage_is_not_trusted() {
     );
 }
 
+/// Review finding (Prompt 10 Part 2): a root-only lineage verifies without
+/// proving its account, so a server could present a trusted device under
+/// the other account's label. The first binding is permanent.
+#[test]
+fn a_device_is_never_relabelled_to_another_account() {
+    let mut w = world();
+    // A1 (anchored root of A) presented as the root of "accountB".
+    assert_eq!(
+        w.b1.trust_lineage(&blob("accountB", &cert(&w.a1), &[], &[]), 9)
+            .unwrap_err(),
+        CoreError::TrustChainInvalid
+    );
+    assert_eq!(
+        w.b1.device_account(&id(&w.a1)).unwrap().as_deref(),
+        Some("accountA")
+    );
+    // Omitted from A's lineage first, then offered under B's label: still A.
+    w.b1.trust_lineage(&blob("accountA", &cert(&w.a1), &[], &[]), 4)
+        .unwrap();
+    assert_eq!(
+        w.b1.trust_lineage(&blob("accountB", &cert(&w.a1), &[], &[]), 9)
+            .unwrap_err(),
+        CoreError::TrustChainInvalid
+    );
+    let a2 = w.a2.key_package().unwrap();
+    assert_eq!(
+        check(&mut w.b1, &a2).unwrap_err(),
+        CoreError::UnauthorizedDevice,
+        "A2 was dropped by the omission, never re-labelled"
+    );
+}
+
 #[test]
 fn server_omission_drops_trust_but_never_adds_it() {
     let mut w = world();

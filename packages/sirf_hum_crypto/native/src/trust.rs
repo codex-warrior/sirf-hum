@@ -82,6 +82,11 @@ pub struct TrustPolicy {
     pub(crate) revoked_devices: BTreeSet<DeviceId>,
     pub(crate) revoked_people: BTreeSet<PersonKey>,
     pub(crate) lineage_epochs: BTreeMap<String, u64>,
+    /// The account a lineage first proved each device for. Permanent: a
+    /// device is never re-labelled to another account, even after a later
+    /// lineage omitted it (a root-only lineage does not itself prove its
+    /// account, so the first binding is kept and conflicts fail closed).
+    pub(crate) device_accounts: BTreeMap<DeviceId, String>,
 }
 
 impl TrustPolicy {
@@ -126,6 +131,16 @@ impl TrustPolicy {
         if let Some(pinned) = self.pinned.get(&cert.person_key) {
             if *pinned != cert.device_id {
                 return Err(CoreError::UnauthorizedDevice);
+            }
+        }
+        if let Some(account) = account {
+            match self.device_accounts.get(&cert.device_id) {
+                Some(bound) if bound != account => return Err(CoreError::UnauthorizedDevice),
+                Some(_) => {}
+                None => {
+                    self.device_accounts
+                        .insert(cert.device_id, account.to_owned());
+                }
             }
         }
         match self.devices.get_mut(&cert.device_id) {
@@ -325,6 +340,11 @@ impl TrustPolicy {
             put(out, a.as_bytes());
             out.extend_from_slice(&e.to_be_bytes());
         }
+        out.extend_from_slice(&(self.device_accounts.len() as u32).to_be_bytes());
+        for (d, a) in &self.device_accounts {
+            out.extend_from_slice(&d.0);
+            put(out, a.as_bytes());
+        }
     }
 
     pub(crate) fn decode(r: &mut Reader<'_>) -> CoreResult<Self> {
@@ -373,6 +393,13 @@ impl TrustPolicy {
                 .to_owned();
             t.lineage_epochs
                 .insert(a, u64::from_be_bytes(r.fixed::<8>().map_err(c)?));
+        }
+        for _ in 0..count(r)? {
+            let d = id(r)?;
+            let a = std::str::from_utf8(r.var().map_err(c)?)
+                .map_err(|_| CoreError::StateCorruption)?
+                .to_owned();
+            t.device_accounts.insert(d, a);
         }
         Ok(t)
     }

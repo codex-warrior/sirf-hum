@@ -86,9 +86,22 @@ Any failure is `unauthorized_device` / `invalid_credential` and rolls back.
 | **Lineage (new)** | `trustLineage(lineage, trustEpoch)` (ABI v5) | verifies the account's signed chain (D-084); the root's PIK **must** be an anchor; every proven certificate becomes trusted for that account; signed and server-asserted revocations revoke the device **and** its PIK; devices of that account no longer proven are dropped; an older `trustEpoch` than already applied is refused (`trust_state_stale`) |
 
 **Invariant (tested):** a revoked device cannot manufacture a trusted
-device. A new device ID under its PIK fails (revoked PIK, and the pin), as
-does reusing its old certificate (revoked ID), a forged certificate, a
-lineage link it signs after revocation, and a stale lineage.
+device on its own. A new device ID under its PIK fails (revoked PIK, and the
+pin), as does reusing its old certificate (revoked ID), a forged
+certificate, and a stale lineage. An approval it signs after revocation is
+refused by the server (approver must be active) and so never appears in an
+honest lineage. **Limit (D-084, kept as a documented test):** peers rely on
+the server's ordering, so a *colluding* server could list such an approval
+before the revocation and peers would accept it ("no cascade").
+
+**Account binding:** a device keeps the account a lineage first proved it
+for, permanently; a lineage that would re-label it fails
+(`trust_chain_invalid`). A root-only lineage does not itself prove its
+account (the root's activation proof is not part of the lineage), so the
+first binding of a root rests on the server and on the partner's
+out-of-band verification (pairing UX, open). A wrong label can only cause
+rejected messages, never extra trust: rules bind `senderAccountId` to the
+writer's own account.
 
 **Open (recorded in D-085):** a non-root device of an account must anchor
 its own account's root PIK before it can verify its own lineage. Today that

@@ -461,10 +461,13 @@ retained PIK. The core now trusts **exact certificates**:
   proves are dropped (server omission removes trust, never adds it);
 - an older `trustEpoch` than one already applied for that account is
   refused (`trust_state_stale`).
+- a device keeps the account a lineage first proved it for; a lineage that
+  would re-label it is refused (a root-only lineage does not itself prove
+  its account).
 
 Adversarial tests: `native/src/engine/trust_tests.rs` (forged and re-minted
-certificates, revoked PIKs, pins, stale and broken lineage, restart, v1
-state migration). The server-ordering limit above is kept as a documented
+certificates, revoked PIKs, pins, stale and broken lineage, account
+re-labelling, restart, v1 state migration). The server-ordering limit above is kept as a documented
 test.
 
 ## 12. Rate limits and expiry (D-077, D-078)
