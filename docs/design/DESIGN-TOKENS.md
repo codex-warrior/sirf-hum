@@ -55,14 +55,42 @@ Warm neutrals ("paper" `#FBF7F2` to "ink" `#120F0D`) with one clay accent.
 Chosen only to be warm, calm and accessible while the real identity is
 designed. **Not a brand decision.**
 
+## Components (Prompt 13, D-109)
+
+A deliberately small set in `lib/design_system/components/`, exported by the
+barrel. Add one only when a second screen needs it.
+
+| Component | Use |
+| --- | --- |
+| `AppPage` | Every page: safe area, gutters, max content width, one scroll view, single header |
+| `AppSection` | A titled part of a page, separated by space and a hairline (not a card) |
+| `EmptyState` + `StateAction` | Human "nothing yet" with at most one next step |
+| `ErrorState` | Human copy + one action (or none when no tap helps); takes copy, never exceptions |
+| `Skeleton` / `SkeletonBlock` | Layout-shaped loading; one screen-reader label; still under reduced motion |
+| `Notice` | Quiet inline fact (web private-content boundary, "coming in an upcoming version") |
+| `CoupleMark` | Two overlapping initials until photos exist; decorative to screen readers |
+
+Buttons come from `AppTheme`:
+
+- `FilledButton` (accent, 56 dp high) is the one primary action per screen.
+- `OutlinedButton` and `TextButton` (48 dp minimum) are for everything else.
+
+The navigation bar and rail use `textPrimary` for the selected destination,
+`textSecondary` otherwise, and a `surfaceMuted` indicator.
+
 ## Guarantees enforced by tests
 
 - `test/design_system/semantic_colors_contrast_test.dart` — every text/background
   pair ≥ 4.5:1 and focus ring ≥ 3:1 in both themes.
 - `test/design_system/layout_and_motion_tokens_test.dart` — breakpoints,
   touch-target minimums, type floor, reduced-motion behaviour.
-- `test/app/app_shell_test.dart` — Flutter tap-target, label and text-contrast
-  guidelines in light and dark; no overflow at 200% text.
+- `test/app/app_shell_test.dart`:
+  - Flutter tap-target, label and text-contrast guidelines on every area, in
+    light and dark;
+  - no overflow at 200% text on every area.
+- `test/design_system/components_test.dart` and
+  `test/app/entry_screens_test.dart`: component semantics, touch targets and
+  contrast; entry screens.
 
 ## Adding or changing tokens
 

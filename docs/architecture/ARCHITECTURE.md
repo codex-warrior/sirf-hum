@@ -27,8 +27,9 @@ Status: **Foundation implemented (Prompt 01).**
 | `main.dart` | Composition root: load config, bootstrap Firebase, `runApp` | everything |
 | `app/` | App widget, router, navigation shell, root providers, `AppConfig` | design_system, core, infrastructure (bootstrap only) |
 | `core/` | Cross-cutting, dependency-free utilities: environment enum, logging | Dart/Flutter SDK only |
-| `design_system/` | Tokens, theme, (later) shared components | Flutter only |
-| `features/<area>/` | Product areas: `home`, `together`, `moments`, `future`, `us` | core, design_system, security, infrastructure (data layer only) |
+| `design_system/` | Tokens, theme, shared components (`components/`, D-109) | Flutter only |
+| `session/` | Couple-aware app state: account + server-reported couple (D-106) | core, security (ports) |
+| `features/<area>/` | Product areas: `home`, `together`, `moments`, `future`, `us` | core, design_system, session, security, infrastructure (data layer only) |
 | `security/` | Cryptography boundary, key management (future) | core |
 | `infrastructure/` | Firebase, LiveKit integrations | core, security (envelope types) |
 | `platform/` | Device capability wrappers (permissions, camera, secure storage…) | core; security *ports only* (implements e.g. `DeviceKeyStore`, D-072) |
@@ -49,7 +50,12 @@ Rules:
   with values computed before `runApp` (config, Firebase status).
 - **go_router** with a `StatefulShellRoute` — each area keeps its own
   navigation stack; every area is URL-addressable for notification deep
-  links and the web. Auth/pairing redirects arrive in the identity phase.
+  links and the web.
+- **Session and redirects (Prompt 13):** `lib/session/` holds one
+  server-authoritative, ID-free `SessionState`. The router sends every state
+  other than *paired* to an entry route (`/start`, `/welcome`, `/pair`)
+  outside the shell. Full design:
+  [APP-SHELL-AND-NAVIGATION.md](APP-SHELL-AND-NAVIGATION.md) (D-106–D-110).
 
 ## Trust boundaries (summary)
 

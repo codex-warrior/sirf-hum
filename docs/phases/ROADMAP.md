@@ -173,6 +173,30 @@ rules and a client service; no UI
 - **Not done / BLOCKED:** deployment (Blaze), pairing UI, unpairing, account
   deletion, PIK verification, independent review.
 
+**Prompt 13: core UX / Home foundation.** The first user-facing app
+([APP-SHELL-AND-NAVIGATION](../architecture/APP-SHELL-AND-NAVIGATION.md),
+D-106–D-110):
+- Server-authoritative, ID-free session state (`lib/session/`): signed out,
+  not paired, pairing, paired, unavailable.
+- Entry routes plus a five-area shell (bottom bar or rail) shown only to a
+  paired couple. Deep links survive loading.
+- Home:
+  - greeting and couple mark;
+  - a Together entry;
+  - honest Moments and Future empty states.
+- Entry states for Together, Moments and Future. Us shows the couple's names
+  and sign-out.
+- Small design-system component set; web private-content notices.
+- `firebase_auth` for session restoration and sign-out only; bounded Firebase
+  start-up.
+- **Not done:**
+  - the sign-in method and UI (D-107, open);
+  - pairing screens and profile editing;
+  - presence, calls, moments and plans;
+  - deployment (Blaze).
+
+  A real build reaches only the welcome screen. Not production-ready.
+
 ## Proposed sequence
 
 Ordering principle: identity and cryptography come **before** any feature
