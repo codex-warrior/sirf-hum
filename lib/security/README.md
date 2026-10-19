@@ -6,8 +6,8 @@ here. Full requirements: `docs/security/E2EE-REQUIREMENTS.md` and
 
 | Folder    | Owns                                                         | Status (Prompt 06) |
 | --------- | ------------------------------------------------------------ | ------------------ |
-| `crypto/` | `EncryptedEnvelope` boundary type; `privateContentCryptoSupport()` over `package:sirf_hum_crypto` (Rust core, Prompt 06) | Core bundled; **development only** (test key stores) |
-| `keys/`   | Platform key-store adapter (Keystore / Keychain) for the core's KEK; device keys themselves live only inside the Rust core | Not started (D-066) |
+| `crypto/` | `EncryptedEnvelope` boundary type; `privateContentCryptoSupport()` over `package:sirf_hum_crypto` (Rust core, Prompt 06) | Core bundled; **development only** (unreviewed) |
+| `device/` | Device identity (per-account slots), `DeviceKeyStore` port, status state machine, registration flow (DEVICE-IDENTITY.md) | Implemented (Prompt 07); activation server emulator-only |
 
 Rules:
 

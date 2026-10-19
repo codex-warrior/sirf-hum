@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "test": "node --test test/*.test.mjs",
     "check": "npm run typecheck && npm run lint && npm run build && npm test",
-    "serve": "npm run build && firebase emulators:start --only functions --project demo-sirf-hum"
+    "serve": "npm run build && firebase emulators:start --only functions --project demo-sirf-hum",
+    "test:emulator": "npm run build && firebase emulators:exec --config ../firebase.json --only firestore --project demo-sirf-hum \"node --test test/emulator/*.test.mjs\""
   },
   "dependencies": {
     "firebase-admin": "^14.5.0",

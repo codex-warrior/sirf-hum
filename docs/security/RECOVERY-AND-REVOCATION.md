@@ -127,11 +127,18 @@ Revocation and wipe exist; recovery does not.
 - **Revocation:** `revokeDevice` adds a device ID to the local trust policy.
   The core then refuses to add it again or accept it in a Welcome or commit.
 - **Wipe:** `wipe` deletes every local record and zeroizes memory. Deleting
-  the KEK as well is the platform adapter's job (D-066). Until then, wipe
+  the KEK as well is the platform adapter's job (D-066), which exists since
+  Prompt 07: `removeAccount` deletes the slot's store key first, then the
+  state (crypto-erasure, DEVICE-IDENTITY §7). On its own, the core's `wipe`
   is file deletion, not cryptographic erasure.
 - **Recovery: not implemented.** No recovery key, no backup and no archive.
   There is no server key, no escrow and no export function, and none may be
   added (Prompt 06 rules 7–8).
+
+- **Device records (Prompt 07):** the owner can revoke a server record
+  one-way (`pending|active → revoked`). Revoked device IDs and keys stay
+  indexed forever, so neither can be activated again. A device that must
+  work again gets a **new** identity (D-069).
 
 Interaction with the MLS core (D-054):
 - Recovery restores the **identity** (PIK), never MLS group secrets.

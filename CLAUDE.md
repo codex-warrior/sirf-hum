@@ -17,6 +17,7 @@ the task — they replace restating the spec in prompts:
 | Firebase, rules, functions, notifications | `docs/architecture/FIREBASE-ARCHITECTURE.md` |
 | Private content, keys, devices | `docs/security/MLS-DECISION.md` (crypto core, conditions), `docs/security/E2EE-ARCHITECTURE.md`, `KEY-MANAGEMENT.md`, `PAIRING-AND-DEVICE-TRUST.md`, `RECOVERY-AND-REVOCATION.md`, `WEB-SECURITY.md` (all in `docs/security/`), `docs/architecture/CRYPTOGRAPHIC-BOUNDARIES.md`, `docs/security/THREAT-MODEL.md` |
 | Crypto core (`packages/sirf_hum_crypto`) | `docs/security/CRYPTO-CORE-ARCHITECTURE.md` (boundaries, rollback, formats, what is unaudited) |
+| Device identity, registration, platform key store | `docs/security/DEVICE-IDENTITY.md` (hierarchy, lifecycle, schema, proof of possession, threats) |
 | Experiments | `prototypes/` is isolated and never imported by the app (D-052) |
 | Analytics | `docs/security/ANALYTICS-POLICY.md` |
 | Tests | `docs/testing/TESTING-STRATEGY.md` |
@@ -46,7 +47,7 @@ doesn't exist.
 - `package:sirf_hum/...` imports only; UI imports `package:sirf_hum/design_system/design_system.dart`.
 - No hard-coded colors, sizes, durations — use tokens. Animations go through `Motion.resolve`.
 - Firebase SDK only in `lib/infrastructure/` and feature `data/` layers. Private content crosses into infrastructure only as `EncryptedEnvelope`.
-- Cryptography only through `package:sirf_hum_crypto` (Rust + OpenMLS 0.9.1). Sirf Hum is NOT production E2EE yet: `KeyStoreKind.insecureTest*` is test-only. The core never logs, never exports keys or state, and never depends on Firebase. Changing OpenMLS or any crypto pin needs a Decision Log entry (`tool/check_crypto_core.sh` enforces the pins).
+- Cryptography only through `package:sirf_hum_crypto` (Rust + OpenMLS 0.9.1). Sirf Hum is NOT production E2EE yet. Production code opens the core only through `LocalDeviceIdentityService` (platform key store); `KeyStoreKind.insecureTest*` is test-only and refused in release builds. Never use the Firebase UID as a cryptographic identity. The core never logs, never exports keys or state, and never depends on Firebase. Changing OpenMLS or any crypto pin needs a Decision Log entry (`tool/check_crypto_core.sh` enforces the pins).
 - Log only through `AppLogger` with snake_case events and typed fields (raw strings are redacted; wrap known-safe strings in `SafeLogString`, IDs in `RedactedId`). Comments explain *why*.
 - Definition of Done: happy path + loading/empty/error/offline/retry/recovery, accessibility, responsive, server authorization, analytics review, tests, docs.
 
@@ -67,6 +68,7 @@ tool/verify.sh                 # format check + analyze + tests
 tool/verify.sh --all           # + Rust crypto core, Functions check, rules tests, web + Android builds
 tool/deploy.sh development     # deploy rules to sirf-hum-dev
 tool/check_crypto_core.sh      # crypto dependency/pin/logging policy
+(cd functions && npm run test:emulator)   # device registration flows (Firestore emulator)
 ```
 
 Android/iOS builds compile the Rust crypto core through a native-assets

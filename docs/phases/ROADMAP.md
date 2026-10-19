@@ -70,11 +70,25 @@ Branch protection and production reviewers are blocked by the GitHub plan.
   - no logging.
 - Runs inside the real app on an Android emulator and an iOS simulator in
   CI. Web compiles a fail-closed stub.
-- **Sirf Hum is NOT production E2EE yet.** There are only test key stores
-  (production adapter open, D-066), no review, and no product feature uses
-  the core.
+- **Sirf Hum is NOT production E2EE yet.** There was no platform key store
+  yet (added in Phase 07), no review, and no product feature uses the core.
 
 [CRYPTO-CORE-ARCHITECTURE](../security/CRYPTO-CORE-ARCHITECTURE.md)
+
+## Phase 07 — Device identity & registration ✅
+
+- Identity hierarchy: account ≠ device ≠ cryptographic identity ≠ MLS
+  credential.
+- One device identity per (installation, account) (D-071).
+- Platform key store: Android Keystore / iOS Keychain (D-066).
+- Device registry: `pending` → server proof of possession → `active` →
+  `revoked` (D-069, D-070).
+- Rules emulator tests, Functions emulator tests, and device integration
+  tests.
+- **Not done:** deploying the activation Functions (needs Blaze, D-025), no
+  device approval UI, no sign-in. **Sirf Hum is NOT production E2EE yet.**
+
+[DEVICE-IDENTITY](../security/DEVICE-IDENTITY.md)
 
 ## Proposed sequence
 

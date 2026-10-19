@@ -1,6 +1,6 @@
 # Key Management
 
-Status: **Design (Prompt 04). Not implemented.** Labels follow
+Status: **Design (Prompt 04). Local key storage implemented (Prompts 06–07): sealed state (D-065) and the platform key store (D-066, [DEVICE-IDENTITY](DEVICE-IDENTITY.md)); unreviewed.** Labels follow
 [E2EE-ARCHITECTURE](E2EE-ARCHITECTURE.md#labels).
 
 ## 1. Key inventory
@@ -89,7 +89,16 @@ principle, Prompt 01).
 | Deletion | Remove device: wipe DB, delete Keystore key | Wipe DB, delete keychain items |
 | Lost / stolen | Remote revocation from another device (RECOVERY-AND-REVOCATION). An unlocked stolen phone shows what the owner sees until revoked | Same |
 
-Flutter integration (**UNRESOLVED**):
+Flutter integration (**DECIDED in Prompt 07: (a), D-066**). The
+implementation differs from the table above in two details:
+
+- Rust holds one sealed whole-state record per slot (D-065), not SQLite.
+- The platform protects a per-account 32-byte store key:
+  - Android: wrapped by the Keystore key in `noBackupFilesDir`;
+  - iOS: a `ThisDeviceOnly` Keychain item; there is no Secure Enclave
+    wrapping yet.
+
+The options considered were:
 - **(a) a thin native module we own:** a Kotlin/Swift plugin exposing only
   "wrap/unwrap DEK" with the settings above. This is the smallest trusted
   surface.

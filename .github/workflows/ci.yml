@@ -40,7 +40,11 @@ jobs:
       - run: flutter pub get
       - run: dart format --output=none --set-exit-if-changed .
       - run: flutter analyze
+      # Device-identity tests run through the real native core here; a
+      # missing native build fails instead of skipping.
       - run: flutter test
+        env:
+          SIRF_HUM_REQUIRE_NATIVE_CRYPTO: '1'
       - name: Web build (one per environment)
         run: |
           for env in development staging production; do
@@ -210,7 +214,7 @@ jobs:
           dart test
 
   crypto-android-device:
-    name: Crypto core on Android emulator (integration test)
+    name: Crypto core + device identity on Android emulator (integration)
     runs-on: ubuntu-24.04
     needs: crypto-core
     steps:
@@ -253,11 +257,11 @@ jobs:
           target: google_apis
           disable-animations: true
           script: >-
-            flutter test integration_test/crypto_core_test.dart
+            flutter test integration_test/crypto_core_test.dart integration_test/device_identity_test.dart
             --flavor development --dart-define=SH_ENV=development -d emulator-5554
 
   crypto-ios-device:
-    name: Crypto core on iOS simulator (integration test)
+    name: Crypto core + device identity on iOS simulator (integration)
     runs-on: macos-latest
     needs: crypto-core
     steps:
@@ -288,11 +292,11 @@ jobs:
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
       - name: Run crypto integration test on simulator
         run: >-
-          flutter test integration_test/crypto_core_test.dart
+          flutter test integration_test/crypto_core_test.dart integration_test/device_identity_test.dart
           --flavor development --dart-define=SH_ENV=development -d ${{ steps.sim.outputs.udid }}
 
   functions:
-    name: Cloud Functions (typecheck, lint, build, test)
+    name: Cloud Functions (typecheck, lint, build, test, emulator)
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -309,6 +313,14 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm test
+      # Device registration (challenge, proof of possession, replay and
+      # cloning defences) against the Firestore emulator.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm install -g firebase-tools
+      - run: npm run test:emulator
 
   security-rules:
     name: Security Rules (emulator tests)

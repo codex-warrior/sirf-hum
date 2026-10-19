@@ -206,6 +206,91 @@ impl DeviceCertificate {
     }
 }
 
+/// Domain separation for device proofs of possession (D-070). Distinct from
+/// the certificate context and from every MLS signature label, so a proof
+/// can never be replayed as a certificate or an MLS signature, or vice versa.
+const PROOF_CONTEXT: &[u8] = b"SirfHum-DeviceProof-v1";
+/// Server challenges are exactly 32 random bytes.
+pub const CHALLENGE_LEN: usize = 32;
+
+/// What a device proof is for. Each purpose is a separate signed domain, so a
+/// proof made for one purpose is useless for any other.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ProofPurpose {
+    /// First activation of a registered device (Prompt 07).
+    Activation = 1,
+}
+
+impl ProofPurpose {
+    pub fn from_u32(value: u32) -> CoreResult<Self> {
+        match value {
+            1 => Ok(ProofPurpose::Activation),
+            _ => Err(CoreError::InvalidInput),
+        }
+    }
+}
+
+/// The exact bytes a device signs to prove it holds the private key of its
+/// certified device signature key:
+/// `"SirfHum-DeviceProof-v1" | purpose u8 | u32 len | account | device_id[16]
+///  | u32 len | certificate | challenge[32]`.
+///
+/// Binding the account stops a proof from activating the device under a
+/// different account; binding the certificate and device ID stops it from
+/// vouching for different public material; the single-use challenge stops
+/// replay (the server consumes it).
+pub fn device_proof_payload(
+    purpose: ProofPurpose,
+    account: &AccountId,
+    device_id: &DeviceId,
+    certificate: &[u8],
+    challenge: &[u8],
+) -> CoreResult<Vec<u8>> {
+    if challenge.len() != CHALLENGE_LEN || certificate.len() > MAX_CERTIFICATE_BYTES {
+        return Err(CoreError::InvalidInput);
+    }
+    let mut out = Vec::with_capacity(
+        PROOF_CONTEXT.len() + 1 + 4 + account.0.len() + 16 + 4 + certificate.len() + 32,
+    );
+    out.extend_from_slice(PROOF_CONTEXT);
+    out.push(purpose as u8);
+    put(&mut out, account.0.as_bytes());
+    out.extend_from_slice(&device_id.0);
+    put(&mut out, certificate);
+    out.extend_from_slice(challenge);
+    Ok(out)
+}
+
+/// Verifies a device proof the way the server does (functions/src/device):
+/// strict certificate decode, person-key signature on the certificate, and
+/// the device key's signature over the proof payload. Public-key operations
+/// only. Used by tests and available to future peer-side checks.
+pub fn verify_device_proof(
+    crypto: &impl OpenMlsCrypto,
+    purpose: ProofPurpose,
+    account: &AccountId,
+    certificate: &[u8],
+    challenge: &[u8],
+    signature: &[u8],
+) -> CoreResult<DeviceCertificate> {
+    let cert = DeviceCertificate::decode(certificate)?;
+    cert.verify_signature(crypto)?;
+    if signature.len() != ED25519_SIGNATURE_LEN {
+        return Err(CoreError::AuthenticationFailure);
+    }
+    let payload = device_proof_payload(purpose, account, &cert.device_id, certificate, challenge)?;
+    crypto
+        .verify_signature(
+            SignatureScheme::ED25519,
+            &payload,
+            &cert.device_signature_key,
+            signature,
+        )
+        .map_err(|_| CoreError::AuthenticationFailure)?;
+    Ok(cert)
+}
+
 /// Which people this device trusts, and which devices are revoked.
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct TrustPolicy {

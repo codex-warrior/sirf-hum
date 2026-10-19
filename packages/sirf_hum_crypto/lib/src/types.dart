@@ -20,7 +20,8 @@ enum CryptoErrorCode {
   unsupported(-14),
   internalCryptoFailure(-15),
   identityState(-16),
-  internal(-17);
+  internal(-17),
+  accountMismatch(-18);
 
   const CryptoErrorCode(this.code);
 
@@ -46,10 +47,9 @@ class CryptoException implements Exception {
 
 /// Where the core's key-encryption key comes from.
 ///
-/// Only test adapters exist (Prompt 06 Part 4). They are **insecure**: never
-/// use them for real users. [platform] is reserved for the Android Keystore /
-/// iOS Keychain adapter and currently fails with
-/// [CryptoErrorCode.unsupported].
+/// The test adapters are **insecure** and refused in release builds; never
+/// use them for real users. [platform] is the Android Keystore / iOS Keychain
+/// adapter (D-066), whose key the app passes in.
 enum KeyStoreKind {
   /// KEK lives in memory only; state is unreadable after restart.
   insecureTestEphemeral(1),
@@ -57,12 +57,34 @@ enum KeyStoreKind {
   /// KEK is a plaintext file next to the state. Restart-capable tests only.
   insecureTestFile(2),
 
-  /// Not implemented yet.
+  /// The platform key store (Android Keystore / iOS Keychain, D-066). Opened
+  /// through `CryptoCore.initializeWithPlatformKey`, never `initialize`.
   platform(100);
 
   const KeyStoreKind(this.wireValue);
 
   final int wireValue;
+}
+
+/// What a device proof of possession is for (D-070). Each purpose is a
+/// separate signed domain; values match the native ABI.
+enum DeviceProofPurpose {
+  activation(1);
+
+  const DeviceProofPurpose(this.wireValue);
+
+  final int wireValue;
+}
+
+/// Zeroes [bytes] in place. Never throws: an unmodifiable view (e.g. one
+/// decoded by a platform channel) is left as is, because a wipe must never
+/// mask the real outcome of the operation it follows.
+void wipeBytes(Uint8List bytes) {
+  try {
+    bytes.fillRange(0, bytes.length, 0);
+  } on UnsupportedError {
+    // Not ours to wipe; the owner of the underlying buffer must do it.
+  }
 }
 
 /// The account a device belongs to (validated: 1–128 UTF-8 bytes).

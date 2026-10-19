@@ -21,8 +21,8 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::from_process_error;
 use crate::identity::{
-    device_id_of, put, AccountId, DeviceCertificate, DeviceId, PersonKey, Reader, TrustPolicy,
-    DEVICE_ID_LEN,
+    device_id_of, device_proof_payload, put, AccountId, DeviceCertificate, DeviceId, PersonKey,
+    ProofPurpose, Reader, TrustPolicy, DEVICE_ID_LEN,
 };
 use crate::keystore::{KeyEncryptionKeyProvider, KEK_LEN};
 use crate::limits::{self, *};
@@ -203,7 +203,9 @@ impl CryptoCore {
         Ok(core)
     }
 
-    /// False for every adapter that exists today (KEY-MANAGEMENT.md).
+    /// True only when the store key came from the platform keystore adapter
+    /// (D-066). This describes the key source; it is not a claim that the
+    /// system is production E2EE.
     pub fn uses_production_secure_keys(&self) -> bool {
         self.production_secure_keys
     }
@@ -284,6 +286,39 @@ impl CryptoCore {
             person_key: id.person_key.clone(),
             certificate: id.certificate.encode(),
         })
+    }
+
+    /// Fails with `AccountMismatch` unless the local identity belongs to
+    /// `account` (`IdentityState` if there is no identity). Callers check this
+    /// on every open so one account's identity is never used for another
+    /// (DEVICE-IDENTITY.md, account switching).
+    pub fn check_account(&self, account: &AccountId) -> CoreResult<()> {
+        self.guard()?;
+        if self.identity()?.account != *account {
+            return Err(CoreError::AccountMismatch);
+        }
+        Ok(())
+    }
+
+    /// Signs a server challenge with the device signature key to prove
+    /// possession (D-070). The core builds the payload itself from its own
+    /// account and certificate, so callers cannot make it sign arbitrary
+    /// bytes. No state changes; the private key never leaves Rust.
+    pub fn device_proof(&self, purpose: ProofPurpose, challenge: &[u8]) -> CoreResult<Vec<u8>> {
+        self.guard()?;
+        let id = self.identity()?;
+        let payload = device_proof_payload(
+            purpose,
+            &id.account,
+            &id.certificate.device_id,
+            &id.certificate.encode(),
+            challenge,
+        )?;
+        self.state
+            .provider
+            .crypto()
+            .sign(SignatureScheme::ED25519, &payload, &id.device_private)
+            .map_err(|_| CoreError::InternalCryptoFailure)
     }
 
     /// Trusts a partner's person key. Call only after out-of-band

@@ -12,5 +12,10 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    // Platform key store for the crypto core (D-066). App-owned channel,
+    // not a third-party plugin (KEY-MANAGEMENT.md §3, option a).
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "SirfHumSecureKeyStore") {
+      SecureKeyStore.register(with: registrar.messenger())
+    }
   }
 }

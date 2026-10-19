@@ -73,9 +73,13 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-063 | Flutter bridge: own hand-written C ABI + first-party Flutter native assets (not flutter_rust_bridge) | **Accepted** (Prompt 06) | 2026-10-18 |
 | D-064 | Device certificate v1: PIK-signed, domain-separated, carried in the MLS BasicCredential; trust = verified person keys − revoked devices | Accepted (development) | 2026-10-18 |
 | D-065 | Local crypto state: sealed records (XChaCha20-Poly1305, AAD = header + name), one atomic whole-state record, fail closed on corruption | Accepted (development) | 2026-10-18 |
-| D-066 | Key-encryption key via a provider interface; only insecure test adapters exist; production needs a platform adapter (Android Keystore / iOS Keychain) | **Open** (production adapter) | 2026-10-18 |
+| D-066 | Key-encryption key via a provider interface; platform adapter (Android Keystore-wrapped / iOS `ThisDeviceOnly` Keychain) implemented in Prompt 07; test adapters refused in release | Accepted (adapter) — **rollback protection and review open** | 2026-10-18 |
 | D-067 | Native build: Rust 1.96.0 pinned by `rust-toolchain.toml`; `hooks`/`code_assets` pinned to the versions Flutter's tool uses (1.0.0) | Accepted | 2026-10-18 |
 | D-068 | Crypto dependency gate: exact pins, decided OpenMLS versions, `--locked`, banned secret-logging features, `cargo audit --deny warnings` | Accepted | 2026-10-18 |
+| D-069 | Device registry `users/{uid}/devices/{deviceId}`: client creates `pending`, server activates, owner revokes one-way, no deletes, global device-ID/key uniqueness | Accepted (development) | 2026-10-18 |
+| D-070 | Device proof of possession: server challenge (single-use, 5 min) signed by the device key over a domain-separated payload built in Rust | Accepted (development) | 2026-10-18 |
+| D-071 | Device identity is per (installation, account): one local slot per account, account re-checked in the core, logout keeps, explicit removal is crypto-erasure | Accepted | 2026-10-18 |
+| D-072 | `lib/platform` may implement ports defined by `lib/security` (e.g. `DeviceKeyStore`) | Accepted | 2026-10-18 |
 
 ---
 
@@ -501,12 +505,17 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Status:** Accepted for development · 2026-10-18
 
 ### D-066 — Key-encryption key storage
-- **Decision:** the core gets its KEK from a `KeyEncryptionKeyProvider` that reports `is_production_secure()`.
-  - Two adapters exist, both **insecure and test-only**: `EphemeralTestKeyStore` (memory) and `InsecureFileTestKeyStore` (a plaintext file).
-  - `KeyStoreKind.platform` returns `unsupported`.
-  - The app classifies native support as `nativeDevelopmentOnly`.
-- **Open:** a platform adapter (Android Keystore with StrongBox where available / iOS Keychain with `ThisDeviceOnly` accessibility) that wraps or holds the KEK and can destroy it on wipe. It must also address whole-directory rollback (no monotonic counter exists today).
-- **Status:** **Open** · 2026-10-18. Required before any real user's content.
+- **Decision:** the core gets its store key (Rust: "KEK") from a `KeyEncryptionKeyProvider` that reports `is_production_secure()`. That flag describes the key source only; it is never a claim that the system is production E2EE.
+  - **Platform adapter (Prompt 07):** app-owned channel, KEY-MANAGEMENT §3 option (a). A per-account 32-byte store key is passed in through `sh_crypto_open_with_platform_key` (`PlatformProvidedKey`).
+    - Android: wrapped by a non-exportable Keystore AES-256-GCM key (StrongBox when available), AAD-bound to its slot, kept in `noBackupFilesDir`.
+    - iOS: a `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, non-synchronizing Keychain item, with the crypto directory excluded from backup.
+  - **Test adapters** (`EphemeralTestKeyStore`, `InsecureFileTestKeyStore`) remain for tests and are **refused in release builds** by the Dart facade.
+  - **Correction:** Prompt 06's comment said the facade refused them in release, but no code did; Prompt 07 implements it.
+- **Reason for passing the key through Dart:** one small channel per platform is the smallest trusted surface. Calling Keystore/Keychain from Rust (JNI / Security.framework) would add far more code inside the boundary.
+- **Residual risk:**
+  - platform message-codec copies of the store key cannot be reliably wiped;
+  - whole-directory rollback on a rooted/jailbroken device is undetected (no monotonic counter).
+- **Status:** Accepted (adapter) · 2026-10-18. **Open:** rollback protection; independent review.
 
 ### D-067 — Native build pinning
 - **Decision:**
@@ -545,4 +554,44 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
     - Why inapplicable: it is used only by proc-macro crates (`hax-lib-macros`), so it runs at compile time and never ships in the binary. No maintained release exists.
     - Check: every user of the crate in `cargo metadata` must be a proc-macro target.
   - **Revisit:** any OpenMLS/provider upgrade (the D-054 delta review) must try to remove all three ignores. A new ignore needs the same treatment: a written reason, an automated re-check, and an entry here.
+- **Status:** Accepted · 2026-10-18
+
+### D-069 — Device registry
+- **Decision:** `users/{accountId}/devices/{deviceId}` (32-hex device ID).
+  - **Owner's client:** may create an exact v1 `pending` record (schema, platform, certificate, ciphersuite, implementation, `createdAt == request.time`), read its own records, and revoke one-way (`pending|active → revoked`, `revokedReason: user_removed`).
+  - **Activation** is server-only (`activateDevice`).
+  - **Records are never deleted.**
+  - **Server-only indexes** `deviceIdIndex` and `deviceKeyIndex` make every device ID and device key activatable at most once, ever.
+- **Alternatives:**
+  - *Client writes `active` after proof:* rejected, because rules cannot verify signatures.
+  - *Function-only writes for everything:* rejected for now. The rules-validated `pending` create keeps the registry usable without the Functions deploy, and is easy to test.
+  - *Top-level `devices/{deviceId}`:* rejected, because owner-scoped paths keep the rules trivially correct.
+- **Metadata minimisation:** no `lastSeenAt`, app or OS version, model, hardware/advertising IDs, or push token (DEVICE-IDENTITY §4).
+- **Status:** Accepted for development · 2026-10-18. Deploying activation needs Blaze (D-025).
+
+### D-070 — Device proof of possession
+- **Decision:**
+  - **Challenge:** `issueDeviceChallenge` creates a 32-byte challenge, single-use, 5-minute expiry, bound to (account, device, purpose).
+  - **Proof:** the device signs `"SirfHum-DeviceProof-v1" | purpose | account | device ID | certificate | challenge` with its certified device key. The payload is built inside the Rust core (`sh_crypto_device_proof`), so callers cannot request signatures over arbitrary data.
+  - **Verification:** `activateDevice` checks the certificate (PIK signature) and the proof with `node:crypto` Ed25519, consuming the challenge on every attempt within one transaction.
+  - **Purposes:** each purpose is a separate signed domain. Only `activation = 1` exists.
+- **Reason:** authentication (Firebase) and device possession are separate facts. Binding account, device, certificate and a fresh challenge defeats replay, cross-account reuse and copied metadata (DEVICE-IDENTITY §6).
+- **Cross-implementation check:** a golden vector generated by the server code is verified by the Rust tests.
+- **Status:** Accepted for development · 2026-10-18. Needs independent review.
+
+### D-071 — Account slots and account switching
+- **Decision:** device identity is per (installation, account).
+  - Each account has its own local slot: a directory plus its own platform store key. Slot name = account ID, validated `[A-Za-z0-9_-]{1,128}`.
+  - The Rust core re-checks on every open that the stored identity belongs to the requested account (`AccountMismatch`, code -18).
+  - Logout keeps the slot. Explicit removal deletes the key first (crypto-erasure).
+  - A new identity always gets a fresh store key, which also discards a stale iOS Keychain item after a reinstall.
+- **Reason:**
+  - **no identity crossover between accounts;**
+  - **no installation-wide identifier** that would let the server link accounts used on one phone;
+  - **honest reinstall semantics:** a reinstall is a new device.
+- **Status:** Accepted · 2026-10-18
+
+### D-072 — Platform implements security ports
+- **Decision:** `lib/platform` may depend on `lib/security` *only* to implement ports that `lib/security` defines (first: `DeviceKeyStore`). Security never imports platform or infrastructure.
+- **Reason:** keeps platform channels (`MethodChannel`, `kIsWeb`) out of the security layer while the security layer owns the contract. Previously the platform layer could depend on `core` only.
 - **Status:** Accepted · 2026-10-18
