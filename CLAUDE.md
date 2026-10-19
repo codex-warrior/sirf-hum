@@ -1,7 +1,7 @@
 # Sirf Hum — Development Protocol
 
-Sirf Hum is the private digital home for two people. Flutter (Android, iOS,
-Web) + Firebase + LiveKit. Built in bounded, numbered prompts/phases.
+Sirf Hum is the private digital home for two people. Flutter (Android first,
+Web where applicable; iOS is not a current target, D-092) + Firebase + LiveKit. Built in bounded, numbered prompts/phases.
 
 ## Source of truth
 
@@ -19,6 +19,7 @@ the task — they replace restating the spec in prompts:
 | Crypto core (`packages/sirf_hum_crypto`) | `docs/security/CRYPTO-CORE-ARCHITECTURE.md` (boundaries, rollback, formats, what is unaudited) |
 | Device identity, registration, platform key store | `docs/security/DEVICE-IDENTITY.md` (hierarchy, lifecycle, schema, proof of possession, threats) |
 | Multi-device trust, revocation, recovery, identity reset, lineage | `docs/security/MULTI-DEVICE-TRUST.md` (state machine, transition matrix, signed statements, D-074–D-084) |
+| Messaging (conversations, MLS commits, envelopes, local history, trust unit) | `docs/security/E2EE-MESSAGING-DESIGN.md` (D-085–D-091) |
 | Experiments | `prototypes/` is isolated and never imported by the app (D-052) |
 | Analytics | `docs/security/ANALYTICS-POLICY.md` |
 | Tests | `docs/testing/TESTING-STRATEGY.md` |
@@ -72,11 +73,11 @@ tool/check_crypto_core.sh      # crypto dependency/pin/logging policy
 (cd functions && npm run test:emulator)   # device registration flows (Firestore emulator)
 ```
 
-Android/iOS builds compile the Rust crypto core through a native-assets
+Android builds compile the Rust crypto core through a native-assets
 hook, so they need rustup (the toolchain is pinned in
 `packages/sirf_hum_crypto/native/rust-toolchain.toml`). On Windows, Rust
 tests and local Android builds also need the MSVC Build Tools; CI builds
-and tests both platforms.
+and tests Android and Web. iOS is not built or tested (D-092).
 
 Windows note: `firebase emulators:exec` may leave the Firestore emulator
 running on port 8080 after rules tests; stop it before re-running.

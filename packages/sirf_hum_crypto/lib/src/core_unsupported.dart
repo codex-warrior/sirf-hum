@@ -6,7 +6,7 @@ import 'dart:typed_data';
 import 'package:sirf_hum_crypto/src/lineage.dart';
 import 'package:sirf_hum_crypto/src/types.dart';
 
-const int expectedAbiVersion = 4;
+const int expectedAbiVersion = 5;
 
 Never _unsupported() =>
     throw const CryptoException(CryptoErrorCode.unsupported);
@@ -102,6 +102,73 @@ final class CryptoCore {
   int epoch(GroupId group) => _unsupported();
 
   List<RosterEntry> roster(GroupId group) => _unsupported();
+
+  int trustLineage(LineageRequest request, int trustEpoch) => _unsupported();
+
+  StagedCommit createConversationGroup(
+    ConversationId conversation,
+    List<Uint8List> keyPackages,
+  ) => _unsupported();
+
+  StagedCommit stageAddMembers(
+    ConversationId conversation,
+    List<Uint8List> keyPackages,
+  ) => _unsupported();
+
+  StagedCommit stageRemoveMembers(
+    ConversationId conversation,
+    List<DeviceId> devices,
+  ) => _unsupported();
+
+  StagedCommit stageSelfUpdate(ConversationId conversation) => _unsupported();
+
+  int? stagedCommitEpoch(ConversationId conversation) => _unsupported();
+
+  int confirmCommit(ConversationId conversation, int fromEpoch) =>
+      _unsupported();
+
+  void discardCommit(ConversationId conversation, int fromEpoch) =>
+      _unsupported();
+
+  IncomingResult processCommit(
+    ConversationId conversation, {
+    required int epoch,
+    required DeviceId sender,
+    required Uint8List commit,
+  }) => _unsupported();
+
+  int joinConversation(ConversationId conversation, Uint8List welcome) =>
+      _unsupported();
+
+  SentMessage sendMessage(ConversationId conversation, Uint8List payload) =>
+      _unsupported();
+
+  SentMessage reencryptMessage(ConversationId conversation, MessageId id) =>
+      _unsupported();
+
+  void markMessageSent(
+    ConversationId conversation,
+    MessageId id, {
+    required int serverTimeMs,
+  }) => _unsupported();
+
+  ReceivedMessage receiveMessage(
+    ConversationId conversation, {
+    required MessageId messageId,
+    required DeviceId sender,
+    required int epoch,
+    required int schemaVersion,
+    required int protocolVersion,
+    required Uint8List ciphertext,
+    required int serverTimeMs,
+  }) => _unsupported();
+
+  String? deviceAccount(DeviceId device) => _unsupported();
+
+  List<LocalMessage> history(ConversationId conversation) => _unsupported();
+
+  void deleteLocalMessage(ConversationId conversation, MessageId id) =>
+      _unsupported();
 
   void wipe() => _unsupported();
 }

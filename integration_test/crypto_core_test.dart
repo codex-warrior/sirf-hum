@@ -8,7 +8,7 @@ import 'package:sirf_hum/security/crypto/private_content_crypto.dart';
 import 'package:sirf_hum_crypto/sirf_hum_crypto.dart';
 
 /// Proves the crypto core is bundled into the real app and works on a device
-/// (Android emulator / iOS simulator in CI). TEST ONLY: insecure test key
+/// (Android emulator in CI). TEST ONLY: insecure test key
 /// stores, throwaway identities, app-private temp storage.
 /// Run: `flutter test integration_test/crypto_core_test.dart -d <device>`.
 void main() {

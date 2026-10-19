@@ -12,7 +12,7 @@ void main() {
   test('error codes match the native table and unknown codes are internal', () {
     // Mirrors native/src/error.rs; a change there must be mirrored here.
     expect(CryptoErrorCode.values.map((e) => e.code), [
-      for (var i = -1; i >= -21; i--) i,
+      for (var i = -1; i >= -25; i--) i,
     ]);
     expect(CryptoErrorCode.fromCode(-999), CryptoErrorCode.internal);
     expect(CryptoErrorCode.fromCode(0), CryptoErrorCode.internal);

@@ -58,6 +58,18 @@ pub enum CoreError {
     /// A trust chain or revocation did not verify (unknown root, broken
     /// link, wrong account, bad signature, unsupported version).
     TrustChainInvalid = -21,
+    /// A staged commit awaits confirm/discard for this group (D-087): no
+    /// other commit, membership change or send until it is resolved.
+    CommitPending = -22,
+    /// confirm/discard named no staged commit (nothing staged, already
+    /// discarded, or another epoch).
+    NoStagedCommit = -23,
+    /// The message is for a later epoch than local state: apply the missing
+    /// commits first, then retry (D-091). Keep the ciphertext.
+    FutureEpoch = -24,
+    /// The authenticated message data (D-089) does not match the envelope
+    /// routing fields (conversation, message ID, sender, versions, epoch).
+    EnvelopeMismatch = -25,
 }
 
 impl CoreError {
@@ -65,7 +77,7 @@ impl CoreError {
         self as i32
     }
 
-    pub const ALL: [CoreError; 21] = [
+    pub const ALL: [CoreError; 25] = [
         CoreError::InvalidInput,
         CoreError::InputTooLarge,
         CoreError::InvalidCredential,
@@ -87,6 +99,10 @@ impl CoreError {
         CoreError::RecoveryKeyInvalid,
         CoreError::TrustStateStale,
         CoreError::TrustChainInvalid,
+        CoreError::CommitPending,
+        CoreError::NoStagedCommit,
+        CoreError::FutureEpoch,
+        CoreError::EnvelopeMismatch,
     ];
 
     /// Stable snake_case name, safe for logs.
@@ -113,6 +129,10 @@ impl CoreError {
             CoreError::RecoveryKeyInvalid => "recovery_key_invalid",
             CoreError::TrustStateStale => "trust_state_stale",
             CoreError::TrustChainInvalid => "trust_chain_invalid",
+            CoreError::CommitPending => "commit_pending",
+            CoreError::NoStagedCommit => "no_staged_commit",
+            CoreError::FutureEpoch => "future_epoch",
+            CoreError::EnvelopeMismatch => "envelope_mismatch",
         }
     }
 }

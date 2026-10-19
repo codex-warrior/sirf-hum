@@ -54,15 +54,18 @@ trust boundaries and threat actors. → [THREAT-MODEL](security/THREAT-MODEL.md)
 Requirements: private content is encrypted on the device; the server never
 holds content keys; established protocols only; versioned envelopes; the
 person → account → devices → cryptographic identity → couple model.
-**Crypto-core foundation implemented (Prompt 06); no feature uses it.
-Sirf Hum is NOT production E2EE yet:**
+**Crypto-core foundation implemented (Prompt 06); messaging core added
+(Prompt 10: device-pinned trust, staged commits, authenticated text
+messages, sealed local history; development only, no chat UI). Sirf Hum is
+NOT production E2EE yet:**
 
 - the platform key store exists (Prompt 07, D-066) but nothing is reviewed;
 - device identity and registration exist (Prompt 07) but server activation
   is emulator-only until Blaze (D-025);
 - no independent review has taken place.
 
-→ [CRYPTO-CORE-ARCHITECTURE](security/CRYPTO-CORE-ARCHITECTURE.md)
+→ [CRYPTO-CORE-ARCHITECTURE](security/CRYPTO-CORE-ARCHITECTURE.md) ·
+[E2EE-MESSAGING-DESIGN](security/E2EE-MESSAGING-DESIGN.md)
 
 **Authoritative for future prompts (Prompt 05 decision gate):**
 
@@ -139,7 +142,8 @@ account. No schemas yet. → [FIREBASE-ARCHITECTURE](architecture/FIREBASE-ARCHI
 
 ## 10. Platform architecture
 
-One Flutter codebase for Android, iOS (≥15) and Web; adaptive layouts by
+One Flutter codebase for Android (P0) and Web (P1, where applicable); iOS is
+not part of the current product (D-092, supersedes D-073); adaptive layouts by
 window size; web key-storage limits acknowledged. →
 [PLATFORM-STRATEGY](architecture/PLATFORM-STRATEGY.md)
 

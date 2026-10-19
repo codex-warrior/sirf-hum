@@ -7,13 +7,13 @@
 
 ## Stack
 
-Flutter (Android · iOS · Web) · Firebase (Auth, Firestore, Storage,
+Flutter (Android first · Web; iOS not a current target, D-092) · Firebase (Auth, Firestore, Storage,
 Functions, FCM, App Check) · LiveKit (realtime media).
 
 ## Getting started
 
 Requirements: Flutter 3.41.x stable, Node 22+ (Functions) / 24.12+ (rules
-tests), Java 21+ and `firebase-tools` (emulators). iOS builds need macOS + Xcode.
+tests), Java 21+ and `firebase-tools` (emulators).
 
 ```sh
 flutter pub get

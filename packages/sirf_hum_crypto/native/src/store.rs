@@ -22,13 +22,15 @@ pub trait CryptoStore: Send {
     fn exists(&self, name: &str) -> CoreResult<bool>;
     /// Removes every record this store owns.
     fn wipe_all(&mut self) -> CoreResult<()>;
+    /// Names of the records starting with `prefix` (sorted).
+    fn list(&self, prefix: &str) -> CoreResult<Vec<String>>;
 }
 
 /// Record names are fixed identifiers chosen by the core, never user input;
 /// validated anyway so no name can escape the store directory.
 pub(crate) fn check_name(name: &str) -> CoreResult<()> {
     let ok = !name.is_empty()
-        && name.len() <= 64
+        && name.len() <= 80
         && name
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
@@ -67,6 +69,14 @@ impl CryptoStore for MemoryStore {
     fn wipe_all(&mut self) -> CoreResult<()> {
         self.records.clear();
         Ok(())
+    }
+    fn list(&self, prefix: &str) -> CoreResult<Vec<String>> {
+        Ok(self
+            .records
+            .keys()
+            .filter(|k| k.starts_with(prefix))
+            .cloned()
+            .collect())
     }
 }
 
@@ -157,5 +167,18 @@ impl CryptoStore for FileStore {
             }
         }
         Ok(())
+    }
+
+    fn list(&self, prefix: &str) -> CoreResult<Vec<String>> {
+        let suffix = format!(".{RECORD_EXT}");
+        let entries = fs::read_dir(&self.dir).map_err(|_| CoreError::PersistenceFailure)?;
+        let mut names: Vec<String> = entries
+            .flatten()
+            .filter_map(|e| e.file_name().to_str().map(str::to_owned))
+            .filter_map(|n| n.strip_suffix(&suffix).map(str::to_owned))
+            .filter(|n| n.starts_with(prefix) && check_name(n).is_ok())
+            .collect();
+        names.sort();
+        Ok(names)
     }
 }

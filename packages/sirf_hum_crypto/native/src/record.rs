@@ -42,6 +42,9 @@ pub enum RecordKind {
     MlsState = 3,
     /// Highest server trust epoch this device has seen (D-083).
     TrustEpoch = 4,
+    /// One message of local history (D-090): plaintext payload, plus the
+    /// queued ciphertext until the server accepts it.
+    LocalMessage = 5,
 }
 
 fn header(kind: RecordKind) -> [u8; HEADER_LEN] {

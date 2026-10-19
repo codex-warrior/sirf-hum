@@ -6,10 +6,14 @@ E2EE yet.**
 - Nothing here has been independently reviewed.
 - The platform key store exists (Prompt 07, D-066); the insecure test
   key stores are refused in release builds.
-- No product feature uses the core.
+- Prompt 10 added the messaging core (ABI v5): device-pinned trust,
+  staged commits, authenticated messages and sealed local history
+  ([E2EE-MESSAGING-DESIGN](E2EE-MESSAGING-DESIGN.md)). It is used by the
+  development messaging service only; there is no chat UI and no user
+  content.
 
-Code lives in `packages/sirf_hum_crypto/`. Decisions: D-054–D-068 in the
-[Decision Log](../decisions/DECISION-LOG.md).
+Code lives in `packages/sirf_hum_crypto/`. Decisions: D-054–D-068 and
+D-085–D-091 in the [Decision Log](../decisions/DECISION-LOG.md).
 
 ## Layers
 
@@ -50,7 +54,7 @@ The wrapper's own code is policy:
 | **Secure storage** | The store key (Rust: KEK) comes from a `KeyEncryptionKeyProvider`. The platform adapter supplies a per-account key (Android Keystore-wrapped / iOS `ThisDeviceOnly` Keychain) via `sh_crypto_open_with_platform_key` (D-066, [DEVICE-IDENTITY](DEVICE-IDENTITY.md)). Test adapters are refused in release builds. | `keystore.rs` (`PlatformProvidedKey`); `lib/platform/secure_key_store.dart` |
 | **Firebase** | No crypto state, keys or plaintext. Only `EncryptedEnvelope` may reach infrastructure (already the rule). The package does not depend on Firebase. | Dependency graph; existing Security Rules unchanged |
 | **Web** | No private-content E2EE in V1 (D-046). Web compiles a stub where every call throws `unsupported`. | Conditional export on `dart.library.ffi`; `types_test.dart`; app test |
-| **Errors** | 21 stable `i32` codes (`account_mismatch` -18, Prompt 07; `recovery_key_invalid` -19, Prompt 08; `trust_state_stale` -20 and `trust_chain_invalid` -21, Prompt 09). No strings, payloads or native messages cross the ABI. Unknown codes become `internal`. | `error.rs`, `CryptoErrorCode` |
+| **Errors** | 25 stable `i32` codes (`account_mismatch` -18, Prompt 07; `recovery_key_invalid` -19, Prompt 08; `trust_state_stale` -20 and `trust_chain_invalid` -21, Prompt 09; `commit_pending` -22, `no_staged_commit` -23, `future_epoch` -24, `envelope_mismatch` -25, Prompt 10). No strings, payloads or native messages cross the ABI. Unknown codes become `internal`. | `error.rs`, `CryptoErrorCode` |
 | **Dependencies** | Exact pins; OpenMLS versions fixed (D-054); `cargo audit --deny warnings` with three documented ignores, re-verified on every run, for code that is never compiled or never shipped (D-068) | `tool/check_crypto_core.sh`, `tool/crypto_audit.sh` |
 | **Logging** | The core never logs. CI fails on printing/logging macros or crates in `src/` and on OpenMLS `crypto-debug`/`content-debug` features. Dart types print `<redacted>`. App-side logging goes through `AppLogger` with category names only. | `tool/check_crypto_core.sh`, the source-scan test, clippy `print_*`/`dbg_macro` deny, redaction tests |
 
@@ -74,24 +78,39 @@ order:
 1. Basic credential type.
 2. Strict certificate decode.
 3. Person-key signature.
-4. The person key is in the trust policy.
-5. The device is not revoked.
+4. Neither the device nor its person key is revoked.
+5. The **exact certificate** is trusted, or its person key is an anchor
+   whose single pinned device it is (D-085). A person key pinned to another
+   device ID is refused.
 6. The certificate's device key equals the leaf's signature key.
 
-The trust policy holds the device's own person key and person keys the user
-has verified out of band (`trustVerifiedPersonKey`). Verification UX is the
-pairing phase's job.
+**Trust policy (D-085, `native/src/trust.rs`).** Since Prompt 10 the trust
+unit is the exact device certificate, never a person key on its own:
+- *anchors*: the device's own PIK and PIKs verified out of band
+  (`trustVerifiedPersonKey`). They root lineage verification and admit
+  only their own single device (pinned on first use);
+- *devices*: exact certificates with their source (own, approved, anchor,
+  lineage of an account);
+- `trustLineage(lineage, trustEpoch)` (ABI v5) verifies an account's chain
+  (D-084) from an anchored root and replaces that account's lineage-trusted
+  devices; an older trust epoch is refused;
+- revoking a device also revokes its PIK, permanently.
+
+This closes the gap where a revoked device could certify a new device ID
+with its retained PIK. Verification UX is still the pairing phase's job.
 
 ## Local state
 
-There are up to four records, `{name}.shrec`, in the app-private directory:
+There are four fixed records plus one per message, `{name}.shrec`, in the
+app-private directory:
 
 | Record | Kind | Contents |
 | --- | --- | --- |
 | `identity_secret` | IdentitySecret | Account ID, person and device private keys, certificate |
 | `public_metadata` | PublicMetadata | Non-secret identity data (still sealed) |
-| `mls_state` | MlsState | The full OpenMLS storage map, group IDs, trust policy, revocations |
+| `mls_state` | MlsState | The full OpenMLS storage map (including staged commits), group IDs, the trust policy (D-085) and confirmed-commit epochs. State version 2 (Prompt 10); version 1 still loads, its person keys becoming anchors |
 | `trust_epoch` | TrustEpoch (kind 4, Prompt 09) | The highest account trust epoch this device has seen (D-083) |
+| `msg_<conversation>_<message>` | LocalMessage (kind 5, Prompt 10) | One message of local history: payload (private content), direction, state, epochs, times, and the queued ciphertext until the server accepts it (D-090). Written in the same checkpoint as the MLS state change |
 
 **Record format v1** (D-065):
 
@@ -154,13 +173,17 @@ checkpoint (copy of storage map + group IDs + trust)  ─►  operation  ─► 
 | Account ID | 128 B |
 | Record | 8 MiB |
 | Group members | 16 |
+| Message payload | 16 KiB |
+| Message ciphertext (receive) | 32 KiB |
+| History record | 64 KiB |
+| Key packages per commit | 15 |
 
 All limits are defined in `limits.rs` and tested at the boundary and one
 byte over it.
 
 **Versioning** (D-061): the record format, identity and state schema
 versions, ciphersuite `0x0001` and `IMPLEMENTATION = "openmls/0.9.1"` are
-explicit. `ABI_VERSION` (currently 4: platform store key, account check and device proof in Prompt 07; device approval, comparison code and recovery key in Prompt 08; signed revocation, reset cancellation, trust epoch and lineage verification in Prompt 09, [MULTI-DEVICE-TRUST](MULTI-DEVICE-TRUST.md)) is checked by Dart; a mismatch means
+explicit. `ABI_VERSION` (currently 5: platform store key, account check and device proof in Prompt 07; device approval, comparison code and recovery key in Prompt 08; signed revocation, reset cancellation, trust epoch and lineage verification in Prompt 09, [MULTI-DEVICE-TRUST](MULTI-DEVICE-TRUST.md); device-pinned lineage trust, staged commits, authenticated messages and sealed history in Prompt 10, [E2EE-MESSAGING-DESIGN](E2EE-MESSAGING-DESIGN.md), with every v4 function unchanged) is checked by Dart; a mismatch means
 `isAvailable == false`.
 
 ## Platform integration (D-063)
@@ -183,7 +206,7 @@ explicit. `ABI_VERSION` (currently 4: platform store key, account check and devi
 The app sees only `privateContentCryptoSupport()`:
 
 - `nativeDevelopmentOnly`: core bundled, with the platform key store, but
-  unreviewed and used by no feature;
+  unreviewed; used only by the development messaging service (no UI);
 - `unavailableOnWeb`;
 - `unavailable`.
 
@@ -196,6 +219,9 @@ No value means production E2EE.
 - malicious or compromised server/network injecting, replaying, tampering
   with, reordering or truncating MLS messages (MLS authentication plus
   rollback);
+- a server moving a message to another conversation, message ID, sender or
+  version (AAD bound by Rust and compared inside the rollback, D-089);
+- a revoked device certifying a new device ID with its old PIK (D-085);
 - a malicious member adding an uncertified or untrusted device (boundary
   validation on every receiver);
 - oversized inputs (limits);
@@ -222,7 +248,9 @@ No value means production E2EE.
 - **Retained plaintext.** Content already decrypted by a removed device
   stays with that device (inherent to E2EE).
 - **Past-epoch window.** It is 0, so messages sent before a commit and
-  arriving after it are rejected (D-060 open).
+  arriving after it are rejected. For messaging, D-091 makes this safe by
+  ordering (the server accepts messages only at the current epoch; devices
+  process each epoch's messages before its commit).
 - **Test key stores.** Refused in release builds (Prompt 07). `insecureTestFile` stores the KEK as a plaintext
   file next to the state. It must never be used for real users.
 
@@ -231,6 +259,9 @@ No value means production E2EE.
 Everything in this package has had no independent review:
 
 - the credential policy and certificate format;
+- the device-pinned trust policy and lineage application (D-085);
+- staged commits, the message AAD and the history record format (D-087,
+  D-089, D-090);
 - the record format;
 - the FFI;
 - checkpoint/rollback;
@@ -248,8 +279,10 @@ made from this foundation.**
 | Dart facade through the real library | `test/crypto_core_test.dart` (`SIRF_HUM_REQUIRE_NATIVE_CRYPTO=1` turns skip into failure) | CI `crypto-core` |
 | Types, error table, redaction, Web stub | `test/types_test.dart` | Everywhere |
 | App classification | `test/security/private_content_crypto_test.dart` | `flutter test` |
-| Real app on device | `integration_test/crypto_core_test.dart` | CI Android emulator + iOS simulator |
-| Packaging | `.so` per ABI in the APK; framework in `Runner.app` | CI Android + iOS builds |
+| Real app on device | `integration_test/crypto_core_test.dart`, `integration_test/messaging_test.dart` (platform key store) | CI Android emulator (iOS not run, D-092) |
+| Trust unit (D-085), adversarial: forged and re-minted certificates, revoked PIKs, pins, stale lineage, v1 state migration | `native/src/engine/trust_tests.rs` | CI `crypto-core` |
+| Messaging core (ABI v5): staged commits, first-commit-wins, AAD binding, replay, ordering, epochs, multi-device, revocation, sealed history, limits, baseline | `native/tests/messaging.rs`, `engine/conversation.rs` golden vectors, `test/messaging_native_test.dart`, `test/messaging_types_test.dart` | CI `crypto-core` |
+| Packaging | `.so` per ABI in the APK | CI Android builds (iOS not built, D-092) |
 | Regression (Prompt 05) | `prototypes/mls-decision-gate` | `prototypes.yml` |
 
 The full list is in [E2EE-TEST-PLAN](../testing/E2EE-TEST-PLAN.md).

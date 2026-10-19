@@ -38,7 +38,7 @@ evidence.
 | **Maintenance** | Very active; 0.9.x released 2026-08/10; security fixes shipped within the same week as advisories | Active (pushed 2026-10-15); release cadence ~1–3 months (0.55.x → 0.56.0) | GitHub/crates.io |
 | **Language / memory safety** | Rust; unsafe use not audited by us | Rust; same | — |
 | **Android** | ✔ builds `.so` for arm64-v8a, armeabi-v7a, x86_64 (NDK 28.2, API 24) | ✔ same | CI `android` job |
-| **iOS** | ✔ static libs for device + simulators, XCFramework packaged | ✔ same | CI `ios` job (macOS) |
+| **iOS** | ✔ static libs for device + simulators, XCFramework packaged | ✔ same | CI `ios` job (macOS) in Prompt 05; job removed by D-092 |
 | **Web / wasm32** | ✔ all 11 scenarios pass under Node; upstream CI also tests wasm32 | ✔ all 11 pass under Node; a WebCrypto provider exists (`mls-rs-crypto-webcrypto`, not tested) | CI `wasm` job |
 | **Flutter integration** | No official Dart binding. Via our C ABI + `dart:ffi`: ✔ 3/3 Dart tests (Linux, macOS) | Same; official UniFFI bindings exist for Kotlin/Swift (`mls-rs-uniffi` 0.1.0, last release 2024-03: stale) but not Dart | CI `dart-ffi` + `ios` jobs |
 | **FFI complexity** | Generic over a provider trait; the app supplies storage + crypto providers | Generic over a builder `Config` (storage, identity, rules, crypto); the type is nameable via public aliases | Our backends (~200 lines each) |

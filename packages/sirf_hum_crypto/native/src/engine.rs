@@ -23,15 +23,22 @@ use crate::error::from_process_error;
 use crate::identity::{
     device_approval_payload, device_id_of, device_proof_payload, put, recovery_approval_payload,
     recovery_registration_payload, reset_cancel_payload, revocation_payload, AccountId,
-    DeviceCertificate, DeviceId, PersonKey, ProofPurpose, Reader, RevocationReason, TrustPolicy,
-    DEVICE_ID_LEN,
+    DeviceCertificate, DeviceId, PersonKey, ProofPurpose, Reader, RevocationReason, DEVICE_ID_LEN,
 };
 use crate::keystore::{KeyEncryptionKeyProvider, KEK_LEN};
 use crate::limits::{self, *};
 use crate::record::{self, RecordKind};
 use crate::recovery::RecoverySeed;
 use crate::store::CryptoStore;
+use crate::trust::{TrustPolicy, TrustSource};
 use crate::{CoreError, CoreResult};
+
+mod conversation;
+#[cfg(test)]
+mod trust_tests;
+pub use conversation::{
+    LocalMessage, MessageDirection, MessageState, Received, Sent, StagedCommit,
+};
 
 /// RFC 9420 ciphersuite 0x0001 (D-042). Fixed per group; changes go through
 /// MLS ReInit (D-061).
@@ -44,7 +51,10 @@ const REC_STATE: &str = "mls_state";
 const REC_METADATA: &str = "public_metadata";
 const REC_TRUST_EPOCH: &str = "trust_epoch";
 const IDENTITY_VERSION: u16 = 1;
-const STATE_VERSION: u16 = 1;
+/// v1 (Prompt 06): person-key trust. v2 (Prompt 10, D-085): device-pinned
+/// trust policy + staged-commit bookkeeping. v1 still loads.
+const STATE_VERSION_V1: u16 = 1;
+const STATE_VERSION: u16 = 2;
 
 /// Public, shareable identity of this device.
 #[derive(Clone, PartialEq, Eq)]
@@ -110,6 +120,15 @@ pub struct RecoveryApproval {
     pub recovery_public_key: [u8; 32],
 }
 
+/// Expected routing of an ABI v5 message or commit (D-089).
+pub(crate) struct Routing {
+    pub(crate) group_id: Vec<u8>,
+    pub(crate) epoch: u64,
+    pub(crate) sender: DeviceId,
+    /// `Some` for an application message (its exact AAD); `None` for a commit.
+    pub(crate) expected_aad: Option<Vec<u8>>,
+}
+
 pub struct AddResult {
     pub commit: Vec<u8>,
     pub welcome: Vec<u8>,
@@ -150,6 +169,9 @@ struct State {
     provider: OpenMlsRustCrypto,
     groups: BTreeMap<Vec<u8>, MlsGroup>,
     trust: TrustPolicy,
+    /// Per group, the epoch from which this device last confirmed a staged
+    /// commit (D-087): makes a duplicate confirm idempotent.
+    confirmed: BTreeMap<Vec<u8>, u64>,
 }
 
 impl State {
@@ -158,6 +180,7 @@ impl State {
             provider: OpenMlsRustCrypto::default(),
             groups: BTreeMap::new(),
             trust: TrustPolicy::default(),
+            confirmed: BTreeMap::new(),
         }
     }
 }
@@ -167,6 +190,7 @@ struct Checkpoint {
     values: HashMap<Vec<u8>, Vec<u8>>,
     group_ids: Vec<Vec<u8>>,
     trust: TrustPolicy,
+    confirmed: BTreeMap<Vec<u8>, u64>,
 }
 
 impl Drop for Checkpoint {
@@ -187,11 +211,23 @@ pub struct CryptoCore {
     poisoned: bool,
 }
 
+/// Sender-ratchet out-of-order tolerance (D-091): messages within one epoch
+/// may arrive up to 32 generations late. The forward distance stays at the
+/// OpenMLS default.
+const OUT_OF_ORDER_TOLERANCE: u32 = 32;
+const MAX_FORWARD_DISTANCE: u32 = 1000;
+
+fn ratchet() -> SenderRatchetConfiguration {
+    SenderRatchetConfiguration::new(OUT_OF_ORDER_TOLERANCE, MAX_FORWARD_DISTANCE)
+}
+
 fn join_config() -> MlsGroupJoinConfig {
-    // Past-epoch window left at the OpenMLS default (0) until D-060 decides;
-    // late messages fail closed (StaleEpoch).
+    // Past-epoch window stays at the OpenMLS default (0): D-091 makes it
+    // safe for messaging by processing each epoch's messages before its
+    // commit. Late messages fail closed (StaleEpoch).
     MlsGroupJoinConfig::builder()
         .use_ratchet_tree_extension(true)
+        .sender_ratchet_configuration(ratchet())
         .build()
 }
 
@@ -199,6 +235,7 @@ fn create_config() -> MlsGroupCreateConfig {
     MlsGroupCreateConfig::builder()
         .ciphersuite(CIPHERSUITE)
         .use_ratchet_tree_extension(true)
+        .sender_ratchet_configuration(ratchet())
         .build()
 }
 
@@ -296,9 +333,14 @@ impl CryptoCore {
             person_key: identity.person_key.clone(),
             certificate: identity.certificate.encode(),
         };
+        let own_certificate = public.certificate.clone();
         self.identity = Some(identity);
         self.transact(|core| {
-            core.state.trust.trusted_people.insert(person_key);
+            let State {
+                provider, trust, ..
+            } = &mut core.state;
+            trust.anchor(person_key)?;
+            trust.trust_certificate(provider.crypto(), &own_certificate, TrustSource::Own, None)?;
             Ok(())
         })?;
         Ok(public)
@@ -368,7 +410,9 @@ impl CryptoCore {
         if new.device_id == id.certificate.device_id || new.person_key == id.person_key {
             return Err(CoreError::InvalidInput);
         }
-        if self.state.trust.revoked_devices.contains(&new.device_id) {
+        if self.state.trust.revoked_devices.contains(&new.device_id)
+            || self.state.trust.revoked_people.contains(&new.person_key)
+        {
             return Err(CoreError::UnauthorizedDevice);
         }
         let payload = device_approval_payload(
@@ -384,9 +428,14 @@ impl CryptoCore {
             .crypto()
             .sign(SignatureScheme::ED25519, &payload, &id.person_private)
             .map_err(|_| CoreError::InternalCryptoFailure)?;
-        let person_key = new.person_key;
+        // D-085: trust the exact approved certificate (pinning its PIK),
+        // never the PIK on its own.
+        let approved = new_certificate.to_vec();
         self.transact(|core| {
-            core.state.trust.trusted_people.insert(person_key);
+            let State {
+                provider, trust, ..
+            } = &mut core.state;
+            trust.trust_certificate(provider.crypto(), &approved, TrustSource::Approved, None)?;
             Ok(())
         })?;
         Ok(signature)
@@ -537,20 +586,41 @@ impl CryptoCore {
         Ok(previous)
     }
 
-    /// Trusts a partner's person key. Call only after out-of-band
-    /// verification (PAIRING-AND-DEVICE-TRUST.md); the server is never the
-    /// authority for this.
+    /// Anchors a person key verified out of band (PAIRING-AND-DEVICE-TRUST.md);
+    /// the server is never the authority for this. Since D-085 an anchor
+    /// roots lineage verification and admits only its own single (pinned)
+    /// device; it no longer trusts every certificate the key signs.
     pub fn trust_verified_person_key(&mut self, key: PersonKey) -> CoreResult<()> {
         self.guard()?;
         self.identity()?;
+        self.transact(|core| core.state.trust.anchor(key))
+    }
+
+    /// Verifies an account's lineage blob (lineage.rs, D-084) and applies it
+    /// to the trust policy (D-085). The root's person key must be anchored,
+    /// and `trust_epoch` (the server's `accountTrust.trustEpoch`) must not be
+    /// older than one already applied for that account. Returns how many
+    /// devices of that account are now trusted.
+    pub fn trust_lineage(&mut self, blob: &[u8], trust_epoch: u64) -> CoreResult<u32> {
+        self.guard()?;
+        self.identity()?;
+        let outcome = crate::lineage::decode_and_verify(self.state.provider.crypto(), blob)?;
+        let account = outcome.account.as_str().to_owned();
         self.transact(|core| {
-            core.state.trust.trusted_people.insert(key);
-            Ok(())
+            core.state.trust.apply_lineage(&outcome, trust_epoch)?;
+            Ok(core
+                .state
+                .trust
+                .devices
+                .values()
+                .filter(|d| d.account.as_deref() == Some(account.as_str()))
+                .count() as u32)
         })
     }
 
-    /// Marks a device as revoked: its credentials are rejected from now on.
-    /// Removing it from groups is a separate, explicit commit.
+    /// Marks a device as revoked: its credentials are rejected from now on,
+    /// and so is its person key (D-085). Removing it from groups is a
+    /// separate, explicit commit.
     pub fn revoke_device(&mut self, device: DeviceId) -> CoreResult<()> {
         self.guard()?;
         self.identity()?;
@@ -558,7 +628,7 @@ impl CryptoCore {
             return Err(CoreError::InvalidInput);
         }
         self.transact(|core| {
-            core.state.trust.revoked_devices.insert(device);
+            core.state.trust.revoke(device, None);
             Ok(())
         })
     }
@@ -600,6 +670,7 @@ impl CryptoCore {
 
     pub fn add_member(&mut self, group_id: &[u8], key_package: &[u8]) -> CoreResult<AddResult> {
         self.guard()?;
+        self.require_no_staged_commit(group_id)?;
         limits::check(key_package.len(), MAX_KEY_PACKAGE_BYTES)?;
         let MlsMessageBodyIn::KeyPackage(kp_in) = parse(key_package)?.extract() else {
             return Err(CoreError::MalformedMessage);
@@ -609,6 +680,7 @@ impl CryptoCore {
                 provider,
                 groups,
                 trust,
+                ..
             } = &mut core.state;
             let kp = kp_in
                 .validate(provider.crypto(), ProtocolVersion::Mls10)
@@ -643,6 +715,7 @@ impl CryptoCore {
 
     pub fn remove_member(&mut self, group_id: &[u8], device: DeviceId) -> CoreResult<Vec<u8>> {
         self.guard()?;
+        self.require_no_staged_commit(group_id)?;
         if device == self.identity()?.certificate.device_id {
             return Err(CoreError::InvalidInput);
         }
@@ -674,6 +747,7 @@ impl CryptoCore {
     /// Commits a self update (fresh leaf keys: post-compromise healing).
     pub fn self_update(&mut self, group_id: &[u8]) -> CoreResult<Vec<u8>> {
         self.guard()?;
+        self.require_no_staged_commit(group_id)?;
         self.transact(|core| {
             let State {
                 provider, groups, ..
@@ -698,9 +772,23 @@ impl CryptoCore {
     /// Joins a group from a Welcome. Every member's credential is validated
     /// *before* the group is accepted.
     pub fn join(&mut self, welcome: &[u8]) -> CoreResult<Vec<u8>> {
+        self.join_with(welcome, None)
+    }
+
+    /// [`Self::join`], refusing a Welcome for any group other than
+    /// `expected_group` (`EnvelopeMismatch`) or for a group already held.
+    pub(crate) fn join_with(
+        &mut self,
+        welcome: &[u8],
+        expected_group: Option<&[u8]>,
+    ) -> CoreResult<Vec<u8>> {
         self.guard()?;
         self.identity()?;
         limits::check(welcome.len(), MAX_WELCOME_BYTES)?;
+        if expected_group.is_some_and(|g| self.state.groups.contains_key(g)) {
+            // Already a member: a second Welcome means nothing.
+            return Err(CoreError::InvalidInput);
+        }
         let MlsMessageBodyIn::Welcome(welcome) = parse(welcome)?.extract() else {
             return Err(CoreError::MalformedMessage);
         };
@@ -709,6 +797,7 @@ impl CryptoCore {
                 provider,
                 groups,
                 trust,
+                ..
             } = &mut core.state;
             let staged = StagedWelcome::new_from_welcome(provider, &join_config(), welcome, None)
                 .map_err(|_| CoreError::ProtocolViolation)?;
@@ -719,6 +808,11 @@ impl CryptoCore {
             }
             if count > MAX_GROUP_MEMBERS {
                 return Err(CoreError::Unsupported);
+            }
+            if let Some(expected) = expected_group {
+                if staged.group_context().group_id().as_slice() != expected {
+                    return Err(CoreError::EnvelopeMismatch);
+                }
             }
             let group = staged
                 .into_group(provider)
@@ -733,6 +827,7 @@ impl CryptoCore {
 
     pub fn encrypt(&mut self, group_id: &[u8], plaintext: &[u8]) -> CoreResult<Vec<u8>> {
         self.guard()?;
+        self.require_no_staged_commit(group_id)?;
         limits::check(plaintext.len(), MAX_PLAINTEXT_BYTES)?;
         self.transact(|core| {
             let State {
@@ -758,18 +853,54 @@ impl CryptoCore {
         self.guard()?;
         self.identity()?;
         limits::check(message.len(), MAX_INCOMING_MESSAGE_BYTES)?;
+        self.process_inner(message, None, |_, _| Ok(()))
+    }
+
+    /// Shared processing path. With `routing` (ABI v5 messaging), the
+    /// message must be for that group and epoch, of the expected kind, from
+    /// that sender device, and (for application messages) carry exactly the
+    /// expected authenticated data. `after` runs inside the same transaction
+    /// (e.g. writing local history), so any failure rolls everything back.
+    pub(crate) fn process_inner(
+        &mut self,
+        message: &[u8],
+        routing: Option<&Routing>,
+        after: impl FnOnce(&mut Self, &Incoming) -> CoreResult<()>,
+    ) -> CoreResult<Incoming> {
         let protocol = parse(message)?
             .try_into_protocol_message()
             .map_err(|_| CoreError::MalformedMessage)?;
         let gid = protocol.group_id().as_slice().to_vec();
-        if !self.state.groups.contains_key(&gid) {
-            return Err(CoreError::UnknownGroup);
+        if let Some(r) = routing {
+            if gid != r.group_id {
+                return Err(CoreError::EnvelopeMismatch);
+            }
+            if protocol.epoch().as_u64() != r.epoch {
+                return Err(CoreError::EnvelopeMismatch);
+            }
+        }
+        let local_epoch = self
+            .state
+            .groups
+            .get(&gid)
+            .ok_or(CoreError::UnknownGroup)?
+            .epoch()
+            .as_u64();
+        if routing.is_some() {
+            let epoch = protocol.epoch().as_u64();
+            if epoch > local_epoch {
+                return Err(CoreError::FutureEpoch);
+            }
+            if epoch < local_epoch {
+                return Err(CoreError::StaleEpoch);
+            }
         }
         self.transact(|core| {
             let State {
                 provider,
                 groups,
                 trust,
+                ..
             } = &mut core.state;
             let group = groups.get_mut(&gid).ok_or(CoreError::UnknownGroup)?;
             let processed = group
@@ -786,13 +917,37 @@ impl CryptoCore {
                 .members()
                 .find(|m| m.index == sender_index)
                 .ok_or(CoreError::UnauthorizedDevice)?;
-            trust.validate(provider.crypto(), &sender.credential, &sender.signature_key)?;
+            let validated =
+                trust.validate(provider.crypto(), &sender.credential, &sender.signature_key)?;
+            if let Some(r) = routing {
+                // D-089: the authenticated sender must be the envelope's.
+                if validated.device_id != r.sender {
+                    return Err(CoreError::EnvelopeMismatch);
+                }
+            }
+            let aad = processed.aad().to_vec();
 
-            match processed.into_content() {
+            let incoming = match processed.into_content() {
                 ProcessedMessageContent::ApplicationMessage(m) => {
-                    Ok(Incoming::Application(Zeroizing::new(m.into_bytes())))
+                    if let Some(r) = routing {
+                        match &r.expected_aad {
+                            Some(expected) if *expected == aad => {}
+                            Some(_) => return Err(CoreError::EnvelopeMismatch),
+                            // A commit was expected (process_commit).
+                            None => return Err(CoreError::ProtocolViolation),
+                        }
+                    }
+                    Incoming::Application(Zeroizing::new(m.into_bytes()))
                 }
                 ProcessedMessageContent::StagedCommitMessage(staged) => {
+                    if routing.is_some_and(|r| r.expected_aad.is_some()) {
+                        return Err(CoreError::ProtocolViolation);
+                    }
+                    // D-087: another member's commit while ours is staged
+                    // must go through discard first.
+                    if group.pending_commit().is_some() {
+                        return Err(CoreError::CommitPending);
+                    }
                     for add in staged.add_proposals() {
                         let leaf = add.add_proposal().key_package().leaf_node();
                         trust.validate(
@@ -827,16 +982,18 @@ impl CryptoCore {
                     if removed_self {
                         let _ = group.delete(provider.storage());
                         groups.remove(&gid);
-                        Ok(Incoming::RemovedFromGroup)
+                        Incoming::RemovedFromGroup
                     } else {
-                        Ok(Incoming::CommitApplied {
+                        Incoming::CommitApplied {
                             epoch: group.epoch().as_u64(),
-                        })
+                        }
                     }
                 }
                 // By-reference proposals and external joins are not used yet.
-                _ => Err(CoreError::Unsupported),
-            }
+                _ => return Err(CoreError::Unsupported),
+            };
+            after(core, &incoming)?;
+            Ok(incoming)
         })
     }
 
@@ -878,6 +1035,15 @@ impl CryptoCore {
     }
 
     /// Deletes every local record and forgets all in-memory state.
+    fn require_no_staged_commit(&self, group_id: &[u8]) -> CoreResult<()> {
+        if let Some(group) = self.state.groups.get(group_id) {
+            if group.pending_commit().is_some() {
+                return Err(CoreError::CommitPending);
+            }
+        }
+        Ok(())
+    }
+
     pub fn wipe(&mut self) -> CoreResult<()> {
         self.store.wipe_all()?;
         self.zeroize_state();
@@ -902,6 +1068,7 @@ impl CryptoCore {
             values,
             group_ids: self.state.groups.keys().cloned().collect(),
             trust: self.state.trust.clone(),
+            confirmed: self.state.confirmed.clone(),
         })
     }
 
@@ -920,6 +1087,7 @@ impl CryptoCore {
             *values = checkpoint.values.clone();
         }
         self.state.trust = checkpoint.trust.clone();
+        self.state.confirmed = checkpoint.confirmed.clone();
         let mut groups = BTreeMap::new();
         for gid in &checkpoint.group_ids {
             let group = MlsGroup::load(self.state.provider.storage(), &GroupId::from_slice(gid))
@@ -976,13 +1144,11 @@ impl CryptoCore {
         for gid in self.state.groups.keys() {
             put(&mut out, gid);
         }
-        out.extend_from_slice(&(self.state.trust.trusted_people.len() as u32).to_be_bytes());
-        for key in &self.state.trust.trusted_people {
-            put(&mut out, &key.0);
-        }
-        out.extend_from_slice(&(self.state.trust.revoked_devices.len() as u32).to_be_bytes());
-        for dev in &self.state.trust.revoked_devices {
-            out.extend_from_slice(&dev.0);
+        self.state.trust.encode(&mut out);
+        out.extend_from_slice(&(self.state.confirmed.len() as u32).to_be_bytes());
+        for (gid, epoch) in &self.state.confirmed {
+            put(&mut out, gid);
+            out.extend_from_slice(&epoch.to_be_bytes());
         }
         let sealed = record::seal(&self.kek, RecordKind::MlsState, REC_STATE, &out)?;
         self.store.put(REC_STATE, &sealed)
@@ -1045,7 +1211,8 @@ impl CryptoCore {
         if let Some(raw) = self.store.get(REC_STATE)? {
             let plain = record::open(&self.kek, RecordKind::MlsState, REC_STATE, &raw)?;
             let mut r = Reader(&plain);
-            if u16::from_be_bytes(r.fixed::<2>().map_err(corrupt)?) != STATE_VERSION {
+            let version = u16::from_be_bytes(r.fixed::<2>().map_err(corrupt)?);
+            if version != STATE_VERSION && version != STATE_VERSION_V1 {
                 return Err(CoreError::StateCorruption);
             }
             let n = u32::from_be_bytes(r.fixed::<4>().map_err(corrupt)?);
@@ -1060,19 +1227,33 @@ impl CryptoCore {
             for _ in 0..g {
                 group_ids.push(r.var().map_err(corrupt)?.to_vec());
             }
-            let mut trust = TrustPolicy::default();
-            let t = u32::from_be_bytes(r.fixed::<4>().map_err(corrupt)?);
-            for _ in 0..t {
+            let mut confirmed = BTreeMap::new();
+            let trust = if version == STATE_VERSION_V1 {
+                // v1 person-key trust: the keys become anchors (D-085), so an
+                // upgraded device re-admits only one pinned device per key.
+                let mut trust = TrustPolicy::default();
+                let t = u32::from_be_bytes(r.fixed::<4>().map_err(corrupt)?);
+                for _ in 0..t {
+                    trust
+                        .anchors
+                        .insert(PersonKey::from_slice(r.var().map_err(corrupt)?).map_err(corrupt)?);
+                }
+                let rv = u32::from_be_bytes(r.fixed::<4>().map_err(corrupt)?);
+                for _ in 0..rv {
+                    trust
+                        .revoked_devices
+                        .insert(DeviceId(r.fixed::<DEVICE_ID_LEN>().map_err(corrupt)?));
+                }
                 trust
-                    .trusted_people
-                    .insert(PersonKey::from_slice(r.var().map_err(corrupt)?).map_err(corrupt)?);
-            }
-            let rv = u32::from_be_bytes(r.fixed::<4>().map_err(corrupt)?);
-            for _ in 0..rv {
+            } else {
+                let trust = TrustPolicy::decode(&mut r)?;
+                let n = u32::from_be_bytes(r.fixed::<4>().map_err(corrupt)?);
+                for _ in 0..n {
+                    let gid = r.var().map_err(corrupt)?.to_vec();
+                    confirmed.insert(gid, u64::from_be_bytes(r.fixed::<8>().map_err(corrupt)?));
+                }
                 trust
-                    .revoked_devices
-                    .insert(DeviceId(r.fixed::<DEVICE_ID_LEN>().map_err(corrupt)?));
-            }
+            };
             if !r.0.is_empty() {
                 return Err(CoreError::StateCorruption);
             }
@@ -1080,16 +1261,20 @@ impl CryptoCore {
                 values,
                 group_ids,
                 trust,
+                confirmed,
             };
             self.rollback(&checkpoint)
                 .map_err(|_| CoreError::StateCorruption)?;
         }
         if let Some(id) = &self.identity {
-            // The device's own person key is always trusted.
-            self.state
-                .trust
-                .trusted_people
-                .insert(id.person_key.clone());
+            // The device's own certificate is always trusted (and its person
+            // key anchored), also after a v1 upgrade.
+            let own = id.certificate.encode();
+            let trust = &mut self.state.trust;
+            trust.anchors.insert(id.person_key.clone());
+            trust
+                .trust_certificate(self.state.provider.crypto(), &own, TrustSource::Own, None)
+                .map_err(|_| CoreError::StateCorruption)?;
         }
         Ok(())
     }

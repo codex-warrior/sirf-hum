@@ -172,3 +172,26 @@ Details: [MULTI-DEVICE-TRUST](MULTI-DEVICE-TRUST.md).
   - approvals signed before revocation are refused;
   - revocation does not wipe the device remotely;
   - there is no cascade (`approvedBy` lineage is recorded).
+
+## Part 6: Revocation and MLS in messaging (Prompt 10, D-085–D-091)
+
+Details: [E2EE-MESSAGING-DESIGN](E2EE-MESSAGING-DESIGN.md) §9.
+
+- **Firebase status is not MLS membership.** A revoked device's writes are
+  refused at once (rules check `active`), but until a Remove commit it still
+  holds the conversation's epoch secrets, and its account can still read
+  ciphertext.
+- **Peers learn revocations through lineage** (`trustLineage`): the device
+  and its PIK are revoked locally, permanently (D-085). Its messages are
+  rejected from then on.
+- **No new content to a revoked device:** a sender refuses to encrypt while
+  the roster holds a device it no longer trusts (`unauthorized_device`).
+  The messaging service's `reconcileMembership` stages the Remove; the
+  server arbitrates it (first commit wins); every device applies it.
+- **Not provided:** recalling content the revoked device already
+  decrypted; a push that tells peers about a revocation (Prompt 11, no
+  private content). Until peers refresh lineage, devices that have not
+  refreshed can still encrypt to it (narrow window, documented).
+- **Recovery and new devices:** a recovered or new device joins with a
+  Welcome as a new member. It gets **no history** (MLS by design; the
+  encrypted archive stays deferred).

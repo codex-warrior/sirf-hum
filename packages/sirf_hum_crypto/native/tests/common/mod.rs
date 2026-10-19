@@ -126,8 +126,125 @@ impl CryptoStore for FaultyStore {
     fn wipe_all(&mut self) -> CoreResult<()> {
         self.inner.lock().unwrap().wipe_all()
     }
+    fn list(&self, prefix: &str) -> CoreResult<Vec<String>> {
+        self.inner.lock().unwrap().list(prefix)
+    }
 }
 
 pub fn record_path(dir: &Path, name: &str) -> PathBuf {
     dir.join(format!("{name}.shrec"))
+}
+
+// ------------------------------------------------- Prompt 10 helpers
+
+/// One approval link: (approver cert, new cert, challenge, expires, signature).
+pub type Link = (Vec<u8>, Vec<u8>, Vec<u8>, u64, Vec<u8>);
+/// One signed revocation: (revoker cert, revoked cert, reason, challenge, expires, signature).
+pub type Revocation = (Vec<u8>, Vec<u8>, u8, Vec<u8>, u64, Vec<u8>);
+
+fn put(out: &mut Vec<u8>, b: &[u8]) {
+    out.extend_from_slice(&(b.len() as u32).to_be_bytes());
+    out.extend_from_slice(b);
+}
+
+/// Encodes a lineage blob in the `lineage.rs` wire format (approval links only).
+pub fn lineage_blob(
+    account: &str,
+    root: &[u8],
+    links: &[Link],
+    revocations: &[Revocation],
+    revoked_ids: &[DeviceId],
+) -> Vec<u8> {
+    let mut out = vec![1u8];
+    put(&mut out, account.as_bytes());
+    put(&mut out, root);
+    out.extend_from_slice(&(links.len() as u32).to_be_bytes());
+    for (approver, new, ch, exp, sig) in links {
+        out.extend_from_slice(&[1, 1]);
+        put(&mut out, approver);
+        put(&mut out, new);
+        put(&mut out, ch);
+        out.extend_from_slice(&exp.to_be_bytes());
+        put(&mut out, sig);
+    }
+    out.extend_from_slice(&(revocations.len() as u32).to_be_bytes());
+    for (revoker, revoked, reason, ch, exp, sig) in revocations {
+        out.push(1);
+        put(&mut out, revoker);
+        put(&mut out, revoked);
+        out.push(*reason);
+        put(&mut out, ch);
+        out.extend_from_slice(&exp.to_be_bytes());
+        put(&mut out, sig);
+    }
+    out.extend_from_slice(&(revoked_ids.len() as u32).to_be_bytes());
+    for id in revoked_ids {
+        out.extend_from_slice(&id.0);
+    }
+    out
+}
+
+pub const CHALLENGE: [u8; 32] = [7u8; 32];
+pub const EXPIRES: u64 = 1_900_000_000;
+
+/// `approver` approves `new` (same account) and returns the lineage link.
+pub fn approve(approver: &mut Device, new: &Device) -> Link {
+    let sig = approver
+        .core
+        .approve_device(&new.public.certificate, &CHALLENGE, EXPIRES)
+        .unwrap();
+    (
+        approver.public.certificate.clone(),
+        new.public.certificate.clone(),
+        CHALLENGE.to_vec(),
+        EXPIRES,
+        sig,
+    )
+}
+
+/// A conversation ID (16 bytes) for tests.
+pub fn conversation(byte: u8) -> Vec<u8> {
+    vec![byte; 16]
+}
+
+impl Device {
+    /// Anchors another device's PIK (the v4 path: its single pinned device).
+    pub fn anchor(&mut self, other: &Device) {
+        self.trust(other);
+    }
+
+    pub fn kp(&mut self) -> Vec<u8> {
+        self.core.key_package().unwrap()
+    }
+
+    /// Sends a text payload; returns (message id, epoch, ciphertext).
+    pub fn send(&mut self, cid: &[u8], text: &[u8]) -> (Vec<u8>, u64, Vec<u8>) {
+        let sent = self.core.send_message(cid, text).unwrap();
+        (sent.message_id.to_vec(), sent.epoch, sent.ciphertext)
+    }
+
+    /// Receives a message from `from` with honest envelope fields.
+    pub fn recv(
+        &mut self,
+        cid: &[u8],
+        from: &Device,
+        msg: &(Vec<u8>, u64, Vec<u8>),
+    ) -> Result<Vec<u8>, CoreError> {
+        self.core
+            .receive_message(cid, &msg.0, from.device_id(), msg.1, 1, 1, &msg.2, 0)
+            .map(|r| r.payload.to_vec())
+    }
+}
+
+/// `creator` creates conversation `cid` adding `others`, the server accepts,
+/// everyone joins. Every device must already trust every other.
+pub fn conversation_of(creator: &mut Device, others: &mut [&mut Device], cid: &[u8]) {
+    let kps: Vec<Vec<u8>> = others.iter_mut().map(|d| d.kp()).collect();
+    let staged = creator.core.create_conversation_group(cid, &kps).unwrap();
+    assert_eq!(staged.from_epoch, 0);
+    assert_eq!(creator.core.confirm_commit(cid, 0).unwrap(), 1);
+    let welcome = staged.welcome.unwrap();
+    for d in others.iter_mut() {
+        assert_eq!(d.core.join_conversation(cid, &welcome).unwrap(), 1);
+    }
 }
