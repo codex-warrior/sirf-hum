@@ -105,6 +105,8 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-108 | Entry routes outside a five-area shell; shell only for a paired session; bottom bar / rail, no drawer | Accepted (development) | 2026-10-19 |
 | D-109 | Small design-system component set; honest entry states instead of sample data; web private-content notices | Accepted (development) | 2026-10-19 |
 | D-110 | Bounded Firebase start-up wait; a failed start is "couldn't start", never "signed out" | Accepted | 2026-10-19 |
+| D-111 | Together: ID-free finite state machine, activity list, realtime port with no identifiers; only supported activities start | Accepted (development) | 2026-10-20 |
+| D-112 | No production Together backend or presence yet (privacy D-100/T10, device trust needs Functions); production wires none, fake is test-only | Accepted; backend design **Open** | 2026-10-20 |
 
 ---
 
@@ -1068,3 +1070,25 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 ### D-110 — Bounded Firebase start-up
 - **Decision:** `FirebaseBootstrap` waits at most 10 s for `Firebase.initializeApp`. On web this call also waits for Firebase Auth to restore its session from IndexedDB, and never returns where IndexedDB does not settle (seen in headless Chrome; also possible with blocked storage). Past the bound the status is `failed`. A configured build whose Firebase failed uses `UnavailableAccountSession`, so the user sees "Sirf Hum couldn't start", never a blank page and never "signed out".
 - **Status:** Accepted · 2026-10-19.
+
+### D-111 — Together: state machine, activities and realtime port (Prompt 14)
+- **Decision:**
+  - `TogetherController` (Riverpod) is the only producer of a sealed, ID-free `TogetherState`: unavailable, loading, idle, starting, waiting, invited, joining, active, ending, ended, failed.
+  - It runs only for a paired session (D-106) and rebuilds from nothing on any session change. In-flight answers are dropped by a generation check.
+  - Errors, vanished sessions and unknown activities fail closed.
+  - `TogetherActivity` lists Time together, Call, Watch and Listen. Only activities in `TogetherBackend.supportedActivities` can start; the rest are shown as "Coming soon", never as buttons.
+  - `TogetherBackend` (`watch`, `start`, `join`, `leave`) takes no identifiers. A real implementation derives the account and couple on the server and requires an active device.
+- **Reason:** explicit states make every step visible ("No ambiguous spinner, no fake success"). An ID-free port makes "Together with an arbitrary account" impossible to express from the client.
+- **Status:** Accepted for development · 2026-10-20. Design: [TOGETHER-ARCHITECTURE](../architecture/TOGETHER-ARCHITECTURE.md).
+
+### D-112 — No production Together backend or presence yet
+- **Decision:** production wires no `TogetherBackend`. The hub then shows every activity as not yet available, and presence as "isn't shared yet". The deterministic `FakeTogetherBackend` lives under `test/` only and cannot be imported by the app.
+- **Reason:**
+  - A server session or presence record contradicts D-100 (no presence or activity fields) and needs an abuse review (THREAT-MODEL T10).
+  - Firestore rules cannot verify that the caller's device is active; that needs a device proof checked by a Function (Blaze, D-025).
+  - Call, Watch and Listen additionally need LiveKit token minting and a media-E2EE decision.
+- **Candidate directions (Open):**
+  - Together signals as application messages in the couple's MLS conversation (no new server metadata beyond ciphertext);
+  - or a reviewed server session record with presence controls and retention.
+- **Status:** Accepted · 2026-10-20. Backend design: **Open**.
+

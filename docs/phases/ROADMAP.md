@@ -197,6 +197,24 @@ D-106–D-110):
 
   A real build reaches only the welcome screen. Not production-ready.
 
+**Prompt 14: Together foundation.** The heart of "spend time together"
+([TOGETHER-ARCHITECTURE](../architecture/TOGETHER-ARCHITECTURE.md),
+D-111, D-112):
+- ID-free Together state machine (idle → starting → waiting → together →
+  ended, invitations, failures) driven by a realtime port that takes no
+  identifiers.
+- Together hub: partner and presence, "What do you want to do?", and Time
+  together as the validation activity. Call, Watch and Listen are shown as
+  coming soon.
+- Account switch, sign-out and stale answers are safe; failures fail
+  closed.
+- **Not done:**
+  - a production backend (privacy and device-trust design, Blaze);
+  - real presence;
+  - Call, Watch, Listen, games.
+
+  A real build shows the hub with nothing startable.
+
 ## Proposed sequence
 
 Ordering principle: identity and cryptography come **before** any feature
