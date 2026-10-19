@@ -29,6 +29,9 @@ void main() {
         'textSecondary on surfaceMuted': (c.textSecondary, c.surfaceMuted),
         'onAccent on accent': (c.onAccent, c.accent),
         'accent on background': (c.accent, c.background),
+        // Text buttons sit on Home's Together block and on dialogs.
+        'accent on surface': (c.accent, c.surface),
+        'accent on surfaceMuted': (c.accent, c.surfaceMuted),
         'danger on background': (c.danger, c.background),
         'success on background': (c.success, c.background),
         'warning on background': (c.warning, c.background),
