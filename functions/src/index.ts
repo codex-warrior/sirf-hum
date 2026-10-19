@@ -27,6 +27,8 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { cleanupExpired } from './device/cleanup';
 import { DeviceError, type DeviceFailure } from './device/common';
 import { activateDevice as activate, issueDeviceChallenge as issueChallenge, registerDevice as register } from './device/registration';
+import { cancelIdentityReset as cancelReset, completeIdentityReset as completeReset, requestIdentityReset as requestReset } from './device/reset';
+import { revokeDevice as revoke } from './device/revocation';
 import {
   approveDevice as approve,
   listDeviceApprovalRequests as listRequests,
@@ -71,6 +73,9 @@ const FAILURE_CODES: Record<DeviceFailure, FunctionsErrorCode> = {
   approval_invalid: 'permission-denied',
   recovery_unavailable: 'failed-precondition',
   recovery_invalid: 'permission-denied',
+  revocation_invalid: 'permission-denied',
+  reset_unavailable: 'failed-precondition',
+  reset_not_ready: 'failed-precondition',
   rate_limited: 'resource-exhausted',
 };
 
@@ -142,6 +147,26 @@ export const recoverDevice = callable('device_recovered', async (uid, data, now)
   await recover(getFirestore(), uid, data, now);
   return done;
 });
+
+/** Signed revocation by an active device of the account (D-081). */
+export const revokeDevice = callable('device_revoked', async (uid, data, now) => {
+  await revoke(getFirestore(), uid, data, now);
+  return done;
+});
+
+/** Identity reset (D-082): delayed, cancellable by any trusted device. */
+export const requestIdentityReset = callable('identity_reset_requested', (uid, data, now) =>
+  requestReset(getFirestore(), uid, data, now),
+);
+
+export const cancelIdentityReset = callable('identity_reset_cancelled', async (uid, data, now) => {
+  await cancelReset(getFirestore(), uid, data, now);
+  return done;
+});
+
+export const completeIdentityReset = callable('identity_reset_completed', (uid, data, now) =>
+  completeReset(getFirestore(), uid, data, now),
+);
 
 /** Needs Cloud Scheduler (Blaze, D-025). Lazy expiry works without it. */
 export const cleanupExpiredDeviceRecords = onSchedule({ schedule: 'every 24 hours', timeZone: 'Etc/UTC' }, async () => {

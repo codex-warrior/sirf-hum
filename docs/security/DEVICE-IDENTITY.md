@@ -10,7 +10,7 @@ Sirf Hum is NOT production E2EE yet.**
   allows Cloud Functions to deploy (D-025).
 
 Decisions: D-066 (platform key store), D-069 (registry), D-070 (proof of
-possession), D-071 (account slots); Prompt 08: D-074–D-080 in the
+possession), D-071 (account slots); Prompts 08–09: D-074–D-084 in the
 [Decision Log](../decisions/DECISION-LOG.md). Related:
 [KEY-MANAGEMENT](KEY-MANAGEMENT.md),
 [PAIRING-AND-DEVICE-TRUST](PAIRING-AND-DEVICE-TRUST.md),
@@ -131,7 +131,7 @@ Since Prompt 08: the full state machine, approval and recovery are in
                                          │      later devices: approval by a trusted ──┘
                                          │      device or the recovery key
                                          ├──► rejected · expired          (terminal)
- pending / active ──owner revokes (rules) or server──► revoked  (terminal)
+ pending / active ──signed by a trusted device (D-081) or identity reset (D-082)──► revoked  (terminal)
 ```
 
 | Transition | Who | Enforced by |
@@ -139,8 +139,8 @@ Since Prompt 08: the full state machine, approval and recovery are in
 | unknown → pending | **Server** (`registerDevice`: certificate verified, rate-limited, max 3 pending) | Function; rules deny client creates (Prompt 08) |
 | pending → active | **Server only**: bootstrap proof of possession (first device, once ever), or approval / recovery | `activateDevice`, `approveDevice`, `recoverDevice`; rules deny client `active` |
 | pending → rejected / expired | **Server** | `rejectDeviceApproval`; expiry (lazy + scheduled cleanup) |
-| pending → revoked, active → revoked | Owner's client (`revokedReason: "user_removed"`) or server | Rules (one-way) |
-| revoked / rejected / expired → anything | **Never** | Rules (`before.status in [pending, active]`); records can't be deleted, so a device ID can't be re-created; the uniqueness indexes keep the ID and key forever |
+| pending → revoked, active → revoked | **Server**, on a trusted device's signed revocation (`revokeDevice`, D-081) or a completed identity reset (D-082) | Function; rules deny every client write (Prompt 09) |
+| revoked / rejected / expired → anything | **Never** | Functions check the source state in a transaction; rules deny client writes; records can't be deleted, so a device ID can't be re-created; the uniqueness indexes keep the ID and key forever |
 
 A device that must work again after revocation gets a **new** device
 identity (new keys, new device ID). Recovery (MULTI-DEVICE-TRUST §8)
@@ -158,7 +158,7 @@ lower-case hex of the device ID.
 | Field | Type | Written by | Why the server needs it |
 | --- | --- | --- | --- |
 | `schemaVersion` | int `1` | server (register) | Readers reject versions they don't understand (D-061) |
-| `status` | `pending` / `active` / `revoked` / `rejected` / `expired` | server (register, activate, reject, expire), owner (revoke) | The lifecycle; future rules and fan-out read only active devices |
+| `status` | `pending` / `active` / `revoked` / `rejected` / `expired` | server only (register, activate, reject, expire, signed revocation, reset) | The lifecycle; future rules and fan-out read only active devices |
 | `platform` | `android` / `ios` | client input, server-validated | Lets the owner recognise devices when managing them, and allows platform-specific policy (e.g. future attestation). Coarse: no model or OS version |
 | `certificate` | bytes ≤ 512 | client input, server-verified at registration; immutable | The public identity binding (PIK → device ID → device key) that the server verifies and other devices verify themselves |
 | `ciphersuite` | int `1` | server (register) | MLS capability (D-061); refuses future suites until supported |
@@ -168,9 +168,13 @@ lower-case hex of the device ID.
 | `activatedAt` | timestamp | server | When the device became trusted |
 | `activationMethod` | `first_device` / `approval` / `recovery` | server | How trust was established (audit, owner review) |
 | `approvedBy` | device ID (hex) | server, for `approval` | Lineage, so the owner can review devices approved by a later-revoked device (D-080) |
+| `approval` / `recovery` | map of public evidence (protocol version, signer certificate, challenge, expiry, signature; recovery also the key registration) | server, on activation | Peers re-verify the chain on device (D-084) |
+| `activatedEpoch` | int | server, on activation | Account trust epoch at activation: orders the chain (D-083, D-084) |
 | `rejectedAt` | timestamp | server, for `rejected` | When the owner rejected the request |
-| `revokedAt` | timestamp = request time | client (revoke) | When the device was retired |
-| `revokedReason` | `user_removed` | client (revoke) | A fixed enum, never free text |
+| `revokedAt` | server timestamp | server (revoke, reset) | When the device was retired |
+| `revokedReason` | `removed` / `lost` / `stolen` / `compromised` / `identity_reset` | server | A fixed enum, never free text |
+| `revocation` | map: authority `device` (revoker certificate, reason, challenge, expiry, signature) or `identity_reset` | server | Signed evidence peers re-verify (D-081, D-084) |
+| `revokedEpoch` | int | server | Account trust epoch at revocation (D-083) |
 
 **Deliberately absent:**
 
@@ -198,17 +202,16 @@ are in `firebase/tests/devices.test.js`.
 - **Read:** only the owner (`request.auth.uid == accountId`).
 - **Create:** never from a client (Prompt 08). `registerDevice` writes the
   `pending` record after verifying the certificate and applying rate limits.
-- **Update:**
-  - only the owner;
-  - only `pending|active → revoked`;
-  - only `status`, `revokedAt` and `revokedReason` change;
-  - `revokedAt == request.time`;
-  - reason `user_removed`.
+- **Update:** never from a client (Prompt 09, D-081). Until Prompt 09 the
+  owner could revoke one-way through the rules; revocation now needs a
+  trusted device's signature, verified by `revokeDevice`.
 - **Delete:** never.
+- **`accountTrust/{uid}`:** owner read (trust epoch, reset state, recovery
+  key public half); never written by a client.
 
 Rules cannot verify signatures or count. That is why registration and
 `active` are reachable only through the Functions, and why terminal states
-can never change.
+can never change. Since Prompt 09 no device state is client-writable.
 
 ## 6. Proof of possession (D-070)
 
@@ -287,10 +290,12 @@ verification at pairing (future), not the server.
 
 ## 7. Revocation
 
-- **Server record:** owner revocation via rules (one-way) from any signed-in
-  session, plus server-side states `rejected` and `expired`. Revoked devices
-  cannot approve, register a recovery key, or use approvals signed before
-  revocation (D-080, MULTI-DEVICE-TRUST §6–§7).
+- **Server record:** revocation only by a trusted device's signed
+  statement (`revokeDevice`, D-081) or a completed identity reset (D-082);
+  clients cannot write device records at all. Server-side states
+  `rejected` and `expired` remain. Revoked devices cannot approve, revoke,
+  register a recovery key, or use approvals signed before revocation
+  (MULTI-DEVICE-TRUST §6–§7).
 - **MLS:** revocation in groups is an MLS Remove commit plus the local
   revoked-devices list (Prompt 06, RECOVERY-AND-REVOCATION). Group wiring
   is future work.
@@ -387,7 +392,8 @@ an *account session* (non-cryptographic), which is not a device identity.
   on challenge). Activation logic is verified in the emulator only.
 - **Rate limits and expiry:** added in Prompt 08 (D-077, D-078). The
   scheduled cleanup needs Blaze; lazy expiry works without it.
-- **Local rollback:** not provided (D-079 open, MULTI-DEVICE-TRUST §9).
+- **Local rollback:** not provided (D-079 open, MULTI-DEVICE-TRUST §10).
+  The trust epoch (D-083) only refuses older *server* views.
   Restoring a whole older slot directory *together with* its key isn't
   possible off-device (keys don't migrate), but on a rooted device an
   attacker could restore an older state.

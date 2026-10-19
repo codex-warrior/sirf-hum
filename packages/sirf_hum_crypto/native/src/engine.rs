@@ -22,8 +22,9 @@ use zeroize::{Zeroize, Zeroizing};
 use crate::error::from_process_error;
 use crate::identity::{
     device_approval_payload, device_id_of, device_proof_payload, put, recovery_approval_payload,
-    recovery_registration_payload, AccountId, DeviceCertificate, DeviceId, PersonKey, ProofPurpose,
-    Reader, TrustPolicy, DEVICE_ID_LEN,
+    recovery_registration_payload, reset_cancel_payload, revocation_payload, AccountId,
+    DeviceCertificate, DeviceId, PersonKey, ProofPurpose, Reader, RevocationReason, TrustPolicy,
+    DEVICE_ID_LEN,
 };
 use crate::keystore::{KeyEncryptionKeyProvider, KEK_LEN};
 use crate::limits::{self, *};
@@ -41,6 +42,7 @@ pub const IMPLEMENTATION: &str = "openmls/0.9.1";
 const REC_IDENTITY: &str = "identity_secret";
 const REC_STATE: &str = "mls_state";
 const REC_METADATA: &str = "public_metadata";
+const REC_TRUST_EPOCH: &str = "trust_epoch";
 const IDENTITY_VERSION: u16 = 1;
 const STATE_VERSION: u16 = 1;
 
@@ -446,6 +448,93 @@ impl CryptoCore {
             signature,
             recovery_public_key,
         })
+    }
+
+    /// Signs a revocation of `revoked_certificate` (another device of this
+    /// account, or this device itself) with this device's PIK (D-081). The
+    /// server decides whether this device may revoke (it must be active).
+    pub fn sign_revocation(
+        &self,
+        revoked_certificate: &[u8],
+        reason: RevocationReason,
+        challenge: &[u8],
+        expires_at_unix: u64,
+    ) -> CoreResult<Vec<u8>> {
+        self.guard()?;
+        DeviceCertificate::decode(revoked_certificate)?
+            .verify_signature(self.state.provider.crypto())?;
+        let id = self.identity()?;
+        let payload = revocation_payload(
+            &id.account,
+            &id.certificate.encode(),
+            revoked_certificate,
+            reason,
+            challenge,
+            expires_at_unix,
+        )?;
+        self.state
+            .provider
+            .crypto()
+            .sign(SignatureScheme::ED25519, &payload, &id.person_private)
+            .map_err(|_| CoreError::InternalCryptoFailure)
+    }
+
+    /// Signs a cancellation of a pending identity reset (D-082): proof that
+    /// this (trusted) device still exists and objects.
+    pub fn sign_reset_cancellation(
+        &self,
+        challenge: &[u8],
+        expires_at_unix: u64,
+    ) -> CoreResult<Vec<u8>> {
+        self.guard()?;
+        let id = self.identity()?;
+        let payload = reset_cancel_payload(
+            &id.account,
+            &id.certificate.encode(),
+            challenge,
+            expires_at_unix,
+        )?;
+        self.state
+            .provider
+            .crypto()
+            .sign(SignatureScheme::ED25519, &payload, &id.person_private)
+            .map_err(|_| CoreError::InternalCryptoFailure)
+    }
+
+    /// Records the server's account trust epoch (D-083). Epochs only grow:
+    /// an epoch below the highest this device has seen means a stale or
+    /// rolled-back server view, so this fails with `TrustStateStale` and
+    /// stores nothing. Returns the previously seen epoch (0 if none).
+    ///
+    /// This protects against stale *server* views. It cannot detect a
+    /// rollback of this device's own files (the stored epoch rolls back with
+    /// them): that remains open (D-079).
+    pub fn observe_trust_epoch(&mut self, epoch: u64) -> CoreResult<u64> {
+        self.guard()?;
+        let previous = match self.store.get(REC_TRUST_EPOCH)? {
+            Some(raw) => {
+                let plain = record::open(&self.kek, RecordKind::TrustEpoch, REC_TRUST_EPOCH, &raw)?;
+                let bytes: [u8; 8] = plain
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| CoreError::StateCorruption)?;
+                u64::from_be_bytes(bytes)
+            }
+            None => 0,
+        };
+        if epoch < previous {
+            return Err(CoreError::TrustStateStale);
+        }
+        if epoch > previous {
+            let sealed = record::seal(
+                &self.kek,
+                RecordKind::TrustEpoch,
+                REC_TRUST_EPOCH,
+                &epoch.to_be_bytes(),
+            )?;
+            self.store.put(REC_TRUST_EPOCH, &sealed)?;
+        }
+        Ok(previous)
     }
 
     /// Trusts a partner's person key. Call only after out-of-band

@@ -566,7 +566,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 
 ### D-069 — Device registry
 - **Decision:** `users/{accountId}/devices/{deviceId}` (32-hex device ID).
-  - **Owner's client:** may create an exact v1 `pending` record (schema, platform, certificate, ciphersuite, implementation, `createdAt == request.time`), read its own records, and revoke one-way (`pending|active → revoked`, `revokedReason: user_removed`).
+  - **Owner's client:** may create an exact v1 `pending` record (schema, platform, certificate, ciphersuite, implementation, `createdAt == request.time`), read its own records, and revoke one-way (`pending|active → revoked`, `revokedReason: user_removed`). *(Client create removed in Prompt 08; client revocation replaced by signed revocation in D-081.)*
   - **Activation** is server-only (`activateDevice`).
   - **Records are never deleted.**
   - **Server-only indexes** `deviceIdIndex` and `deviceKeyIndex` make every device ID and device key activatable at most once, ever.
@@ -670,7 +670,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
   - **Rejected:** server recovery and support/admin recovery of device trust; a server master key; server copies of keys; password-reset-based recovery.
   - **No message-history recovery:** an encrypted archive is deferred.
 - **Open:** "identity reset" when every device and the recovery key are lost. It would let the account start a new identity, visible to the partner, with re-verification. Not implemented: a server-only reset would turn a password compromise into a trust compromise.
-- **Status:** Accepted for development · 2026-10-18. Reset **Open**. Needs independent review.
+- **Status:** Accepted for development · 2026-10-18. Needs independent review. The reset is decided in **D-082** (Prompt 09).
 
 ### D-077 — Rate limits
 - **Decision:** per-account fixed-window limits in the server-only `rateLimits` collection, enforced by the Functions in transactions:
@@ -709,7 +709,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
   - copied state is useless off-device;
   - restored state cannot regain server trust, because status is server-side and IDs and keys are indexed forever;
   - MLS removal blocks new epochs.
-- **Status:** **Open** · 2026-10-18. Production hardening must choose an external freshness anchor (MULTI-DEVICE-TRUST §9).
+- **Status:** **Open (partly addressed)** · 2026-10-18. D-083 adds a server trust epoch that devices refuse to see go backwards; local file rollback is still not prevented. Production hardening must choose an external freshness anchor (MULTI-DEVICE-TRUST §10).
 
 ### D-080 — Revocation model
 - **Decision:**
@@ -719,4 +719,58 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
   - **Approvals die with their approver:** a revoked device can never approve or register a recovery key; the server checks at submission.
   - **Local wipe is separate from revocation** (MULTI-DEVICE-TRUST §7).
 - **Follow-up:** signed revocation statements, for attribution and peer verification.
-- **Status:** Accepted · 2026-10-18
+- **Status:** **Superseded by D-081** (Prompt 09) for *who* may revoke. No cascade, approvals dying with their approver and the local-wipe separation still hold.
+
+### D-081 — Signed revocation
+- **Decision:** a device is revoked only by a statement signed by the PIK of an `active` device of the same account, which may be the device itself, or by a completed identity reset (D-082). The flow is `issueDeviceChallenge(purpose revocation)` (5 minutes, bound to the revoker) → `revokeDevice`.
+- **Statement:**
+
+  ```text
+  "SirfHum-DeviceRevocation-v1" | version 1 | len|account | revoker id | len|revoker cert
+  | revoked id | len|revoked cert | reason u8 | challenge[32] | expires u64
+  ```
+
+  The reasons are 1 removed, 2 lost, 3 stolen, 4 compromised. The statement is verified against the **stored** certificates in one transaction, which also checks that the revoker is active and the target is pending or active, and consumes the challenge. The evidence is stored on the revoked record.
+- **Rules:** clients cannot write device records at all. The owner's session revocation (D-080) is removed.
+- **Reason:** attribution and peer verification (D-084). A password alone no longer changes device state.
+- **Accepted residual:** when the only device is stolen and there is no recovery key, nothing can sign its revocation. The remaining path is an identity reset, and the thief's unlocked device could cancel it. The UI must strongly recommend a recovery key.
+- **Status:** Accepted for development · 2026-10-18. Needs independent review.
+
+### D-082 — Identity reset (delayed, cancellable, new identity)
+- **Decision:** Prompt 09 §6 option C.
+  - A signed-in session may request a reset only once the account has trust (`requestIdentityReset`). Repeating the request keeps the original deadline.
+  - Any `active` device can cancel within **7 days** by signing `"SirfHum-IdentityResetCancel-v1" | version 1 | len|account | device id | len|cert | challenge | expires`.
+  - After the delay, `completeIdentityReset` revokes every pending or active device (`authority: identity_reset`), deletes the recovery key, increments `identityEpoch` and opens **one** new bootstrap.
+  - The new first device has a **new PIK**: nothing of the old identity is inherited, and partners must re-verify.
+  - Rate limit: 3 per 7 days.
+- **Rejected:**
+  - a server-only reset, because a password compromise would become a trust compromise;
+  - a terminal no-recovery state alone, because it leaves no path for a legitimate user.
+- **Not a takeover:** an attacker who completes a reset gets an unverified new identity, never the old trust. Partners see the change as a new identity.
+- **OPEN before production:** push notifications (D-009/D-049, no private content) so the legitimate user and the partner learn of a reset request. Partner-visible re-verification also needs the pairing UX.
+- **Status:** Accepted for development · 2026-10-18. Needs independent review.
+
+### D-083 — Trust epoch (server freshness signal)
+- **Decision:**
+  - `accountTrust.trustEpoch` increases by one in the same transaction as every trust change (bootstrap, approval, recovery, recovery-key registration, revocation, reset request, cancel and completion).
+  - Device records carry `activatedEpoch` and `revokedEpoch`.
+  - Each device stores the highest epoch it has seen as a sealed record in its Rust state (record kind 4) and refuses an older one with `trust_state_stale` (code -20) before approving, revoking, cancelling a reset or registering a recovery key.
+- **Limits:** this detects stale or rolled-back server views relative to what a device already saw. It does not detect a rollback of the device's own files (D-079), and it does not prove the server is honest.
+- **Status:** Accepted for development · 2026-10-18.
+
+### D-084 — Peer-side lineage verification
+- **Decision:**
+  - **Server side:** the server stores on each record the exact statements that activated it (approval, or recovery-key registration plus recovery approval) and that revoked it.
+  - **Device side:** devices verify the chain in Rust. `verify_lineage` and the FFI `sh_crypto_verify_lineage` (ABI 4) take a versioned, strictly decoded blob and return the trusted device IDs. Any defect is `trust_chain_invalid` (code -21).
+  - **Chain rules:**
+    - the root is the current identity's first device;
+    - each approver or registrar must already be in the chain;
+    - protocol version 1;
+    - no duplicate devices;
+    - revocations need an in-chain revoker;
+    - server-asserted revocations can only remove trust.
+  - **Mismatch:** the client fails closed if the server lists an `active` device the chain does not prove.
+  - **Vectors:** golden vectors `device_trust_v2.json` are generated by TypeScript and verified identically in Rust and Dart.
+- **Trust anchor:** the root PIK is trusted only through partner out-of-band verification (D-064). The lineage proves descent from the root, not who the root is.
+- **Accepted limits:** the server can withhold evidence (omission) and controls ordering. Freshness is the trust epoch (D-083). There is no cascade (D-080).
+- **Status:** Accepted for development · 2026-10-18. Needs independent review.

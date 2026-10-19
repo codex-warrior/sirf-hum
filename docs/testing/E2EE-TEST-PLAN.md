@@ -114,6 +114,18 @@ Design: [MULTI-DEVICE-TRUST](../security/MULTI-DEVICE-TRUST.md).
 | App | `test/security/device/` | State machine (new terminal states); enrollment flow (bootstrap vs approval, code, terminal); trust service (codes match, approve, reject, untrusted device refused, offline revocation, revoke, recovery, typo caught locally, unregistered key, log redaction of recovery key/IDs/codes); drift tests against server inputs, rules and failure categories | CI `flutter` |
 | Device | `integration_test/device_identity_test.dart` | Approval, comparison code and recovery key with real platform keys | CI Android emulator + iOS simulator |
 
+## Device trust hardening tests (exist; Prompt 09)
+
+| Layer | Where | What | Runs |
+| --- | --- | --- | --- |
+| Rust | `native/tests/trust_hardening.rs` | Revocation and reset-cancel binding, self-revocation, domain separation; trust epoch monotonic across restart and wipe; lineage: valid chain, revocation without cascade, server-asserted revocations, missing link, wrong root/account, tampered signature, wrong challenge, version 2, duplicate, foreign revoker, recovery links, malformed blobs; v2 golden vectors | CI `crypto-core` |
+| Dart package | `test/lineage_test.dart`, `test/crypto_core_test.dart` (hardening group) | Dart lineage blob byte-identical to the server vector; native verification; signRevocation, observeTrustEpoch | CI `crypto-core` |
+| Server unit | `functions/test/hardening.test.mjs` | v2 vector regeneration; every revocation field bound; unknown reasons; approval ≠ revocation; reset-cancel binding; static logger guard | CI `functions` |
+| Server flows | `functions/test/emulator/hardening.test.mjs` | Signed revocation (evidence, epoch, self, revoked/pending/foreign revoker, forgery, replay, twice, cross-account, stale, bad reason); stored lineage evidence verifies; epoch monotonic; identity reset (cancel, delay, completion, one new bootstrap, old identity never returns, revoked/forged cancel); state edges (after rejection/expiry/revocation, v2 header, pending cap); races (double approval, double bootstrap, challenge reuse, double recovery, approval vs revocation, concurrent registrations); rate-limit boundaries (exact, one over, window reset, concurrent, per account) | CI `functions` (emulator) |
+| Rules | `firebase/tests/devices.test.js` | No client revocation in any shape; `accountTrust` owner-read only; no epoch rollback, bootstrap reopen or fake reset | CI `security-rules` |
+| App | `test/security/device/`, `test/infrastructure/` | Signed revoke, self-revoke, revoked/unknown target refused before signing; lineage with real signatures (approval + recovery), tamper and unproven-active fail closed; stale epoch refused before acting; reset request/cancel/complete; log redaction; payload ↔ server drift; lineage and trust-state parsing fail closed | CI `flutter` |
+| Device | `integration_test/device_identity_test.dart` | Revocation, reset cancel, lineage and epoch persistence with real platform keys | CI Android emulator + iOS simulator |
+
 ## Decision-gate tests (exist; experimental; regression suite)
 
 `prototypes/mls-decision-gate` (`.github/workflows/prototypes.yml`), run

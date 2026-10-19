@@ -15,6 +15,11 @@
  *   recovery:      "SirfHum-RecoveryApproval-v1" | v1 | len|account
  *                  | recovery key[32] | new id[16] | len|new cert
  *                  | challenge[32] | expiresAt u64 BE          — signed by the recovery key
+ *   revocation:    "SirfHum-DeviceRevocation-v1" | v1 | len|account
+ *                  | revoker id[16] | len|revoker cert | revoked id[16] | len|revoked cert
+ *                  | reason u8 | challenge[32] | expiresAt u64 BE — signed by revoker PIK
+ *   reset cancel:  "SirfHum-IdentityResetCancel-v1" | v1 | len|account
+ *                  | device id[16] | len|cert | challenge[32] | expiresAt u64 BE — signed by PIK
  *
  * Ed25519 via node:crypto; no primitive is implemented here.
  */
@@ -30,6 +35,8 @@ const CONTEXT = {
   approval: Buffer.from('SirfHum-DeviceApproval-v1', 'ascii'),
   registration: Buffer.from('SirfHum-RecoveryKeyRegistration-v1', 'ascii'),
   recovery: Buffer.from('SirfHum-RecoveryApproval-v1', 'ascii'),
+  revocation: Buffer.from('SirfHum-DeviceRevocation-v1', 'ascii'),
+  resetCancel: Buffer.from('SirfHum-IdentityResetCancel-v1', 'ascii'),
   code: Buffer.from('SirfHum-ApprovalCode-v1', 'ascii'),
 };
 
@@ -169,4 +176,74 @@ export function approvalCode(newCertificate: Buffer, challenge: Buffer): number 
     .update(Buffer.concat([CONTEXT.code, lengthPrefixed(newCertificate), challenge]))
     .digest();
   return digest.readUInt32BE(0) % 1_000_000;
+}
+
+/** Revocation reasons (wire values; append only). */
+export const RevocationReason = { removed: 1, lost: 2, stolen: 3, compromised: 4 } as const;
+export type RevocationReason = (typeof RevocationReason)[keyof typeof RevocationReason];
+export const REVOCATION_REASONS: readonly number[] = Object.values(RevocationReason);
+
+export function revocationPayload(
+  accountId: string,
+  revokerCertificate: Buffer,
+  revokedCertificate: Buffer,
+  reason: number,
+  challenge: Buffer,
+  expiresAtUnix: number,
+): Buffer {
+  requireChallenge(challenge);
+  if (!REVOCATION_REASONS.includes(reason)) throw new InvalidStatementError();
+  const revoker = decodeCertificate(revokerCertificate);
+  const revoked = decodeCertificate(revokedCertificate);
+  return Buffer.concat([
+    ...header(CONTEXT.revocation, accountId),
+    revoker.deviceId,
+    lengthPrefixed(revokerCertificate),
+    revoked.deviceId,
+    lengthPrefixed(revokedCertificate),
+    Buffer.from([reason]),
+    challenge,
+    u64(expiresAtUnix),
+  ]);
+}
+
+/** Both certificates verify; the revoker's PIK signs the statement (D-081). */
+export function verifyRevocation(
+  accountId: string,
+  revokerCertificate: Buffer,
+  revokedCertificate: Buffer,
+  reason: number,
+  challenge: Buffer,
+  expiresAtUnix: number,
+  signature: Buffer,
+): void {
+  const revoker = verifyCertificate(revokerCertificate);
+  verifyCertificate(revokedCertificate);
+  const payload = revocationPayload(accountId, revokerCertificate, revokedCertificate, reason, challenge, expiresAtUnix);
+  if (!ed25519Verify(revoker.personKey, payload, signature)) throw new InvalidStatementError();
+}
+
+export function resetCancelPayload(accountId: string, certificate: Buffer, challenge: Buffer, expiresAtUnix: number): Buffer {
+  requireChallenge(challenge);
+  const cert = decodeCertificate(certificate);
+  return Buffer.concat([
+    ...header(CONTEXT.resetCancel, accountId),
+    cert.deviceId,
+    lengthPrefixed(certificate),
+    challenge,
+    u64(expiresAtUnix),
+  ]);
+}
+
+/** The device's PIK signs the cancellation of a pending identity reset (D-082). */
+export function verifyResetCancel(
+  accountId: string,
+  certificate: Buffer,
+  challenge: Buffer,
+  expiresAtUnix: number,
+  signature: Buffer,
+): void {
+  const cert = verifyCertificate(certificate);
+  const payload = resetCancelPayload(accountId, certificate, challenge, expiresAtUnix);
+  if (!ed25519Verify(cert.personKey, payload, signature)) throw new InvalidStatementError();
 }

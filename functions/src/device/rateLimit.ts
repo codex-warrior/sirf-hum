@@ -29,6 +29,10 @@ export const LIMITS = {
   verificationFailure: { max: 5, windowMs: HOUR },
   /** Recovery-key attempts. */
   recovery: { max: 3, windowMs: 24 * HOUR },
+  /** Signed revocations. */
+  revocation: { max: 10, windowMs: HOUR },
+  /** Identity reset requests and completions (D-082). */
+  identityReset: { max: 3, windowMs: 7 * 24 * HOUR },
 } as const satisfies Record<string, Limit>;
 
 export type LimitName = keyof typeof LIMITS;

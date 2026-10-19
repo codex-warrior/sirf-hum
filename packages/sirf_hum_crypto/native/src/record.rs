@@ -40,6 +40,8 @@ pub enum RecordKind {
     IdentitySecret = 2,
     /// MLS group/key-package state, including epoch secrets.
     MlsState = 3,
+    /// Highest server trust epoch this device has seen (D-083).
+    TrustEpoch = 4,
 }
 
 fn header(kind: RecordKind) -> [u8; HEADER_LEN] {

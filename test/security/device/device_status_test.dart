@@ -58,15 +58,15 @@ void main() {
         reason: '$t',
       );
     }
-    // The owner may revoke (a safety action), never anything else.
-    expect(
-      DeviceStatus.transitions[(DeviceStatus.active, DeviceStatus.revoked)],
-      DeviceTransitionActor.clientOrServer,
-    );
-    expect(
-      DeviceStatus.transitions.values,
-      isNot(contains(DeviceTransitionActor.client)),
-    );
+    // Revocation needs a trusted device's signature (D-081); no transition
+    // is a plain client write.
+    for (final from in [DeviceStatus.pending, DeviceStatus.active]) {
+      expect(
+        DeviceStatus.transitions[(from, DeviceStatus.revoked)],
+        DeviceTransitionActor.trustedDeviceSignature,
+      );
+    }
+    expect(DeviceTransitionActor.values, hasLength(2));
   });
 
   test('server values parse strictly; unknown values fail closed', () {

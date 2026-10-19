@@ -13,4 +13,5 @@ library;
 export 'package:sirf_hum_crypto/src/core_unsupported.dart'
     if (dart.library.ffi) 'package:sirf_hum_crypto/src/core_ffi.dart'
     show CryptoCore, expectedAbiVersion;
+export 'package:sirf_hum_crypto/src/lineage.dart';
 export 'package:sirf_hum_crypto/src/types.dart';

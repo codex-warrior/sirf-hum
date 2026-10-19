@@ -22,7 +22,9 @@ enum CryptoErrorCode {
   identityState(-16),
   internal(-17),
   accountMismatch(-18),
-  recoveryKeyInvalid(-19);
+  recoveryKeyInvalid(-19),
+  trustStateStale(-20),
+  trustChainInvalid(-21);
 
   const CryptoErrorCode(this.code);
 
@@ -212,6 +214,18 @@ class AddMemberResult {
 
   @override
   String toString() => 'AddMemberResult(<redacted>)';
+}
+
+/// Why a device was revoked (wire values match the native ABI, D-081).
+enum RevocationReason {
+  removed(1),
+  lost(2),
+  stolen(3),
+  compromised(4);
+
+  const RevocationReason(this.wireValue);
+
+  final int wireValue;
 }
 
 /// A newly created recovery key (D-076). [secret] is shown to the user once:

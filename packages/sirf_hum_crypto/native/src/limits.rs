@@ -30,6 +30,13 @@ pub const MAX_RECORD_BYTES: usize = 8 * 1024 * 1024;
 /// the cap bounds work done per commit.
 pub const MAX_GROUP_MEMBERS: usize = 16;
 
+/// Peer-side lineage blob (D-084): an account's whole trust chain. About
+/// 0.5–1 KiB per link, so this fits far more devices than a couple needs.
+pub const MAX_LINEAGE_BYTES: usize = 128 * 1024;
+
+/// Most links, revocations or revoked IDs one lineage may carry.
+pub const MAX_LINEAGE_ITEMS: usize = 64;
+
 pub(crate) fn check(len: usize, max: usize) -> crate::CoreResult<()> {
     if len > max {
         Err(crate::CoreError::InputTooLarge)

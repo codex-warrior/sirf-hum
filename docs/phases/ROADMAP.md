@@ -109,6 +109,23 @@ Branch protection and production reviewers are blocked by the GitHub plan.
 
 [MULTI-DEVICE-TRUST](../security/MULTI-DEVICE-TRUST.md)
 
+## Phase 09 — Production device trust & signed revocation ✅
+
+- Revocation is signed by a trusted device's PIK, with stored evidence;
+  clients cannot write device records (D-081).
+- Identity reset: delayed 7 days, cancellable by any trusted device, to a
+  NEW identity partners must re-verify (D-082).
+- Server trust epoch; devices refuse an older view (D-083).
+- Peer-side lineage verification in Rust, golden vectors across
+  TypeScript, Rust and Dart (D-084).
+- Transition matrix, race and rate-limit boundary tests, rules re-audit,
+  logging guard.
+- **Not done / BLOCKED:** deployment (Blaze not enabled), reset
+  notifications, local rollback protection (D-079), device-management UI.
+  **Sirf Hum is NOT production E2EE yet.**
+
+[MULTI-DEVICE-TRUST](../security/MULTI-DEVICE-TRUST.md)
+
 ## Proposed sequence
 
 Ordering principle: identity and cryptography come **before** any feature

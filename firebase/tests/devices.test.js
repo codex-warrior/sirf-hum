@@ -1,4 +1,4 @@
-// Device registry rules (Prompt 07 §8, Prompt 08 §21). Every allowed case
+// Device registry rules (Prompt 07 §8, Prompt 08 §21, Prompt 09 §11). Every allowed case
 // has a matching denied case; all trust-creating state (registration,
 // activation, approvals, recovery, indexes, challenges, rate limits) is
 // server-only and unreachable from clients.
@@ -176,12 +176,12 @@ describe('immutability and revocation', () => {
     );
   });
 
-  test('owner can revoke a pending or active device', async () => {
+  test('D-081: even the owner cannot revoke by a direct write (signed revokeDevice only)', async () => {
     await seed(devicePath(A), seeded('active'));
-    await assertSucceeds(updateDoc(doc(asUser(A), devicePath(A)), revocation()));
+    await assertFails(updateDoc(doc(asUser(A), devicePath(A)), revocation()));
     const other = devicePath(A, 'ffffffffffffffffffffffffffffffff');
     await seed(other, seeded('pending'));
-    await assertSucceeds(updateDoc(doc(asUser(A), other), revocation()));
+    await assertFails(updateDoc(doc(asUser(A), other), revocation()));
   });
 
   test('8. revocation cannot be reversed by a client', async () => {
@@ -194,12 +194,19 @@ describe('immutability and revocation', () => {
     await assertFails(deleteDoc(doc(db, devicePath(A))));
   });
 
-  test('revocation must be well-formed', async () => {
+  test('no shape of revocation write is accepted', async () => {
     await seed(devicePath(A), seeded('active'));
     const db = asUser(A);
     await assertFails(updateDoc(doc(db, devicePath(A)), { ...revocation(), revokedAt: Timestamp.fromMillis(0) }));
     await assertFails(updateDoc(doc(db, devicePath(A)), { ...revocation(), revokedReason: 'free text' }));
     await assertFails(updateDoc(doc(db, devicePath(A)), { status: 'revoked' }));
+    // Fabricated signed evidence is still a client write: denied.
+    await assertFails(
+      updateDoc(doc(db, devicePath(A)), {
+        ...revocation(),
+        revocation: { authority: 'device', revokerDeviceId: DEVICE, signature: Bytes.fromUint8Array(new Uint8Array(64)) },
+      }),
+    );
   });
 
   test('records can never be deleted, even by the owner', async () => {
@@ -248,13 +255,44 @@ describe('Prompt 08: terminal states and server-controlled fields', () => {
   });
 });
 
+describe('Prompt 09: account trust state (D-082, D-083)', () => {
+  const trustDoc = { trustEpoch: 3, identityEpoch: 0, bootstrapOpen: false, firstDeviceId: DEVICE };
+
+  test('the owner can read its trust epoch and reset state', async () => {
+    await seed(`accountTrust/${A}`, trustDoc);
+    await assertSucceeds(getDoc(doc(asUser(A), `accountTrust/${A}`)));
+  });
+
+  test('other accounts and unauthenticated sessions cannot read it', async () => {
+    await seed(`accountTrust/${A}`, trustDoc);
+    await assertFails(getDoc(doc(asUser(B), `accountTrust/${A}`)));
+    await assertFails(getDoc(doc(anonymous(), `accountTrust/${A}`)));
+  });
+
+  test('no client can write it: no epoch rollback, bootstrap reopen or fake reset', async () => {
+    await seed(`accountTrust/${A}`, trustDoc);
+    const db = asUser(A);
+    for (const change of [
+      { trustEpoch: 1 },
+      { trustEpoch: 99 },
+      { bootstrapOpen: true },
+      { reset: { status: 'completed' } },
+      { identityEpoch: 5 },
+    ]) {
+      await assertFails(updateDoc(doc(db, `accountTrust/${A}`), change));
+    }
+    await assertFails(setDoc(doc(db, `accountTrust/${A}`), { ...trustDoc, bootstrapOpen: true }));
+    await assertFails(deleteDoc(doc(db, `accountTrust/${A}`)));
+    await assertFails(setDoc(doc(asUser(B), `accountTrust/${B}`), { bootstrapOpen: true }));
+  });
+});
+
 describe('server-only collections', () => {
-  test('trust records, challenges, approvals, indexes and limits are unreachable from clients', async () => {
+  test('challenges, approvals, indexes and limits are unreachable from clients', async () => {
     for (const path of [
       'deviceChallenges/c1',
       'deviceIdIndex/i1',
       'deviceKeyIndex/k1',
-      `accountTrust/${A}`,
       'deviceApprovalRequests/r1',
       `rateLimits/${A}__register`,
     ]) {

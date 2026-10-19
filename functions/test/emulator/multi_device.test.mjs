@@ -94,7 +94,7 @@ async function approveNew(acct, approver, d) {
   return request;
 }
 
-/** What the owner's client does through the rules (tested in firebase/tests). */
+/** Setup only: puts a device into `revoked` directly. The real, signed path (D-081) is tested in hardening.test.mjs. */
 const revoke = (acct, d) => db.doc(`users/${acct}/devices/${d.hex}`).update({ status: 'revoked', revokedAt: Timestamp.now(), revokedReason: 'user_removed' });
 
 async function registerRecovery(acct, registrar, recovery) {

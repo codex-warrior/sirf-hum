@@ -50,7 +50,7 @@ The wrapper's own code is policy:
 | **Secure storage** | The store key (Rust: KEK) comes from a `KeyEncryptionKeyProvider`. The platform adapter supplies a per-account key (Android Keystore-wrapped / iOS `ThisDeviceOnly` Keychain) via `sh_crypto_open_with_platform_key` (D-066, [DEVICE-IDENTITY](DEVICE-IDENTITY.md)). Test adapters are refused in release builds. | `keystore.rs` (`PlatformProvidedKey`); `lib/platform/secure_key_store.dart` |
 | **Firebase** | No crypto state, keys or plaintext. Only `EncryptedEnvelope` may reach infrastructure (already the rule). The package does not depend on Firebase. | Dependency graph; existing Security Rules unchanged |
 | **Web** | No private-content E2EE in V1 (D-046). Web compiles a stub where every call throws `unsupported`. | Conditional export on `dart.library.ffi`; `types_test.dart`; app test |
-| **Errors** | 19 stable `i32` codes (`account_mismatch` -18, Prompt 07; `recovery_key_invalid` -19, Prompt 08). No strings, payloads or native messages cross the ABI. Unknown codes become `internal`. | `error.rs`, `CryptoErrorCode` |
+| **Errors** | 21 stable `i32` codes (`account_mismatch` -18, Prompt 07; `recovery_key_invalid` -19, Prompt 08; `trust_state_stale` -20 and `trust_chain_invalid` -21, Prompt 09). No strings, payloads or native messages cross the ABI. Unknown codes become `internal`. | `error.rs`, `CryptoErrorCode` |
 | **Dependencies** | Exact pins; OpenMLS versions fixed (D-054); `cargo audit --deny warnings` with three documented ignores, re-verified on every run, for code that is never compiled or never shipped (D-068) | `tool/check_crypto_core.sh`, `tool/crypto_audit.sh` |
 | **Logging** | The core never logs. CI fails on printing/logging macros or crates in `src/` and on OpenMLS `crypto-debug`/`content-debug` features. Dart types print `<redacted>`. App-side logging goes through `AppLogger` with category names only. | `tool/check_crypto_core.sh`, the source-scan test, clippy `print_*`/`dbg_macro` deny, redaction tests |
 
@@ -84,13 +84,14 @@ pairing phase's job.
 
 ## Local state
 
-There are three records, `{name}.shrec`, in the app-private directory:
+There are up to four records, `{name}.shrec`, in the app-private directory:
 
 | Record | Kind | Contents |
 | --- | --- | --- |
 | `identity_secret` | IdentitySecret | Account ID, person and device private keys, certificate |
 | `public_metadata` | PublicMetadata | Non-secret identity data (still sealed) |
 | `mls_state` | MlsState | The full OpenMLS storage map, group IDs, trust policy, revocations |
+| `trust_epoch` | TrustEpoch (kind 4, Prompt 09) | The highest account trust epoch this device has seen (D-083) |
 
 **Record format v1** (D-065):
 
@@ -159,7 +160,7 @@ byte over it.
 
 **Versioning** (D-061): the record format, identity and state schema
 versions, ciphersuite `0x0001` and `IMPLEMENTATION = "openmls/0.9.1"` are
-explicit. `ABI_VERSION` (currently 3: platform store key, account check and device proof in Prompt 07; device approval, comparison code and recovery key in Prompt 08, [MULTI-DEVICE-TRUST](MULTI-DEVICE-TRUST.md)) is checked by Dart; a mismatch means
+explicit. `ABI_VERSION` (currently 4: platform store key, account check and device proof in Prompt 07; device approval, comparison code and recovery key in Prompt 08; signed revocation, reset cancellation, trust epoch and lineage verification in Prompt 09, [MULTI-DEVICE-TRUST](MULTI-DEVICE-TRUST.md)) is checked by Dart; a mismatch means
 `isAvailable == false`.
 
 ## Platform integration (D-063)

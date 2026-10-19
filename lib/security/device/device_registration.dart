@@ -115,6 +115,8 @@ class DeviceRecord {
     required this.platform,
     this.activationMethod,
     this.approvedByDeviceIdHex,
+    this.certificate,
+    this.activatedEpoch,
   });
 
   final String deviceIdHex;
@@ -126,6 +128,12 @@ class DeviceRecord {
 
   /// The approving device, for `approval` (D-075 lineage).
   final String? approvedByDeviceIdHex;
+
+  /// The device certificate (public); needed to sign its revocation.
+  final Uint8List? certificate;
+
+  /// The account trust epoch at which it became active (D-083 ordering).
+  final int? activatedEpoch;
 
   @override
   String toString() => 'DeviceRecord(${status.name}, <redacted>)';
@@ -157,6 +165,15 @@ enum DeviceRegistryFailure {
   /// No recovery key is registered for this account.
   recoveryUnavailable,
   recoveryInvalid,
+
+  /// The revocation statement did not verify (D-081).
+  revocationInvalid,
+
+  /// There is no identity reset to request, cancel or complete (D-082).
+  resetUnavailable,
+
+  /// The reset's public delay has not passed yet.
+  resetNotReady,
   rateLimited,
 
   /// The server returned a status this client does not understand.
@@ -190,6 +207,9 @@ enum DeviceRegistryFailure {
         'approval_invalid' => approvalInvalid,
         'recovery_unavailable' => recoveryUnavailable,
         'recovery_invalid' => recoveryInvalid,
+        'revocation_invalid' => revocationInvalid,
+        'reset_unavailable' => resetUnavailable,
+        'reset_not_ready' => resetNotReady,
         'rate_limited' => rateLimited,
         _ => unavailable,
       };
@@ -205,7 +225,43 @@ class DeviceRegistryException implements Exception {
 }
 
 /// Purposes of server challenges (functions/src/device/registration.ts).
-enum ChallengePurpose { activation, recoveryRegistration }
+enum ChallengePurpose {
+  activation,
+  recoveryRegistration,
+  revocation,
+  resetCancel,
+}
+
+/// The account's server-side trust state (D-082, D-083), owner-readable.
+class AccountTrustState {
+  const AccountTrustState({
+    required this.trustEpoch,
+    this.identityEpoch = 0,
+    this.bootstrapOpen = false,
+    this.resetEffectiveAt,
+  });
+
+  /// No trusted device ever: nothing to protect yet.
+  static const none = AccountTrustState(trustEpoch: 0);
+
+  /// Monotonic; bumped by every trust change. Devices refuse older views.
+  final int trustEpoch;
+
+  /// How many identity resets completed.
+  final int identityEpoch;
+
+  /// After a completed reset: the next device bootstraps a NEW identity.
+  final bool bootstrapOpen;
+
+  /// When a pending identity reset may complete; null when none is pending.
+  final DateTime? resetEffectiveAt;
+
+  bool get resetPending => resetEffectiveAt != null;
+
+  @override
+  String toString() =>
+      'AccountTrustState(epoch $trustEpoch, reset ${resetPending ? 'pending' : 'none'})';
+}
 
 /// Port for the server-side device registry, implemented by
 /// `lib/infrastructure/firebase/firestore_device_registry.dart`. Every
@@ -260,8 +316,38 @@ abstract interface class DeviceRegistry {
 
   Future<void> reject(AccountId account, String requestId);
 
-  /// Owner revocation of any of the account's devices (one way, rules).
-  Future<void> revoke(AccountId account, String deviceIdHex);
+  /// Signed revocation by a trusted device of the account, possibly of
+  /// itself (`revokeDevice`, D-081). One way.
+  Future<void> revoke(
+    AccountId account, {
+    required String revokerDeviceIdHex,
+    required String deviceIdHex,
+    required RevocationReason reason,
+    required String challengeId,
+    required Uint8List signature,
+  });
+
+  /// The account's trust epoch and identity-reset state.
+  Future<AccountTrustState> trustState(AccountId account);
+
+  /// Public evidence for on-device lineage verification (D-084), or null
+  /// while the account has no current first device.
+  Future<LineageRequest?> lineage(AccountId account);
+
+  /// Starts (or returns the pending) identity reset; when it may complete.
+  Future<DateTime> requestIdentityReset(AccountId account);
+
+  /// A trusted device's signed cancellation of a pending reset.
+  Future<void> cancelIdentityReset(
+    AccountId account,
+    String deviceIdHex,
+    String challengeId,
+    Uint8List signature,
+  );
+
+  /// Completes a reset whose delay has passed: every device is revoked and
+  /// the account accepts one NEW first device.
+  Future<void> completeIdentityReset(AccountId account);
 
   Future<void> registerRecoveryKey(
     AccountId account,

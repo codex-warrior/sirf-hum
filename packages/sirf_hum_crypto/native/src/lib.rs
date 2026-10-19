@@ -16,6 +16,7 @@ pub mod ffi;
 pub mod identity;
 pub mod keystore;
 pub mod limits;
+pub mod lineage;
 pub mod record;
 pub mod recovery;
 pub mod store;

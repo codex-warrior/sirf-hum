@@ -43,6 +43,7 @@ import {
   TTL,
 } from './common';
 import { CHALLENGE_BYTES, InvalidProofError, PROOF_BYTES, ProofPurpose, verifyDeviceProof } from './proof';
+import { bumpEpoch } from './epoch';
 import { consume, requireBudget } from './rateLimit';
 import { challengeFailure, keyIndexId, pendingFailure, recordFailure } from './registration';
 import {
@@ -198,7 +199,15 @@ export async function listDeviceApprovalRequests(db: Firestore, uid: string | un
 interface Activation {
   readonly method: 'approval' | 'recovery';
   readonly approvedBy?: string;
+  /**
+   * The signed evidence of this activation, kept on the device record so
+   * every device can verify the account's trust chain itself (D-084).
+   */
+  readonly evidence: Record<string, unknown>;
 }
+
+/** Statement format version stored with every piece of evidence. */
+const EVIDENCE_VERSION = 1;
 
 /**
  * Shared tail of approval and recovery inside one transaction (all reads
@@ -211,7 +220,9 @@ async function activateApproved(
   accountId: string,
   request: DocumentSnapshot,
   device: DocumentSnapshot,
+  trust: DocumentSnapshot,
   activation: Activation,
+  trustFields: Record<string, unknown> = {},
 ): Promise<DeviceFailure | null> {
   let deviceSignatureKey: Buffer;
   try {
@@ -224,6 +235,7 @@ async function activateApproved(
   const keyRef = db.collection(Collections.deviceKeyIndex).doc(keyIndexId(deviceSignatureKey));
   const [idIndex, keyIndex] = await Promise.all([tx.get(idRef), tx.get(keyRef)]);
   if (idIndex.exists || keyIndex.exists) return 'duplicate_device';
+  const epoch = bumpEpoch(tx, trust.ref, trust, trustFields);
   tx.create(idRef, { accountId });
   tx.create(keyRef, { accountId, deviceId });
   tx.update(device.ref, {
@@ -231,6 +243,8 @@ async function activateApproved(
     activatedAt: FieldValue.serverTimestamp(),
     activationMethod: activation.method,
     ...(activation.approvedBy === undefined ? {} : { approvedBy: activation.approvedBy }),
+    [activation.method]: activation.evidence,
+    activatedEpoch: epoch,
     expiresAt: FieldValue.delete(),
   });
   tx.delete(request.ref);
@@ -254,9 +268,10 @@ export async function approveDevice(db: Firestore, uid: string | undefined, data
       return requestState;
     }
     const newId = request.get('deviceId') as string;
-    const [device, approver] = await Promise.all([
+    const [device, approver, trust] = await Promise.all([
       tx.get(deviceRef(db, accountId, newId)),
       tx.get(deviceRef(db, accountId, approverId)),
+      tx.get(trustRef(db, accountId)),
     ]);
     const close = (outcome: DeviceFailure): DeviceFailure => {
       tx.delete(request.ref);
@@ -284,7 +299,18 @@ export async function approveDevice(db: Firestore, uid: string | undefined, data
       }
       throw error;
     }
-    const outcome = await activateApproved(db, tx, accountId, request, device, { method: 'approval', approvedBy: approverId });
+    const outcome = await activateApproved(db, tx, accountId, request, device, trust, {
+      method: 'approval',
+      approvedBy: approverId,
+      evidence: {
+        protocolVersion: EVIDENCE_VERSION,
+        approverDeviceId: approverId,
+        approverCertificate: Buffer.from(approver.get('certificate') as Uint8Array),
+        challenge: Buffer.from(request.get('challenge') as Uint8Array),
+        expiresAtUnix: expiresAtUnixOf(request),
+        signature,
+      },
+    });
     return outcome === null ? null : close(outcome);
   });
   if (failure !== null) {
@@ -345,8 +371,18 @@ export async function registerRecoveryKey(db: Firestore, uid: string | undefined
       if (error instanceof InvalidStatementError || error instanceof InvalidCertificateError) return 'approval_invalid';
       throw error;
     }
-    tx.update(trust.ref, {
-      recoveryKey: { publicKey: recoveryPublicKey, registeredByDeviceId: deviceId, registeredAt: FieldValue.serverTimestamp() },
+    // Keep the registration's signed evidence: recovery activations carry
+    // it so peers can verify that a chain device registered this key.
+    bumpEpoch(tx, trust.ref, trust, {
+      recoveryKey: {
+        publicKey: recoveryPublicKey,
+        registeredByDeviceId: deviceId,
+        registrarCertificate: Buffer.from(device.get('certificate') as Uint8Array),
+        challenge: Buffer.from(challenge.get('challenge') as Uint8Array),
+        expiresAtUnix: toUnixSeconds((challenge.get('expiresAt') as Timestamp).toMillis()),
+        signature,
+        registeredAt: FieldValue.serverTimestamp(),
+      },
     });
     return null;
   });
@@ -401,9 +437,35 @@ export async function recoverDevice(db: Firestore, uid: string | undefined, data
       if (error instanceof InvalidStatementError || error instanceof InvalidCertificateError) return close('recovery_invalid');
       throw error;
     }
-    const outcome = await activateApproved(db, tx, accountId, request, device, { method: 'recovery' });
+    const registration = trust.get('recoveryKey') as Record<string, unknown>;
+    const outcome = await activateApproved(
+      db,
+      tx,
+      accountId,
+      request,
+      device,
+      trust,
+      {
+        method: 'recovery',
+        evidence: {
+          protocolVersion: EVIDENCE_VERSION,
+          recoveryPublicKey: Buffer.from(recoveryKey),
+          registration: {
+            registrarDeviceId: registration.registeredByDeviceId,
+            registrarCertificate: registration.registrarCertificate,
+            challenge: registration.challenge,
+            expiresAtUnix: registration.expiresAtUnix,
+            signature: registration.signature,
+          },
+          challenge: Buffer.from(request.get('challenge') as Uint8Array),
+          expiresAtUnix: expiresAtUnixOf(request),
+          signature,
+        },
+      },
+      // Single-use: the key is consumed by its first successful recovery.
+      { recoveryKey: FieldValue.delete(), lastRecoveryAt: FieldValue.serverTimestamp() },
+    );
     if (outcome !== null) return close(outcome);
-    tx.update(trust.ref, { recoveryKey: FieldValue.delete(), lastRecoveryAt: FieldValue.serverTimestamp() });
     return null;
   });
   if (failure !== null) {
