@@ -126,6 +126,22 @@ Branch protection and production reviewers are blocked by the GitHub plan.
 
 [MULTI-DEVICE-TRUST](../security/MULTI-DEVICE-TRUST.md)
 
+## Phase 10 — E2EE messaging core, Part 1 (security design gate + trust/MLS foundation) ✅
+
+- Design gate: [E2EE-MESSAGING-DESIGN](../security/E2EE-MESSAGING-DESIGN.md),
+  D-085–D-091.
+- Trust unit is the exact device certificate; revoked devices cannot
+  re-mint trust with a retained PIK (D-085).
+- Server-authoritative conversation provisioning from an accepted pairing
+  (D-086); not reachable until the pairing phase exists.
+- ABI v5: staged commits, first commit wins per epoch, messages with
+  authenticated routing, sealed local history, offline queue (D-087–D-091).
+- Firestore rules and emulator tests; development messaging service; no
+  chat UI, text only.
+- **Not done / BLOCKED:** deployment (Blaze not enabled), pairing, chat UI,
+  media and notifications (Prompt 11), independent review. **Sirf Hum is NOT
+  production E2EE yet.**
+
 ## Proposed sequence
 
 Ordering principle: identity and cryptography come **before** any feature

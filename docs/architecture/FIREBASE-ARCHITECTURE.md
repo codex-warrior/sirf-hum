@@ -3,6 +3,10 @@
 Status: **Boundaries established (Prompt 01). Device registry open
 (Prompt 07): `users/{uid}/devices/{deviceId}` rules + activation Functions
 (emulator-only until Blaze).**
+Messaging (Prompt 10): `conversations/*` with keyPackages, commits,
+Welcomes and messages; server-only `pairings`, `accountPartners` and the
+`provisionConversation` primitive (emulator-only; no callable). See
+[E2EE-MESSAGING-DESIGN](../security/E2EE-MESSAGING-DESIGN.md).
 
 ## Principle
 
@@ -77,10 +81,10 @@ D-070).
 
 | Path | Client access | Server (Admin SDK) |
 | --- | --- | --- |
-| `users/{uid}/devices/{deviceId}` | Owner: read. **No client write at all** (Prompt 09) | `registerDevice` creates `pending`; `activateDevice` (first device only), `approveDevice`, `recoverDevice` set `active` with signed evidence; `rejectDeviceApproval` sets `rejected`; cleanup sets `expired`; `revokeDevice` (signed, D-081) and `completeIdentityReset` set `revoked` |
+| `users/{uid}/devices/{deviceId}` | Owner and, once provisioned, the partner (D-086): read. **No client write at all** (Prompt 09) | `registerDevice` creates `pending`; `activateDevice` (first device only), `approveDevice`, `recoverDevice` set `active` with signed evidence; `rejectDeviceApproval` sets `rejected`; cleanup sets `expired`; `revokeDevice` (signed, D-081) and `completeIdentityReset` set `revoked` |
 | `deviceChallenges/{id}` | None | `issueDeviceChallenge` creates; consumed by the first attempt |
 | `deviceApprovalRequests/{id}` | None | `requestDeviceApproval` / `proveDeviceEnrollment`; consumed by approval, rejection or recovery |
-| `accountTrust/{uid}` | Owner: read (Prompt 09). No write | Bootstrap marker (`firstDeviceId`, `bootstrapOpen`), `trustEpoch` (D-083), `identityEpoch` and `reset` (D-082), recovery key **public** half with its registration evidence |
+| `accountTrust/{uid}` | Owner and partner (D-086): read. No write | Bootstrap marker (`firstDeviceId`, `bootstrapOpen`), `trustEpoch` (D-083), `identityEpoch` and `reset` (D-082), recovery key **public** half with its registration evidence |
 | `rateLimits/{uid}__{op}` | None | Per-account rate limits (D-077) |
 | `deviceIdIndex/{deviceId}`, `deviceKeyIndex/{sha256}` | None | Global uniqueness of activated device IDs and keys, kept forever |
 
@@ -101,6 +105,31 @@ Design: [MULTI-DEVICE-TRUST](../security/MULTI-DEVICE-TRUST.md). Tests:
 - `functions/test/device_proof.test.mjs`, `functions/test/statements.test.mjs` (verifiers, golden vectors);
 - `functions/test/hardening.test.mjs` (revocation/reset statements, v2 vectors, log guard);
 - `functions/test/emulator/` (flows; `hardening.test.mjs`: revocation, reset, epoch, races, rate-limit boundaries).
+
+## Private messaging (Prompt 10)
+
+Full design: [E2EE-MESSAGING-DESIGN](../security/E2EE-MESSAGING-DESIGN.md)
+(D-085–D-091). Firestore holds ciphertext, MLS handshake bytes and public
+metadata only. Sending and receiving need **no Cloud Function** (they work
+on Spark); only provisioning is server code.
+
+| Path | Client access | Server |
+| --- | --- | --- |
+| `pairings/{id}` | None | Written by the future pairing phase (`status: 'accepted'`, both accounts) |
+| `accountPartners/{uid}` | Owner: read | `provisionConversation` writes `partnerAccountId`, `conversationId` |
+| `conversations/{id}` | Members: read. Update **only** `epoch` → `epoch + 1`, in the same batch as the new `commits/{epoch}` | `provisionConversation` creates it: `members`, `state`, `epoch: 0`, versions, ciphersuite |
+| `.../keyPackages/{deviceId}` | Members: read. A member writes/deletes only for its own **active** device | — |
+| `.../commits/{epoch}` | Members: read. **Create-only, one per epoch** (first wins), by a member's active device, at the current epoch, with the epoch move | — |
+| `.../welcomes/{device}_{epoch}` | Members: read. Create-only, only beside their own commit in the same batch | — |
+| `.../messages/{messageId}` | Members: read. **Create-only**: exact fields (no plaintext), current epoch, sender's own active device, ciphertext ≤ 32 KiB, `serverTime == request.time`. No update or delete | — |
+
+Clients write commits and messages in **transactions** (never the offline
+write queue). Rules authorize access to ciphertext per account; MLS decides
+which devices hold keys (E2EE-MESSAGING-DESIGN §9). Retention, server-side
+deletion and FCM wake-ups are not implemented yet (Prompt 11 and later).
+
+Tests: `firebase/tests/messaging.test.js` (own `demo-` project, so parallel
+test files cannot interfere), `functions/test/emulator/conversation.test.mjs`.
 
 ## Cloud Functions policy
 

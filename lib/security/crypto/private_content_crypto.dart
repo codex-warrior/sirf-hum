@@ -11,8 +11,9 @@ import 'package:sirf_hum_crypto/sirf_hum_crypto.dart';
 /// key store and says otherwise.
 enum PrivateContentCryptoSupport {
   /// The native crypto core and the platform key store are bundled, but
-  /// nothing is reviewed and no feature uses them. For development and tests
-  /// only; never for real users' content.
+  /// nothing is reviewed; only the development messaging service (no UI)
+  /// uses them. For development and tests only; never for real users'
+  /// content.
   nativeDevelopmentOnly,
 
   /// Web V1 has no private-content E2EE (D-046). Private features are

@@ -4,13 +4,15 @@ Status: **Security foundation implemented (Prompts 08–09). Sirf Hum is NOT
 production E2EE yet.**
 
 - Nothing here has been independently reviewed (§15).
-- No product feature or UI uses it yet.
+- No UI uses it yet. Since Prompt 10 the development messaging service
+  applies verified lineage to MLS membership (§11, D-085).
 - The server half runs only in the emulator. Deployment is **BLOCKED**
   until the Blaze plan allows Cloud Functions (D-025); billing has not been
   enabled.
 
-Builds on [DEVICE-IDENTITY](DEVICE-IDENTITY.md). Decisions: D-074–D-084 in
-the [Decision Log](../decisions/DECISION-LOG.md).
+Builds on [DEVICE-IDENTITY](DEVICE-IDENTITY.md). Decisions: D-074–D-084
+(and D-085 for the trust unit) in the
+[Decision Log](../decisions/DECISION-LOG.md).
 
 ## 1. Trust model
 
@@ -49,7 +51,8 @@ flowchart TD
 - **Trust between a person's devices is a chain of signed statements:**
   A's PIK signed "B is mine". It is not a shared secret.
 - **Approving extends local trust:** the approving device also trusts the
-  new device's PIK, so it can add the new device to MLS groups (tested).
+  new device's **exact certificate** (not its PIK on its own, D-085), so it
+  can add the new device to MLS groups (tested).
 
 ### PIK options evaluated (Prompt 08 §6)
 
@@ -232,8 +235,11 @@ sequenceDiagram
 - **Race with an approval** (tested): the transactions serialize. Either
   the approval committed first (its `activatedEpoch` is lower than the
   approver's `revokedEpoch`, so the lineage stays valid) or it is refused.
-- **MLS:** removal from groups is an MLS Remove commit (Prompt 06), wired
-  up with messaging.
+- **MLS (Prompt 10):** peers apply the signed revocation through lineage
+  (`trustLineage`), which revokes the device **and its PIK** (D-085). From
+  then on its messages are rejected and senders refuse to encrypt to a
+  roster that still holds it; any member device removes it with a staged
+  Remove commit (E2EE-MESSAGING-DESIGN §9).
 
 **Residual risk (accepted, documented):** when the **only** device is
 stolen and there is no recovery key, nothing can sign its revocation. The
@@ -437,6 +443,30 @@ Wire format, golden vectors and cross-implementation tests:
   not match real time; peers rely on the server for that ordering and for
   freshness, which the trust epoch only partly addresses.
 
+### Trust unit (D-085, Prompt 10)
+
+Verifying the chain is not enough on its own: what a device then
+*trusts* matters. Until Prompt 10 the core trusted person keys. Since each
+device has its own PIK (D-074) and a PIK can sign any number of
+certificates, a revoked device could have certified a new device ID with its
+retained PIK. The core now trusts **exact certificates**:
+
+- `trustLineage(lineage, trustEpoch)` verifies the chain in Rust from a
+  root whose PIK is an out-of-band **anchor**, then trusts each proven
+  certificate for that account;
+- signed and server-asserted revocations revoke the device **and its PIK**,
+  permanently; a later lineage that omits them cannot undo them;
+- each PIK is pinned to the one device ID it certifies;
+- the account's previously proven devices that a new lineage no longer
+  proves are dropped (server omission removes trust, never adds it);
+- an older `trustEpoch` than one already applied for that account is
+  refused (`trust_state_stale`).
+
+Adversarial tests: `native/src/engine/trust_tests.rs` (forged and re-minted
+certificates, revoked PIKs, pins, stale and broken lineage, restart, v1
+state migration). The server-ordering limit above is kept as a documented
+test.
+
 ## 12. Rate limits and expiry (D-077, D-078)
 
 Per-account fixed windows, in the server-only `rateLimits` collection
@@ -516,6 +546,7 @@ Functions; the Firebase Rules.
 - **Reset notifications** (push, no private content) before production
   (§9).
 - **Local rollback protection** (D-079).
-- **Lineage in messaging:** call `verifyLineage` when adding or accepting
-  MLS members; devices learn their approvers' PIKs.
+- ~~Lineage in messaging~~: done in Prompt 10 (`trustLineage`, D-085).
+- **Own-account root anchoring** for non-root devices needs a verification
+  UX (D-085 open).
 - **Device-management UI** (Prompt 09 excluded it).

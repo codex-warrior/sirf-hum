@@ -5,7 +5,10 @@ and recovery added (Prompt 08, [MULTI-DEVICE-TRUST](MULTI-DEVICE-TRUST.md)).
 Sirf Hum is NOT production E2EE yet.**
 
 - Nothing here has been independently reviewed.
-- No product feature uses device identity yet.
+- No UI uses device identity yet. The development messaging service
+  (Prompt 10) binds MLS membership to it: an MLS credential is accepted only
+  as an exact trusted device certificate (D-085,
+  [E2EE-MESSAGING-DESIGN](E2EE-MESSAGING-DESIGN.md)).
 - Server-side activation runs only in the emulator until the Blaze plan
   allows Cloud Functions to deploy (D-025).
 

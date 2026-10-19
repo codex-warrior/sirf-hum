@@ -152,7 +152,7 @@ stateDiagram-v2
 | Confirm | Atomic merge; returns the new epoch. Must name the epoch it was staged at |
 | Duplicate confirm | Idempotent: same epoch, nothing staged, last confirmed = that epoch → returns the current epoch |
 | Confirm after discard / reject / wrong epoch | `no_staged_commit` (-23); state unchanged |
-| Confirm after timeout | The client reads `commits/{epoch}`: ours → confirm; someone else's → discard, then process theirs; absent → resubmit the same commit bytes |
+| Confirm after timeout | The client reads `commits/{epoch}`: ours → confirm; someone else's → discard, then process theirs; absent → discard (commits are written in Firestore **transactions**, which never land later from the SDK's offline queue) and stage again if still needed |
 | Concurrent commit | Server picks one (§5); the loser discards and processes the winner |
 | Stale epoch | A staged commit names its epoch; confirm with any other epoch fails |
 | Wrong conversation | `unknown_group` |
@@ -175,7 +175,24 @@ commit's Welcomes. Rules check each half against the other (`getAfter`,
 | Exactly one commit per epoch (document exists → second write refused) | Whether to accept it at all: a cryptographically invalid winning commit is **rejected by every device** (fail closed; the conversation then needs re-provisioning, see limitations) |
 | Welcomes only alongside the accepted commit | Joining from a Welcome, validating every member |
 
-The server never decrypts, parses or validates MLS bytes.
+The server never decrypts, parses or validates MLS bytes. Clients write
+commits and messages in Firestore transactions, never through the SDK's
+offline queue, so a write the client treated as refused cannot land later.
+Rules do not check a Welcome's target device: a Welcome is useless to anyone
+but the holder of the matching KeyPackage key, and MLS validates the roster.
+
+```mermaid
+sequenceDiagram
+    participant A as Device A1 (Rust core)
+    participant S as Firestore (rules)
+    participant B as Device B1 (Rust core)
+    A->>A: send_message: roster all trusted? AAD(conv, id, sender, versions); encrypt; seal history (queued)
+    A->>S: transaction: create messages/{id} (epoch == conversation.epoch, active device)
+    S-->>A: accepted → mark_message_sent
+    B->>S: read commits/L, then messages where epoch == L
+    B->>B: sender account == lineage account? receive_message: MLS verify + decrypt; AAD == envelope; seal history
+    Note over B: any mismatch rolls back; the key is not consumed
+```
 
 **Messages are written only at the current epoch** (rules: message
 `epoch == conversation.epoch`). Combined with the commit rule this gives the
@@ -309,9 +326,12 @@ needed:
 
 **Window:** between a revocation and the first Remove commit, a revoked
 device that still has the account's Firebase session can decrypt messages
-sent by devices that have **not yet** refreshed lineage. Senders refresh
-lineage before sending (the service does), which narrows this to
-concurrent sends.
+sent by devices that have **not yet** refreshed lineage. `sendText` checks
+only this device's own server status on every send; refreshing lineage
+(`refreshTrust`, two reads per member account) is the caller's job, e.g. on
+app resume and before syncing. Until revocation notifications exist
+(Prompt 11, content-free push), this window lasts until the sender's next
+`refreshTrust`.
 
 ## 10. Server knowledge
 
@@ -356,7 +376,39 @@ message IDs, device IDs, ciphertext, payloads or errors' messages
 receive no plaintext. Crashlytics gets sanitized `AppLogger` records only.
 Tests assert this.
 
-## 13. Known limitations (Part 1)
+## 13. Implementation map
+
+| Piece | Where |
+| --- | --- |
+| Trust unit, lineage application | `packages/sirf_hum_crypto/native/src/trust.rs` |
+| Staged commits, AAD, send/receive, sealed history | `native/src/engine/conversation.rs` (ABI v5 in `native/src/ffi.rs`) |
+| Dart bindings and types | `packages/sirf_hum_crypto/lib/src/core_ffi.dart`, `types.dart` |
+| Orchestration (sync, outbox, membership) | `lib/security/messaging/messaging_service.dart` |
+| Envelope, text payload, transport port | `lib/security/messaging/` |
+| Firestore transport | `lib/infrastructure/firebase/firestore_conversation_transport.dart` |
+| Rules | `firebase/firestore.rules` |
+| Provisioning primitive | `functions/src/conversation/provision.ts` |
+
+Tests and counts: [E2EE-TEST-PLAN](../testing/E2EE-TEST-PLAN.md) §Prompt 10.
+
+**Performance baseline** (Windows dev host, x86_64-pc-windows-gnu release
+build, file store in `%TEMP%`; Android numbers come from the emulator
+integration test log, `messaging_baseline`):
+
+| Operation | Per message |
+| --- | --- |
+| Encrypt + seal history (64 B / 1 KiB / 16 KiB payload) | 8.2 / 9.0 / 9.7 ms |
+| Verify + decrypt + seal history (same sizes) | 8.8 / 9.4 / 9.8 ms |
+| Ciphertext size (same sizes) | 282 / 1,242 / 16,606 B |
+| History load | ~16 ms per record on this host |
+
+Most of the per-message cost is the atomic, fsynced rewrite of the sealed
+MLS state record (one per operation, D-058). The history figure is the
+host's file system: plain Python needs the same ~15 ms to read one fresh
+small file there (real-time scanning). Firestore round trips were not
+measured (emulator only, no deployment).
+
+## 14. Known limitations (Part 1)
 
 - Not reviewed; not production E2EE; deployment BLOCKED (Blaze).
 - No pairing: conversations exist only where a test seeds a pairing.
@@ -365,7 +417,14 @@ Tests assert this.
 - No history for new devices; no encrypted backup.
 - Local rollback of the whole state directory is not detected (D-079).
 - A winning but cryptographically invalid commit stalls the conversation
-  (every device rejects it). Recovery (re-provisioning) is deferred.
+  (every device rejects it: `stateDiverged`). Recovery (re-provisioning or
+  re-adding the device) is deferred.
+- Peers rely on the server's ordering of lineage statements: a colluding
+  server could present an approval signed by a device before listing that
+  device's revocation (D-084 limit; tested as documented).
+- Firestore batch access-call limits bound Welcomes per commit; tested
+  with two. The service adds every pending trusted device in one commit.
+- One file per history record: history load is O(messages) file reads.
 - Rules evaluated in the emulator only; the cross-document atomicity of the
   epoch rule relies on Firestore evaluating rule reads inside the write.
 - Web: no private messaging (D-046); the stub fails closed.
