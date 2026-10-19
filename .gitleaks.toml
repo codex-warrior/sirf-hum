@@ -19,3 +19,16 @@ paths = ['''(^|/)Cargo\.lock$''']
 regexTarget = "match"
 # gitleaks' "match" text begins at the keyword, after the opening quote.
 regexes = ['''libcrux-secrets",\s+"libcrux-sha3''']
+
+# In the D-093 security review, the prose list item "key generation,
+# XChaCha20-Poly1305 and `StreamBE32`" (what the AAD-schedule correction did
+# NOT change) is read by `generic-api-key` as the keyword "key" followed by a
+# token-like value. It names an algorithm; no key material exists in docs.
+# Scope: this rule AND that one document AND this exact phrase.
+[[allowlists]]
+description = "Prose 'key generation, XChaCha20-Poly1305' in the D-093 review"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(^|/)docs/security/D-093-SECURITY-REVIEW\.md$''']
+regexTarget = "match"
+regexes = ['''key generation, XChaCha20-Poly1305''']
