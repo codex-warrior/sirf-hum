@@ -31,12 +31,12 @@ amount of our own composition on top.
 | Composition (AAD, object digest, MLS key transport) | Sound for v1. Every AAD field except the header comes from an authenticated source; the header is bound by being in the AAD and by the digest | VERIFIED (source) |
 | SHA-256 "key commitment" | **The terminology is inaccurate.** It is an *authenticated ciphertext digest*. Key commitment is unnecessary in this design for a different reason (§6) | Finding F1 |
 | Audit status | `aead::stream` has **no** known audit. The libsodium alternative's 2017 audit also **predates** `crypto_secretstream` | Finding F2 |
-| Exact correspondence to the paper's notation | **NOT ESTABLISHED.** ePrint 2015/189 could not be retrieved in this session (HTTP 403). The security argument in §3–§4 does not depend on it | Finding F4 |
+| Exact correspondence to the paper | **Resolved by the F4 pass (§13), with one deviation.** Nonce encoding, segment numbering (an injective encoding of the paper's i = 1, 2, …), final flag, state machine and expansion τ = 128 match Fig. 8 of the paper (primary source obtained). **Deviation:** the paper binds the AD A on segment 1 only (ε afterwards); Sirf Hum passes the same AAD to every segment. Theorem 2 does not literally cover that schedule | Finding F4 (re-graded, §13) |
 
 **Decision: MERGE WITH SPECIFIC SECURITY CHANGES (§11).** The required
-changes are corrections of security claims in the documentation, made in
-this review's commit, plus human sign-off. No code change is required for
-format v1.
+changes are corrections of security claims in the documentation (made),
+**resolution of F4's AD-schedule deviation (§13)**, and human sign-off.
+Updated by the F4 evidence pass on 2026-10-19.
 
 ## 2. Exact dependency and implementation chain
 
@@ -88,11 +88,10 @@ the object.
 **Variant.** `StreamBE32` is documented by the crate as "the original
 'Rogaway-flavored' STREAM as described in [ePrint 2015/189]", with "a 32-bit
 big endian counter and 1-byte 'last block' flag stored as the last 5-bytes
-of the AEAD nonce". The paper text could not be retrieved in this session,
-so whether this matches the paper's figure **bit for bit** (field widths,
-the flag encoded as a byte) is **NOT ESTABLISHED** (F4). Structurally it is
-the nonce-based STREAM: segment *i* is encrypted by the base AEAD under
-nonce `N ‖ i ‖ d`, where *d* marks the final segment.
+of the AEAD nonce". *Superseded by §13:* the paper was obtained in the F4
+pass. The nonce encoding and state machine match Fig. 8. Sirf Hum's AD
+schedule (the same AAD on every segment) differs from Fig. 8 (A on segment
+1, ε afterwards).
 
 | Property | Implementation | Status |
 | --- | --- | --- |
@@ -307,7 +306,7 @@ reviewer confirms §3 against the paper (F4) and accepts the unaudited status
 | F1 | **Medium (security claim accuracy)** | The SHA-256 digest was described as a key-commitment substitute and a key-substitution defence. Inaccurate (§6) | **Fixed (docs)** in this commit. Three code comments in `engine/media.rs` still say "commitment"; reword them with the next code change (this review changes no code) |
 | F2 | **Medium (security claim accuracy)** | The docs stated libsodium had a published audit as the trade-off against `aead::stream`. That audit predates `secretstream` (§9) | **Fixed (docs)** in this commit |
 | F3 | Low (pre-v2) | The media format version is bound only through the file header, not named in the authenticated `media_ref` | Open: required **before** any format v2; no change for v1 |
-| F4 | Low (process) | Bit-level correspondence of `StreamBE32` to the paper's definition is **NOT ESTABLISHED** (paper not retrievable here); the security argument (§3–§4) does not depend on it | Open: human reviewer to confirm |
+| F4 | **Medium (assurance; no attack known)** | *Re-graded by the F4 pass (§13).* The paper's Theorem 2 covers STREAM with A on segment 1 and ε on later segments. Sirf Hum passes the same 101-byte AAD to **every** segment, so for objects of two or more chunks the implemented construction is a variant that Theorem 2 does not literally cover. Everything else maps exactly | Open: resolve by (a) or (b) in §13 before sign-off |
 | F5 | Low (memory hygiene) | Copies of the media key inside OpenMLS internal buffers (application plaintext) are not known to be zeroized: **NOT ESTABLISHED** | Open: same residual as text (E23); review with the OpenMLS delta review |
 | F6 | Informational | Media is bound to media ID and sender, not to the delivering message ID | Accepted (no attack found) |
 | F7 | Low (availability) | Lost-ack recognition trusts server metadata (`sd`, size); a malicious server can make an upload look complete | Accepted: DoS only; recipients fail closed (`unavailable`) |
@@ -324,9 +323,14 @@ truncation resistance or nonce uniqueness.
 Required before merge:
 1. **Documentation corrections F1 and F2.** Done in this review's commit:
    design doc §2 brief, D-093 entry, THREAT-MODEL E36/E37 wording.
-2. **Human security sign-off on D-093**, including confirming §3 against
-   ePrint 2015/189 (F4) and accepting the unaudited status (F8). Until then
-   D-093 stays **PROPOSED — PENDING HUMAN SECURITY REVIEW**.
+2. **Resolve F4 (§13):** either (a) a qualified reviewer accepts the
+   adapted reduction for the every-segment-AAD variant, or (b) the code is
+   changed to the paper's exact AD schedule (A on the first segment, ε on
+   later ones). (b) is a code and format change; it is **not** implemented
+   here.
+3. **Human security sign-off on D-093**, including acceptance of the
+   unaudited status (F8). Until then D-093 stays **PROPOSED — PENDING HUMAN
+   SECURITY REVIEW**.
 
 Not required for merge (recommended follow-ups; **not implemented**):
 
@@ -336,10 +340,11 @@ Not required for merge (recommended follow-ups; **not implemented**):
 | F9 | Test-only hook to inject a kind-2 reference sent by device B naming device A's object; assert `open_media` fails | `native/tests/media.rs` (`#[cfg(test)]` helper) | That test | No | No |
 | T | Concurrency test: two cores and parallel `send_media` produce distinct keys and prefixes | `native/tests/media.rs` | That test | No | No |
 
-**Replacement is not recommended at this point (§9).** BLOCK is not
-warranted: no security-critical property is unestablished. F4 concerns
-correspondence with the paper's notation, not the security argument, which
-§3–§4 make from the source and tests under standard AEAD assumptions.
+**Replacement is not recommended at this point (§9, §13).** The F4 pass
+found no security weakness. It found a gap between what the paper proves
+and what Sirf Hum uses. That gap is closed either by review of a short
+adapted reduction, or by a small change that makes the construction match
+the paper exactly.
 
 ## 12. Evidence
 
@@ -355,3 +360,218 @@ correspondence with the paper's notation, not the security argument, which
   - `--test messaging` (30 passed, 1 ignored);
   - a temporary nonce-layout test (1 passed; reverted, not committed).
 - **CI on PR #10:** all 17 checks passed.
+
+## 13. F4 evidence pass (second pass, 2026-10-19)
+
+Scope: F4 only, meaning whether `aead 0.5.2` `StreamBE32`, as Sirf Hum uses
+it, is the STREAM construction of Hoang, Reyhanitabar, Rogaway and Vizár.
+No implementation code was changed.
+
+### 13.1 Primary source
+
+| Route | Result |
+| --- | --- |
+| ePrint 2015/189 (`/2015/189.pdf`, `/archive/2015/189/20150228.pdf`) | HTTP 403 (bot challenge), not obtainable |
+| Crate source, README, CHANGELOG (`aead 0.5.2`) | Cites the paper (`https://eprint.iacr.org/2015/189.pdf`); describes `StreamBE32` and gives no further specification. No guidance on AD per segment |
+| Co-author's university homepage: `https://web.cs.ucdavis.edu/~rogaway/papers/oae.pdf` (also under `www.cs.ucdavis.edu`, byte-identical) | **Obtained.** 26 pages. Title *Online Authenticated-Encryption and its Nonce-Reuse Misuse-Resistance*, authors Hoang, Reyhanitabar, Rogaway, Vizár, dated March 8, 2015 (PDF creation date 2015-03-08). SHA-256 `caa824100d452f1b45cbab38cad413a657690c5a3f0c5d01d0618cff63bd1131` |
+
+The authors' own copy is a primary source. Two limits:
+- Byte identity with the ePrint copy is **NOT ESTABLISHED**, because ePrint
+  could not be retrieved. The paper itself was not committed (copyright);
+  this hash identifies the copy read.
+- The CRYPTO 2015 proceedings version (Springer) was not consulted.
+
+The copy contains §7 "Nonce-Based OAE", Fig. 8 (STREAM), Theorem 2 and its
+proof in Appendix F (Figs. 11–12). Text was extracted with `pypdf 5.1.0` in
+an isolated scratch environment.
+
+### 13.2 The paper's construction (Fig. 8, quoted from the extracted text)
+
+```text
+Fix an encoding function ⟨·⟩ that maps (N, i, d) ∈ 𝒩′ × ℐ × {0,1} to a string ⟨N, i, d⟩,
+ℐ = ℕ or ℐ = {1, 2, …, max}. Π = (K, E, D) an nAE scheme, compatible with the encoding.
+
+ℰ.init(K, N, A):  return (N, A, 1)
+ℰ.next(K, S, M):  (N, V, i) ← S; S ← (N, ε, i + 1); C ← E_K(⟨N, i, 0⟩, V, M); return (C, S)
+ℰ.last(K, S, M):  (N, V, i) ← S; return E_K(⟨N, i, 1⟩, V, M)
+𝒟.next / 𝒟.last:  the same with D_K; 𝒟.next returns (⊥, ⊥) on failure.
+
+Theorem 2:  Adv^noae_STREAM[Π,⟨·⟩](A) ≤ Adv^nae_Π(B) + q / 2^τ
+            (q = number of segments in A's queries, τ = ciphertext expansion)
+```
+
+The figure shows `A` as the AD of segment 1 and `ε` for segments 2 and 3.
+The nOAE game forbids repeating an encryption nonce `N`. Appendix F's step
+G1 → G2 replaces E_K/D_K by `$`/`⊥`, which requires B's nAE nonces
+⟨N, i, d⟩ never to repeat. So **the encoding must be injective** on the
+triples that occur. The paper calls ⟨·⟩ an encoding but does not state
+injectivity in words; the proof relies on it.
+
+### 13.3 Exact `StreamBE32` construction (VERIFIED source, `aead-0.5.2/src/stream.rs`)
+
+| Item | Value |
+| --- | --- |
+| AEAD nonce length | 24 bytes (XChaCha20-Poly1305, `U24`); STREAM overhead `U5`; prefix `NonceSize = 24 − 5 = 19` bytes |
+| Prefix | Caller-supplied; Sirf Hum: 19 bytes from `OsRng` per object, stored in header bytes 6..25 |
+| Counter | `u32`, `position.to_be_bytes()` (big-endian), nonce bytes 19..23 |
+| Final flag | `last_block as u8`: `0x00` or `0x01`, nonce byte 23 |
+| Concatenation | `prefix[19] ‖ be32(position) ‖ flag[1]` (`aead_nonce`) |
+| Position | `Default` = 0 at `new`; `+= 1` after each successful `*_next*`; `*_next*` errors when `position == u32::MAX`; `*_last*` uses the current position and **consumes** the object |
+| AD | The caller's `associated_data` for **each** call (no state). Sirf Hum passes the same 101-byte AAD to every call |
+| Plaintext and chunks | One AEAD call per caller-supplied buffer; no internal chunking. Sirf Hum: 64 KiB, last 1..64 KiB |
+| Ciphertext and tag | `AeadInPlace::encrypt_in_place`: detached encryption, then the 16-byte tag appended. Decrypt: buffer < 16 → error; tag verified (constant time) before decryption; truncated only on success |
+| Failure | `aead::Error`. A `*_next*` failure leaves the object usable at the same position. Sirf Hum aborts the whole open on the first error |
+
+### 13.4 Trace to XChaCha20-Poly1305 (VERIFIED source)
+
+- `chacha20poly1305 0.10.1` `ChaChaPoly1305<XChaCha20, U24>`:
+  - per call, `Cipher::new(XChaCha20::new(key, nonce24))`;
+  - Poly1305 key = first 32 bytes of keystream block 0, then seek to block 1;
+  - MAC over `pad16(AD) ‖ pad16(C) ‖ le64(|AD|) ‖ le64(|C|)`;
+  - refuses a message of ≥ 2³² − 1 blocks.
+- `chacha20 0.9.1` `XChaCha20 = XChaChaCore<U10>` (20 rounds):
+  `XChaChaCore::new(key, iv)` sets `subkey = hchacha::<U10>(key, iv[0..16])`
+  and the ChaCha20 nonce to `0x00000000 ‖ iv[16..24]`.
+- With the `StreamBE32` layout, iv[0..16] = prefix[0..16] and iv[16..24] =
+  prefix[16..19] ‖ be32(i) ‖ flag.
+
+**The earlier statement is verified.** Every chunk of one object uses the
+same subkey `HChaCha20(K, prefix[0..16])`. Chunks differ only in the 8
+trailing nonce bytes (the last 3 prefix bytes, counter and flag), which are
+distinct per chunk.
+
+**Expected and safe?** This is the normal XChaCha regime: the extended nonce
+is split into a subkey-selection part and an inner nonce. Correctness and
+security depend on the 24-byte nonces being distinct under a key, not on the
+subkeys being distinct. ChaCha20-Poly1305 under one subkey with distinct
+96-bit nonces is its standard nAE use. Here the stream also has a fresh
+uniform key, so the subkey is a PRF output on a uniform key. **No problem is
+established by the source.**
+
+**Assumption, stated by the crate itself:** XChaCha20-Poly1305 has no
+authoritative specification. Its security argument is the expired
+`draft-arciszewski-xchacha-03`, which applies the XSalsa20 extension proof
+(HChaCha20 as a PRF) on top of ChaCha20-Poly1305's nAE security.
+
+### 13.5 Paper-to-code mapping
+
+| Paper element | StreamBE32 / Sirf Hum | Verified? | Evidence |
+| --- | --- | --- | --- |
+| nAE scheme Π with expansion τ | XChaCha20-Poly1305, τ = 128 bits | **VERIFIED** (instantiation). Π's nAE security is an **assumption** (§13.4) | `chacha20poly1305` source; tag 16 B |
+| Compatibility: nonce space ⊇ all ⟨N, i, d⟩; AD space ∋ ε | 24-byte nonce space; any AD length incl. empty | **VERIFIED** | Types `U24`; AD `&[u8]` |
+| Stream nonce N ∈ 𝒩′ | 19-byte prefix | **VERIFIED** | `NonceSize = U24 − U5` |
+| Segment index ℐ = {1, …, max} | `position` = i − 1 ∈ {0, …, 2³² − 1}, so max = 2³² | **VERIFIED** as an encoding choice: the paper fixes an arbitrary encoding; counting from 0 is the encoding `be32(i − 1)` | `Default` = 0; `COUNTER_MAX` check |
+| Encoding ⟨N, i, d⟩ | `N[19] ‖ be32(i − 1) ‖ u8(d)`, fixed length | **VERIFIED**, and injective (fixed-width fields), which the proof needs | `aead_nonce` source; temporary test (first pass) |
+| d = 0 for `next`, d = 1 for `last` | `last_block: false` in `*_next*`, `true` in `*_last*` | **VERIFIED** | Macro source |
+| State `(N, V, i)`; `next` → `(N, ε, i + 1)` | Encryptor holds (AEAD, N, position). **No V: AD is supplied per call** | **VERIFIED** for N and i. **AD: see next row** | Source |
+| **AD: V = A on segment 1, V = ε on segments ≥ 2** | **Sirf Hum passes A (101 B) on every segment** | **NOT ESTABLISHED as equal. Differs for objects with ≥ 2 chunks. Identical for 1-chunk objects (≤ 64 KiB)** | `media.rs` passes `&aad` to every call; Fig. 8 `S ← (N, ε, i + 1)` |
+| `last` ends the stream (no further segments) | `*_last*` takes `self` by value | **VERIFIED** | Source |
+| `D.next` failure → (⊥, ⊥) (stream dead) | On error the decryptor is not poisoned (position unchanged). **Sirf Hum aborts immediately** | **VERIFIED as used**: the abort gives the paper's behaviour | Source; `decrypt_file` `?` on first error |
+| Receiver applies `D.last` to the final segment | Sirf Hum calls `decrypt_last` at the position given by the authenticated plaintext length | **VERIFIED as used** (application responsibility in the paper's syntax too) | `decrypt_file` |
+| No query with i > max | `next` refuses at `u32::MAX`; Sirf Hum ≤ 1,024 segments | **VERIFIED** | Source; `MAX_MEDIA_PLAINTEXT_BYTES` |
+| Nonce N not repeated under a key (nOAE game) | One stream per fresh random key (§4) | **VERIFIED** (code paths) | First-pass §4 |
+| Theorem 2 bound Adv_nae(B) + q/2^τ | q ≤ 1,024 per object; τ = 128 | Applies **only** to the paper's AD schedule (row above) | Theorem 2 |
+
+### 13.6 The deviation, analysed (not fixed)
+
+- **Exact mismatch:** for a stream of n ≥ 2 segments, the paper encrypts
+  segment i ≥ 2 as `E_K(⟨N, i, d⟩, ε, M_i)`. Sirf Hum encrypts it as
+  `E_K(⟨N, i, d⟩, A, M_i)`, with A the 101-byte media AAD.
+- **Where it comes from:** Sirf Hum's call site, not `StreamBE32`. The crate
+  takes the AD per call and leaves the schedule to the caller.
+- **Security consequence: none demonstrated; formal coverage missing.**
+  An adapted argument (ours, unreviewed, **ARGUED**): Appendix F's proof
+  uses only that (1) every encryption call has a distinct nAE nonce, and
+  (2) every decryption call is answered by D_K, which in game G2 is `⊥`
+  unless (nonce, AD, C) was produced by encryption. Supplying A instead of
+  ε on segments ≥ 2 changes neither: nonces are still distinct, and the
+  AD, a fixed function of the stream's (N, A), only refines the lookup key.
+  The same game chain G1–G4, with π indexed by (N, A) and the AD on every
+  call, appears to give the same bound Adv_nae(B) + q/2^τ. Intuitively the
+  variant binds A at least as strongly (every segment, not only the first).
+  **This argument is not in the paper and has not been reviewed.**
+- **Severity:** Medium for *assurance*: a proof-coverage gap in a
+  security-critical decision. **Not** a known vulnerability. F4 is
+  re-graded from Low to Medium.
+- **Remediation options (not implemented):**
+  - **(a) Keep the code.** Record the variant explicitly in D-093 and have a
+    qualified reviewer confirm the adapted reduction above. No code
+    change.
+  - **(b) Match the paper exactly.** In `encrypt_file`/`decrypt_file`, pass
+    the AAD to the first STREAM call and `&[]` to every later call. Theorem
+    2 then applies directly under the encoding of §13.5. Cost: a small
+    change in `engine/media.rs`; new golden vectors and tests (an empty AD on
+    segment ≥ 2 decrypts, the AAD on segment ≥ 2 fails); a format change
+    (no deployed data exists yet). A new focused review of the change.
+    Every application binding (conversation, media ID, sender, class,
+    length, header) still covers the whole object through segment 1 and the
+    unique stream (fresh key and N), exactly as in the paper.
+  - **Replacement of the primitive: not indicated.** The STREAM
+    implementation matches the paper's encoding and state machine; the gap
+    is the caller's AD schedule.
+- **Engineering preference: (b).** It turns "a variant argued secure" into
+  "the published construction". That is the "prefer the established
+  construction" rule. It is the human decision-maker's call.
+
+### 13.7 Assumptions, split by who provides what
+
+**A. Provided by STREAM itself** (Theorem 2, for the paper's AD schedule;
+under the variant, see §13.6). These hold if Π is nAE-secure, ⟨·⟩ is
+injective, no stream nonce N repeats under a key, and i ≤ max:
+- confidentiality of all segments;
+- integrity of each segment **at its position** (index in the nonce), so
+  **reordering and duplication** are detected by the construction;
+- **truncation**: a stream is accepted as complete only if its final
+  segment verifies with d = 1. A dropped tail fails because the new last
+  segment was sealed with d = 0. This depends on the receiver calling
+  `D.last` on what it believes is the final segment; the construction
+  supplies the flag, not the knowledge of where the end is;
+- the q/2^τ forgery term (τ = 128).
+
+**B. Provided by Sirf Hum's surrounding protocol (not by STREAM):**
+- **nonce-uniqueness requirement met** by one stream per fresh random key
+  (STREAM only requires it);
+- **where the end is:** the number of segments comes from the authenticated
+  plaintext length in the MLS-signed `media_ref`, so the receiver knows when
+  to apply `decrypt_last`, and rejects extra or missing bytes by size;
+- **object identity and context:** conversation, media ID, sender device,
+  class, length and header in the AAD (D-093/D-094);
+- **ciphertext fixed by the sender:** the authenticated SHA-256 object
+  digest;
+- **key confidentiality and authenticity of the key's origin:** MLS
+  transport;
+- **fail-fast:** aborting on the first segment failure (the paper's
+  `(⊥, ⊥)`).
+
+**64 MiB limit:** keeps i ≤ 1,024 ≪ max = 2³². It also keeps the per-segment
+ChaCha20 block counter far below its limit. It changes no construction
+assumption.
+
+### 13.8 Documentation check
+
+Wording was checked in this document and in
+`E2EE-MEDIA-AND-NOTIFICATIONS.md` §2 against the evidence:
+- no claim of an `aead::stream` audit;
+- no claim that libsodium's audit covered `secretstream`;
+- no claim that SHA-256 gives key commitment.
+
+Paper-equivalence wording that the evidence does not support (that the
+media construction *is* the paper's STREAM, with the paper's properties)
+was qualified in that brief and in the D-093 decision record to name the
+AD-schedule deviation. Nothing was strengthened.
+
+### 13.9 F4 verdict
+
+**F4 NOT VERIFIED — HUMAN SIGN-OFF SHOULD REMAIN BLOCKED** until (a) or (b)
+of §13.6 is done:
+- **Established:** the primary source, and an exact mapping of the
+  encoding, indices, flag, state machine, finalisation, tags, limits and
+  the XChaCha subkey behaviour.
+- **Not established:** that Theorem 2 covers Sirf Hum's every-segment-AAD
+  schedule.
+- **Missing evidence, realistically obtainable:** (a) a qualified review of
+  the half-page adapted reduction in §13.6, or (b) the small code change
+  that makes the paper's theorem apply verbatim.
+
+D-093 status is unchanged: **PROPOSED — PENDING HUMAN SECURITY REVIEW**.
+
