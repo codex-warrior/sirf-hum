@@ -147,6 +147,35 @@ fn proof_does_not_verify_for_another_account_challenge_or_certificate() {
 }
 
 #[test]
+fn proof_purposes_are_separate_signed_domains() {
+    // A push-token proof (Prompt 11, D-098) is useless as an activation or
+    // enrollment proof for the same challenge, and vice versa.
+    let alice = Device::new("account-alice");
+    let challenge = [9u8; CHALLENGE_LEN];
+    let p = crypto();
+    let purposes = [
+        ProofPurpose::Activation,
+        ProofPurpose::Enrollment,
+        ProofPurpose::PushToken,
+    ];
+    for made in purposes {
+        let proof = alice.core.device_proof(made, &challenge).unwrap();
+        for checked in purposes {
+            let ok = verify_device_proof(
+                p.crypto(),
+                checked,
+                &account("account-alice"),
+                &alice.public.certificate,
+                &challenge,
+                &proof,
+            )
+            .is_ok();
+            assert_eq!(ok, made == checked, "{made:?} verified as {checked:?}");
+        }
+    }
+}
+
+#[test]
 fn altered_certificate_is_rejected_before_the_proof() {
     let alice = Device::new("account-alice");
     let challenge = [3u8; CHALLENGE_LEN];
@@ -189,10 +218,12 @@ fn challenge_must_be_exactly_32_bytes() {
         ProofPurpose::from_u32(0).unwrap_err(),
         CoreError::InvalidInput
     );
-    // Prompt 08 added purpose 2 (enrollment); anything else stays invalid.
+    // Prompt 08 added purpose 2 (enrollment), Prompt 11 purpose 3 (push
+    // token, D-098); anything else stays invalid.
     assert_eq!(ProofPurpose::from_u32(2).unwrap(), ProofPurpose::Enrollment);
+    assert_eq!(ProofPurpose::from_u32(3).unwrap(), ProofPurpose::PushToken);
     assert_eq!(
-        ProofPurpose::from_u32(3).unwrap_err(),
+        ProofPurpose::from_u32(4).unwrap_err(),
         CoreError::InvalidInput
     );
 }

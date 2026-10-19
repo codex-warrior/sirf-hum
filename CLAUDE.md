@@ -20,6 +20,7 @@ the task — they replace restating the spec in prompts:
 | Device identity, registration, platform key store | `docs/security/DEVICE-IDENTITY.md` (hierarchy, lifecycle, schema, proof of possession, threats) |
 | Multi-device trust, revocation, recovery, identity reset, lineage | `docs/security/MULTI-DEVICE-TRUST.md` (state machine, transition matrix, signed statements, D-074–D-084) |
 | Messaging (conversations, MLS commits, envelopes, local history, trust unit) | `docs/security/E2EE-MESSAGING-DESIGN.md` (D-085–D-091) |
+| Encrypted media, Storage, push notifications, FCM tokens | `docs/security/E2EE-MEDIA-AND-NOTIFICATIONS.md` (D-093–D-099); D-093 investigation: `docs/security/D-093-SECURITY-REVIEW.md` |
 | Experiments | `prototypes/` is isolated and never imported by the app (D-052) |
 | Analytics | `docs/security/ANALYTICS-POLICY.md` |
 | Tests | `docs/testing/TESTING-STRATEGY.md` |

@@ -223,6 +223,10 @@ pub enum ProofPurpose {
     /// A new device proving possession while it waits for approval by a
     /// trusted device or the recovery key (Prompt 08, D-075).
     Enrollment = 2,
+    /// An active device registering (or clearing) its own push token
+    /// (Prompt 11, D-098). The server binds the challenge to the token's
+    /// hash, so a proof for one token cannot register another.
+    PushToken = 3,
 }
 
 impl ProofPurpose {
@@ -230,6 +234,7 @@ impl ProofPurpose {
         match value {
             1 => Ok(ProofPurpose::Activation),
             2 => Ok(ProofPurpose::Enrollment),
+            3 => Ok(ProofPurpose::PushToken),
             _ => Err(CoreError::InvalidInput),
         }
     }

@@ -4,6 +4,7 @@ import 'package:sirf_hum/core/logging/app_logger.dart';
 import 'package:sirf_hum/core/logging/log_value.dart';
 import 'package:sirf_hum/security/device/device_registration.dart';
 import 'package:sirf_hum/security/device/device_status.dart';
+import 'package:sirf_hum/security/media/media_storage.dart';
 import 'package:sirf_hum/security/messaging/conversation_transport.dart';
 import 'package:sirf_hum/security/messaging/message_envelope.dart';
 import 'package:sirf_hum/security/messaging/text_payload.dart';
@@ -67,6 +68,7 @@ class ChatMessage {
     required this.state,
     required this.sortTimeMs,
     required this.text,
+    this.media,
   });
 
   final String messageIdHex;
@@ -78,8 +80,12 @@ class ChatMessage {
   final int sortTimeMs;
 
   /// Null when the payload is a kind or version this build cannot show
-  /// ("Update Sirf Hum to see this"). Never invented text.
+  /// ("Update Sirf Hum to see this"), or for media. Never invented text.
   final String? text;
+
+  /// For a media message: its key-free reference (D-094). Open it with
+  /// [MessagingService.openMedia].
+  final MediaRefView? media;
 
   @override
   String toString() => 'ChatMessage(${state.name}, <redacted>)';
@@ -122,8 +128,10 @@ class SyncReport {
 ///   history; [flushOutbox] uploads them, re-encrypting the same message ID
 ///   after a stale-epoch refusal.
 ///
-/// Plaintext exists in Dart only in [sendText]'s argument and in
-/// [messages]' results (D-090: never written by Dart, never logged).
+/// Plaintext exists in Dart only in [sendText]'s argument, in [messages]'
+/// results and in [openMedia]'s result (D-090, D-096: never written by
+/// Dart, never logged). Media plaintext never touches disk: [sendMedia]
+/// reads the caller's file inside the core, and the cache holds ciphertext.
 class MessagingService {
   MessagingService({
     required this.core,
@@ -131,9 +139,11 @@ class MessagingService {
     required this.conversation,
     required ConversationTransport transport,
     required DeviceRegistry registry,
+    MediaSupport? media,
     int Function()? clock,
   }) : _transport = transport,
        _registry = registry,
+       _media = media,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   /// Outgoing messages allowed to wait for upload.
@@ -150,6 +160,7 @@ class MessagingService {
   final ConversationId conversation;
   final ConversationTransport _transport;
   final DeviceRegistry _registry;
+  final MediaSupport? _media;
   final int Function() _clock;
 
   GroupId get _group => GroupId(conversation.bytes);
@@ -368,16 +379,7 @@ class MessagingService {
     final payload = TextPayload(text: text, clientTimeMs: _clock()).encode();
     try {
       await _requireActive();
-      if (!_hasGroup) {
-        throw const MessagingException(MessagingFailure.notJoined);
-      }
-      final queued = core
-          .history(conversation)
-          .where((m) => m.state == MessageState.queued)
-          .length;
-      if (queued >= maxOutbox) {
-        throw const MessagingException(MessagingFailure.outboxFull);
-      }
+      _requireRoomToSend();
       final SentMessage sent;
       try {
         sent = core.sendMessage(conversation, payload);
@@ -405,6 +407,20 @@ class MessagingService {
           ..sort((a, b) => a.createdAtMs.compareTo(b.createdAtMs));
     var sent = 0;
     for (final m in queued) {
+      if (MediaRefView.isMedia(m.payload)) {
+        // The object goes first: a reference must never reach the
+        // recipients before its object (D-095).
+        final view = MediaRefView.decode(m.payload);
+        try {
+          if (!await _ensureObjectUploaded(view)) break;
+        } on MediaException catch (e) {
+          if (e.failure != MediaFailure.objectLost) rethrow;
+          // Undeliverable: drop it from the outbox ("couldn't be sent").
+          core.deleteLocalMessage(conversation, m.messageId);
+          _log('media_send_abandoned', 'object_lost');
+          continue;
+        }
+      }
       final SentMessage current;
       try {
         current = m.epoch == core.epoch(_group)
@@ -592,6 +608,7 @@ class MessagingService {
           state: m.state,
           sortTimeMs: m.serverTimeMs != 0 ? m.serverTimeMs : m.createdAtMs,
           text: _textOf(m.payload),
+          media: _mediaOf(m.payload),
         ),
     ];
     list.sort((a, b) {
@@ -602,11 +619,26 @@ class MessagingService {
   }
 
   /// "Delete for me": removes it from this device only (never from the
-  /// server or from any other device).
-  void deleteForMe(String messageIdHex) => core.deleteLocalMessage(
-    conversation,
-    MessageId(EncryptedMessageEnvelope.bytesOfHex(messageIdHex)),
-  );
+  /// server or from any other device). A media message's cached ciphertext
+  /// object goes with it.
+  void deleteForMe(String messageIdHex) {
+    final id = MessageId(EncryptedMessageEnvelope.bytesOfHex(messageIdHex));
+    final view = _mediaOf(_record(id)?.payload);
+    core.deleteLocalMessage(conversation, id);
+    final media = _media;
+    if (view != null && media != null) {
+      media.files.delete(_objectPath(media, view.mediaId));
+    }
+  }
+
+  static MediaRefView? _mediaOf(Uint8List? payload) {
+    if (payload == null || !MediaRefView.isMedia(payload)) return null;
+    try {
+      return MediaRefView.decode(payload);
+    } on CryptoException {
+      return null;
+    }
+  }
 
   static String? _textOf(Uint8List payload) {
     try {
@@ -616,7 +648,214 @@ class MessagingService {
     }
   }
 
+  // ---------------------------------------------------------------- media
+
+  /// Encrypts the file at [inputPath] inside the core (D-093, D-094): a new
+  /// ciphertext object in the account's media directory plus the queued
+  /// message carrying its key. Uploads the object, then the message.
+  /// Offline or interrupted: [SendOutcome.queued]; [flushOutbox] finishes.
+  /// The caller's file is only read; the app never copies plaintext.
+  Future<SendOutcome> sendMedia({
+    required String inputPath,
+    required MediaClass mediaClass,
+  }) async {
+    final media = _requireMedia();
+    await _requireActive();
+    _requireRoomToSend();
+    final SentMedia sent;
+    try {
+      sent = core.sendMedia(
+        conversation,
+        inputPath: inputPath,
+        mediaDirectory: media.directory,
+        mediaClass: mediaClass,
+      );
+    } on CryptoException catch (e) {
+      throw switch (e.code) {
+        CryptoErrorCode.invalidInput => const MediaException(
+          MediaFailure.invalidInput,
+        ),
+        CryptoErrorCode.inputTooLarge => const MediaException(
+          MediaFailure.tooLarge,
+        ),
+        _ => _sendFailure(e),
+      };
+    }
+    final view = _ownView(sent.message.messageId);
+    final SendOutcome outcome = await _ensureObjectUploaded(view)
+        ? await _upload(sent.message)
+        : SendOutcome.queued;
+    _log('media_sent', outcome.name);
+    return outcome;
+  }
+
+  /// Decrypts a media message's object for display: from the local
+  /// ciphertext cache, or downloaded (and size-checked) first. A cached
+  /// object that fails verification is deleted and downloaded once more;
+  /// a second failure is [MediaFailure.corrupted]. The result is private
+  /// content: render it, then wipe it ([wipeBytes]); never store it.
+  Future<Uint8List> openMedia(String messageIdHex) async {
+    final media = _requireMedia();
+    final id = MessageId(EncryptedMessageEnvelope.bytesOfHex(messageIdHex));
+    final view = _mediaOf(_record(id)?.payload);
+    if (view == null) throw const MediaException(MediaFailure.notMedia);
+    final path = _objectPath(media, view.mediaId);
+    var fresh = false;
+    if (!media.files.exists(path)) {
+      await _download(media, view, path);
+      fresh = true;
+    }
+    while (true) {
+      try {
+        final plaintext = core.openMedia(conversation, id, path);
+        _log('media_opened', fresh ? 'downloaded' : 'cached');
+        return plaintext;
+      } on CryptoException catch (e) {
+        if (e.code == CryptoErrorCode.invalidInput) {
+          // The cached file vanished underneath us.
+          throw const MediaException(MediaFailure.unavailable);
+        }
+        if (e.code != CryptoErrorCode.authenticationFailure) rethrow;
+        // Never keep an object that failed verification.
+        media.files.delete(path);
+        if (fresh) {
+          _log('media_opened', 'corrupted');
+          throw const MediaException(MediaFailure.corrupted);
+        }
+        await _download(media, view, path);
+        fresh = true;
+      }
+    }
+  }
+
+  /// Downloads the object to a temporary name and moves it into the cache
+  /// only when complete and exactly the authenticated size. Storage rules
+  /// cannot tell devices apart on reads, so this device refuses downloads
+  /// itself once it is no longer active (D-096).
+  Future<void> _download(
+    MediaSupport media,
+    MediaRefView view,
+    String path,
+  ) async {
+    await _requireActive();
+    final partial = '$path.part';
+    media.files.delete(partial);
+    MediaDownloadOutcome outcome;
+    try {
+      outcome = await media.storage.download(
+        conversationIdHex: _conversationHex,
+        mediaIdHex: EncryptedMessageEnvelope.hexOf(view.mediaId.bytes),
+        expectedSize: view.objectLength,
+        destinationPath: partial,
+      );
+    } on TransportException {
+      outcome = MediaDownloadOutcome.unavailable;
+    }
+    if (outcome == MediaDownloadOutcome.downloaded) {
+      media.files.rename(partial, path);
+      return;
+    }
+    media.files.delete(partial);
+    _log('media_download', outcome.name);
+    throw MediaException(
+      outcome == MediaDownloadOutcome.wrongSize
+          ? MediaFailure.corrupted
+          : MediaFailure.unavailable,
+    );
+  }
+
+  /// True once the object is on the server, uploaded now or by an earlier
+  /// attempt whose acknowledgement was lost (create-only: the retry is
+  /// refused, and the stored object is ours when its uploader and size
+  /// match). False: not reachable now. A refused upload that is not ours
+  /// is [MessagingFailure.rejected].
+  Future<bool> _ensureObjectUploaded(MediaRefView view) async {
+    final media = _requireMedia();
+    final mediaHex = EncryptedMessageEnvelope.hexOf(view.mediaId.bytes);
+    final path = _objectPath(media, view.mediaId);
+    if (!media.files.exists(path)) {
+      if (await _isOurObject(media, mediaHex, view.objectLength)) return true;
+      throw const MediaException(MediaFailure.objectLost);
+    }
+    final MediaUploadOutcome outcome;
+    try {
+      outcome = await media.storage.upload(
+        conversationIdHex: _conversationHex,
+        mediaIdHex: mediaHex,
+        senderDeviceIdHex: _ownHex,
+        filePath: path,
+      );
+    } on TransportException {
+      return false;
+    }
+    switch (outcome) {
+      case MediaUploadOutcome.uploaded:
+        return true;
+      case MediaUploadOutcome.unavailable:
+        return false;
+      case MediaUploadOutcome.refused:
+        if (await _isOurObject(media, mediaHex, view.objectLength)) {
+          return true;
+        }
+        throw const MessagingException(MessagingFailure.rejected);
+    }
+  }
+
+  Future<bool> _isOurObject(
+    MediaSupport media,
+    String mediaHex,
+    int objectLength,
+  ) async {
+    final StoredMediaObject? stored;
+    try {
+      stored = await media.storage.stat(
+        conversationIdHex: _conversationHex,
+        mediaIdHex: mediaHex,
+      );
+    } on TransportException {
+      return false;
+    }
+    return stored != null &&
+        stored.size == objectLength &&
+        stored.senderDeviceIdHex == _ownHex;
+  }
+
+  MediaRefView _ownView(MessageId id) {
+    final view = _mediaOf(_record(id)?.payload);
+    if (view == null) throw const MessagingException(MessagingFailure.rejected);
+    return view;
+  }
+
+  LocalMessage? _record(MessageId id) {
+    for (final m in core.history(conversation)) {
+      if (m.messageId == id) return m;
+    }
+    return null;
+  }
+
+  String _objectPath(MediaSupport media, MediaId id) =>
+      '${media.directory}/${mediaObjectFileName(conversation, id)}';
+
+  String get _conversationHex =>
+      EncryptedMessageEnvelope.hexOf(conversation.bytes);
+
+  MediaSupport _requireMedia() =>
+      _media ?? (throw const MediaException(MediaFailure.unsupported));
+
   // ----------------------------------------------------------------- shared
+
+  void _requireRoomToSend() {
+    if (!_hasGroup) {
+      throw const MessagingException(MessagingFailure.notJoined);
+    }
+    final queued = core
+        .history(conversation)
+        .where((m) => m.state == MessageState.queued)
+        .length;
+    if (queued >= maxOutbox) {
+      throw const MessagingException(MessagingFailure.outboxFull);
+    }
+  }
 
   bool get _hasGroup {
     try {

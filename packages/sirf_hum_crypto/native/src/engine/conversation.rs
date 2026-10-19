@@ -208,14 +208,14 @@ fn history_name(conversation: &[u8], message: &[u8]) -> String {
     format!("{HISTORY_PREFIX}{}_{}", hex(conversation), hex(message))
 }
 
-fn conversation_id(bytes: &[u8]) -> CoreResult<&[u8]> {
+pub(super) fn conversation_id(bytes: &[u8]) -> CoreResult<&[u8]> {
     if bytes.len() != CONVERSATION_ID_LEN {
         return Err(CoreError::InvalidInput);
     }
     Ok(bytes)
 }
 
-fn message_id(bytes: &[u8]) -> CoreResult<[u8; MESSAGE_ID_LEN]> {
+pub(super) fn message_id(bytes: &[u8]) -> CoreResult<[u8; MESSAGE_ID_LEN]> {
     bytes.try_into().map_err(|_| CoreError::InvalidInput)
 }
 
@@ -238,7 +238,7 @@ pub(crate) fn message_aad(
     out
 }
 
-fn now_ms() -> u64 {
+pub(super) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -552,7 +552,9 @@ impl CryptoCore {
         self.guard()?;
         self.identity()?;
         let cid = conversation_id(conversation)?.to_vec();
-        if payload.is_empty() {
+        // Media references (kind 2) carry keys and are built only by
+        // `send_media` (D-094): a caller-supplied one is refused.
+        if payload.is_empty() || super::media::claims_media(payload) {
             return Err(CoreError::InvalidInput);
         }
         limits::check(payload.len(), MAX_MESSAGE_PAYLOAD_BYTES)?;
@@ -580,7 +582,7 @@ impl CryptoCore {
         self.transact(|core| core.encrypt_into_history(&cid, mid, record.payload, created))
     }
 
-    fn encrypt_into_history(
+    pub(super) fn encrypt_into_history(
         &mut self,
         cid: &[u8],
         mid: [u8; MESSAGE_ID_LEN],
@@ -722,7 +724,12 @@ impl CryptoCore {
             if pt.is_empty() || pt.len() > MAX_MESSAGE_PAYLOAD_BYTES {
                 return Err(CoreError::ProtocolViolation);
             }
-            payload = Zeroizing::new(pt.to_vec());
+            // A media reference must decode strictly (D-094); Dart gets only
+            // its key-free view, the full reference is sealed.
+            if super::media::claims_media(pt) && super::media::MediaRef::decode(pt).is_err() {
+                return Err(CoreError::ProtocolViolation);
+            }
+            payload = super::media::public_payload(Zeroizing::new(pt.to_vec()))?;
             core.put_history(
                 &cid,
                 &LocalMessage {
@@ -754,7 +761,8 @@ impl CryptoCore {
     // ------------------------------------------------------------- history
 
     /// All local messages of the conversation, in record-name order (the
-    /// caller orders by time). Any unreadable record fails the whole call
+    /// caller orders by time). Media references appear as their key-free
+    /// view. Any unreadable record fails the whole call
     /// (`StateCorruption`): no partial or unauthenticated history.
     pub fn history(&self, conversation: &[u8]) -> CoreResult<Vec<LocalMessage>> {
         self.guard()?;
@@ -769,8 +777,12 @@ impl CryptoCore {
             .iter()
             .map(|name| {
                 let mid = decode_hex16(&name[prefix.len()..])?;
-                self.load_history(cid, &mid)?
-                    .ok_or(CoreError::StateCorruption)
+                let mut record = self
+                    .load_history(cid, &mid)?
+                    .ok_or(CoreError::StateCorruption)?;
+                // Media keys never leave Rust (D-094).
+                record.payload = super::media::public_payload(record.payload)?;
+                Ok(record)
             })
             .collect()
     }
@@ -793,7 +805,7 @@ impl CryptoCore {
         self.store.put(&name, &sealed)
     }
 
-    fn load_history(&self, cid: &[u8], mid: &[u8]) -> CoreResult<Option<LocalMessage>> {
+    pub(super) fn load_history(&self, cid: &[u8], mid: &[u8]) -> CoreResult<Option<LocalMessage>> {
         let name = history_name(cid, mid);
         match self.store.get(&name)? {
             None => Ok(None),

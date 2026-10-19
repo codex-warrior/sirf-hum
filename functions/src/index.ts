@@ -8,6 +8,8 @@
  * Functions are added in the phase that owns them. Device trust (Prompts
  * 07–08, docs/security/DEVICE-IDENTITY.md): registration, first-device
  * bootstrap, approval by a trusted device, recovery key, scheduled cleanup.
+ * Notifications (Prompt 11, docs/security/E2EE-MEDIA-AND-NOTIFICATIONS.md):
+ * signed push-token registration and content-free fan-out triggers.
  * Deploying needs the Blaze plan (D-025); until then they run only in the
  * emulator.
  */
@@ -24,6 +26,16 @@ import {
   REGION,
 } from './config/environment';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
+import { getMessaging } from 'firebase-admin/messaging';
+import {
+  onCommitCreated,
+  onDeviceStatusChanged,
+  onMessageCreated,
+  type PushSender,
+  type SendResult,
+} from './notification/fanout';
+import { registerPushToken as registerToken, requestPushTokenChallenge as requestTokenChallenge } from './notification/tokens';
 import { cleanupExpired } from './device/cleanup';
 import { DeviceError, type DeviceFailure } from './device/common';
 import { activateDevice as activate, issueDeviceChallenge as issueChallenge, registerDevice as register } from './device/registration';
@@ -77,6 +89,7 @@ const FAILURE_CODES: Record<DeviceFailure, FunctionsErrorCode> = {
   reset_unavailable: 'failed-precondition',
   reset_not_ready: 'failed-precondition',
   rate_limited: 'resource-exhausted',
+  device_not_active: 'failed-precondition',
 };
 
 /** Maps domain failures to callable errors carrying only the category. */
@@ -172,4 +185,67 @@ export const completeIdentityReset = callable('identity_reset_completed', (uid, 
 export const cleanupExpiredDeviceRecords = onSchedule({ schedule: 'every 24 hours', timeZone: 'Etc/UTC' }, async () => {
   const result = await cleanupExpired(getFirestore(), new Date());
   logger.info('device_cleanup', { ...result });
+});
+
+// ------------------------------------------------ notifications (Prompt 11)
+
+/** Signed push-token registration (D-098): the device key proves it. */
+export const requestPushTokenChallenge = callable('push_token_challenge_issued', (uid, data, now) =>
+  requestTokenChallenge(getFirestore(), uid, data, now),
+);
+
+export const registerPushToken = callable('push_token_registered', async (uid, data, now) => {
+  await registerToken(getFirestore(), uid, data, now);
+  return done;
+});
+
+/** FCM error codes only; never tokens or messages. */
+const UNREGISTERED = new Set(['messaging/registration-token-not-registered', 'messaging/invalid-registration-token']);
+
+const fcm: PushSender = async (messages) => {
+  const response = await getMessaging().sendEach(messages);
+  return response.responses.map((r): SendResult => {
+    if (r.success) return 'ok';
+    return UNREGISTERED.has(r.error?.code ?? '') ? 'unregistered' : 'failed';
+  });
+};
+
+// Firestore triggers (Eventarc: Blaze, D-025). Each reads ONLY routing
+// fields; the event snapshot also carries ciphertext, which is never read,
+// copied or logged. Logs are counts and a kind category.
+export const notifyOnMessage = onDocumentCreated('conversations/{conversationId}/messages/{messageId}', async (event) => {
+  const doc = event.data;
+  if (doc === undefined) return;
+  const result = await onMessageCreated(
+    getFirestore(),
+    fcm,
+    event.params.conversationId,
+    String(doc.get('senderAccountId')),
+    String(doc.get('senderDeviceId')),
+    new Date(),
+  );
+  logger.info('push_fanout', { ...result });
+});
+
+export const notifyOnCommit = onDocumentCreated('conversations/{conversationId}/commits/{epoch}', async (event) => {
+  const doc = event.data;
+  if (doc === undefined) return;
+  const result = await onCommitCreated(getFirestore(), fcm, event.params.conversationId, String(doc.get('senderDeviceId')), new Date());
+  logger.info('push_fanout', { ...result });
+});
+
+/** Revocation-aware: a device leaving `active` loses its token at once. */
+export const notifyOnDeviceStatus = onDocumentUpdated('users/{accountId}/devices/{deviceId}', async (event) => {
+  const change = event.data;
+  if (change === undefined) return;
+  const result = await onDeviceStatusChanged(
+    getFirestore(),
+    fcm,
+    event.params.accountId,
+    event.params.deviceId,
+    change.before.get('status'),
+    change.after.get('status'),
+    new Date(),
+  );
+  logger.info('push_fanout', { ...result });
 });

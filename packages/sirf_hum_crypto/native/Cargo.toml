@@ -23,8 +23,12 @@ openmls_rust_crypto = "=0.6.0"
 openmls_basic_credential = "=0.6.0"
 openmls_memory_storage = "=0.6.0"
 # AEAD for sealing local state at rest (XChaCha20-Poly1305). Same version
-# openmls_rust_crypto 0.6.0 already depends on.
-chacha20poly1305 = { version = "=0.10.1", default-features = false, features = ["alloc", "getrandom"] }
+# openmls_rust_crypto 0.6.0 already depends on. `stream` (Prompt 11, D-093)
+# enables aead 0.5.2's STREAM construction for media objects: no new crate.
+chacha20poly1305 = { version = "=0.10.1", default-features = false, features = ["alloc", "getrandom", "stream"] }
+# SHA-256 commitment to media ciphertext objects (D-093). The same version
+# openmls_rust_crypto 0.6.0 already compiles.
+sha2 = { version = "=0.10.9", default-features = false }
 zeroize = { version = "=1.9.1", features = ["alloc"] }
 # Only to derive a recovery key's public half from its seed (D-076). Same
 # version openmls_rust_crypto 0.6.0 already compiles; signing stays on the

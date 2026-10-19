@@ -21,6 +21,12 @@ dependencies:
   # the challenge/activation callables. Imported only by lib/infrastructure.
   cloud_firestore: ^6.10.0
   cloud_functions: ^6.5.0
+  # Encrypted media objects (Prompt 11, D-095): ciphertext uploads and
+  # downloads only. Imported only by lib/infrastructure.
+  firebase_storage: ^13.6.0
+  # Content-free push wake-ups (Prompt 11, D-097, D-098): the device's FCM
+  # token and incoming signals. Imported only by lib/infrastructure.
+  firebase_messaging: ^16.7.0
   # Crypto core (Rust + OpenMLS 0.9.1, D-063). Builds via its native-assets
   # hook, so Android/iOS builds need the Rust toolchain (rustup).
   sirf_hum_crypto:

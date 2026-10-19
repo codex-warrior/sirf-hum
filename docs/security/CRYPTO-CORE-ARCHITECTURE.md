@@ -11,9 +11,13 @@ E2EE yet.**
   ([E2EE-MESSAGING-DESIGN](E2EE-MESSAGING-DESIGN.md)). It is used by the
   development messaging service only; there is no chat UI and no user
   content.
+- Prompt 11 added encrypted media (ABI v6): STREAM over XChaCha20-Poly1305
+  objects whose keys never leave the core, and the `push_token` proof
+  purpose ([E2EE-MEDIA-AND-NOTIFICATIONS](E2EE-MEDIA-AND-NOTIFICATIONS.md),
+  D-093–D-098).
 
 Code lives in `packages/sirf_hum_crypto/`. Decisions: D-054–D-068 and
-D-085–D-091 in the [Decision Log](../decisions/DECISION-LOG.md).
+D-085–D-091, D-093–D-098 in the [Decision Log](../decisions/DECISION-LOG.md).
 
 ## Layers
 
@@ -24,6 +28,7 @@ Flutter app (lib/security/crypto/private_content_crypto.dart)
           └─ Rust core  native/src/engine.rs               credential policy, limits, checkpoints
               ├─ OpenMLS 0.9.1 + openmls_rust_crypto 0.6.0 (D-054)
               ├─ sealed records  native/src/record.rs      XChaCha20-Poly1305 (RustCrypto)
+              ├─ media objects   native/src/engine/media.rs STREAM (aead 0.5.2) + XChaCha20-Poly1305, SHA-256 (D-093)
               ├─ CryptoStore     native/src/store.rs       atomic file replace
               └─ KEK provider    native/src/keystore.rs    test adapters only
 ```
@@ -48,7 +53,7 @@ The wrapper's own code is policy:
 | --- | --- | --- |
 | **Trust** | Device-local: plaintext and keys exist only inside the app process on the device. The server, network, Firebase and Web are outside. | Architecture; no network code in the core |
 | **Rust** | Owns all MLS state, private keys, epoch secrets and serialized state. Secrets are `Zeroizing` and wiped on drop, rollback and wipe. | `engine.rs` |
-| **Dart** | Sees an opaque handle, public identifiers, MLS wire messages, error codes, decrypted application content from `processIncoming`, and (Prompt 08) a new recovery key's text exactly once for display, plus a user-typed recovery key going in. Never sees keys, OpenMLS objects or state bytes. | `ffi.rs` surface (no export function exists); `core_ffi.dart` |
+| **Dart** | Sees an opaque handle, public identifiers, MLS wire messages, error codes, decrypted application content from `processIncoming`, and (Prompt 08) a new recovery key's text exactly once for display, plus a user-typed recovery key going in. Since Prompt 11: file paths in, ciphertext objects out, decrypted media for display (`open_media`), and media references only as a 43-byte key-free view. Never sees keys (media keys included), OpenMLS objects or state bytes. | `ffi.rs` surface (no export function exists); `core_ffi.dart` |
 | **Identity** | Distinct types for each kind of identity material (table below). | `identity.rs`, `types.dart` |
 | **Storage** | Local only, app-private directory. Every record is sealed. Never written to Firestore or any server. | `store.rs`, `record.rs`; no Firebase dependency in the package |
 | **Secure storage** | The store key (Rust: KEK) comes from a `KeyEncryptionKeyProvider`. The platform adapter supplies a per-account key (Android Keystore-wrapped / iOS `ThisDeviceOnly` Keychain) via `sh_crypto_open_with_platform_key` (D-066, [DEVICE-IDENTITY](DEVICE-IDENTITY.md)). Test adapters are refused in release builds. | `keystore.rs` (`PlatformProvidedKey`); `lib/platform/secure_key_store.dart` |
@@ -177,13 +182,15 @@ checkpoint (copy of storage map + group IDs + trust)  ─►  operation  ─► 
 | Message ciphertext (receive) | 32 KiB |
 | History record | 64 KiB |
 | Key packages per commit | 15 |
+| Media plaintext (Prompt 11) | 64 MiB |
+| Media object | 67,125,273 B (64 MiB + header + tags) |
 
 All limits are defined in `limits.rs` and tested at the boundary and one
 byte over it.
 
 **Versioning** (D-061): the record format, identity and state schema
 versions, ciphersuite `0x0001` and `IMPLEMENTATION = "openmls/0.9.1"` are
-explicit. `ABI_VERSION` (currently 5: platform store key, account check and device proof in Prompt 07; device approval, comparison code and recovery key in Prompt 08; signed revocation, reset cancellation, trust epoch and lineage verification in Prompt 09, [MULTI-DEVICE-TRUST](MULTI-DEVICE-TRUST.md); device-pinned lineage trust, staged commits, authenticated messages and sealed history in Prompt 10, [E2EE-MESSAGING-DESIGN](E2EE-MESSAGING-DESIGN.md), with every v4 function unchanged) is checked by Dart; a mismatch means
+explicit. `ABI_VERSION` (currently 6; Prompt 11 added `send_media`, `open_media`, key-free media views and proof purpose 3, with every v5 function unchanged; before that 5: platform store key, account check and device proof in Prompt 07; device approval, comparison code and recovery key in Prompt 08; signed revocation, reset cancellation, trust epoch and lineage verification in Prompt 09, [MULTI-DEVICE-TRUST](MULTI-DEVICE-TRUST.md); device-pinned lineage trust, staged commits, authenticated messages and sealed history in Prompt 10, [E2EE-MESSAGING-DESIGN](E2EE-MESSAGING-DESIGN.md), with every v4 function unchanged) is checked by Dart; a mismatch means
 `isAvailable == false`.
 
 ## Platform integration (D-063)
@@ -262,6 +269,8 @@ Everything in this package has had no independent review:
 - the device-pinned trust policy and lineage application (D-085);
 - staged commits, the message AAD and the history record format (D-087,
   D-089, D-090);
+- the media object format, media AAD, `media_ref` payload and the use of
+  RustCrypto `aead::stream` (D-093, D-094);
 - the record format;
 - the FFI;
 - checkpoint/rollback;
@@ -282,6 +291,7 @@ made from this foundation.**
 | Real app on device | `integration_test/crypto_core_test.dart`, `integration_test/messaging_test.dart` (platform key store) | CI Android emulator (iOS not run, D-092) |
 | Trust unit (D-085), adversarial: forged and re-minted certificates, revoked PIKs, pins, stale lineage, v1 state migration | `native/src/engine/trust_tests.rs` | CI `crypto-core` |
 | Messaging core (ABI v5): staged commits, first-commit-wins, AAD binding, replay, ordering, epochs, multi-device, revocation, sealed history, limits, baseline | `native/tests/messaging.rs`, `engine/conversation.rs` golden vectors, `test/messaging_native_test.dart`, `test/messaging_types_test.dart` | CI `crypto-core` |
+| Media core (ABI v6): round trips, tampering, bindings, STREAM layer alone, replay, limits, revocation, no plaintext at rest, baseline | `native/tests/media.rs`, `engine/media.rs` unit tests and golden vectors, `test/media_native_test.dart`, `test/media_types_test.dart` | CI `crypto-core` |
 | Packaging | `.so` per ABI in the APK | CI Android builds (iOS not built, D-092) |
 | Regression (Prompt 05) | `prototypes/mls-decision-gate` | `prototypes.yml` |
 

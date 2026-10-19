@@ -40,6 +40,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Push tokens (Prompt 11, D-098): server-only. Written by the signed
+    // registerPushToken callable, read by the notification fan-out. No
+    // client (owner, partner or anyone else) ever reads or writes a token.
+    match /pushTokens/{deviceId} {
+      allow read, write: if false;
+    }
+
     // ---------------------------------------------------------------------
     // Private messaging (Prompt 10, docs/security/E2EE-MESSAGING-DESIGN.md).
     //

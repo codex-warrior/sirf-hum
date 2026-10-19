@@ -1742,6 +1742,7 @@ dependencies = [
  "openmls_memory_storage",
  "openmls_rust_crypto",
  "openmls_traits",
+ "sha2 0.10.9",
  "tempfile",
  "zeroize",
 ]

@@ -146,8 +146,48 @@ native core loaded) and must match CI.
 | Device | `integration_test/messaging_test.dart` (1) | Platform key store slots for two accounts, staged group, AAD binding, sealed history across reopen, timing baseline | CI Android emulator |
 
 **Not covered yet:** Firestore round-trip latency and real deployment
-(Blaze BLOCKED); notification payloads (Prompt 11); fuzzing of the new
-decoders; more than two Welcomes in one rules batch.
+(Blaze BLOCKED); fuzzing of the new decoders; more than two Welcomes in one
+rules batch.
+
+## Encrypted media and notification tests (exist; Prompt 11)
+
+Design: [E2EE-MEDIA-AND-NOTIFICATIONS](../security/E2EE-MEDIA-AND-NOTIFICATIONS.md)
+(threats E35–E46). iOS is not run (D-092). Counts are from the local run on
+2026-10-19: Windows host, GNU toolchain. Native Dart tests were run through
+a local-only build-hook patch that is not committed; CI runs them on Linux.
+
+| Layer | Where | Covers | Runs |
+| --- | --- | --- | --- |
+| Media core, STREAM layer alone | `native/src/engine/media.rs` (11) | AAD, view and object-name golden vectors; exact sizes; strict `media_ref` decode (version, kind, class, lengths, empty, over limit, trailing bytes); with the hash **bypassed**: wrong key, AAD version, schema, conversation, media ID, sender (re-attribution), class, length; chunk swap, repeat, truncation at a chunk boundary (last-block flag), nonce-prefix change; atomic write ; **STREAM AD schedule** (F4 correction): media AAD on chunk 0 only, ε on later chunks, checked chunk by chunk with a plain XChaCha20-Poly1305; old every-chunk schedule rejected; tampered first or later chunk; final flag; golden object digests (regression pins) | CI `crypto-core` |
+| Media core (ABI v6) | `native/tests/media.rs` (18 + 1 ignored baseline) | Round trip at every chunk boundary; all classes; fresh key and prefix per object; receiver and history see the key-free view only; Dart cannot send kind 2; any modified, truncated, extended, header-only, empty or chunk-swapped object fails closed and the genuine one still opens; object substitution; conversation binding; text and unknown IDs are not media; missing object; replay; another account; restart and stale-epoch re-encryption; **no plaintext on disk** (object, state, history); revoked sender (old media stays, new refused); revoked recipient (send refused while in roster, no orphan object, no key after removal, old media stays); limits (empty, missing, directory, 64 MiB + 1, unwritable directory, unknown group, staged commit) with nothing left behind; persistence failure removes the object; redacted Debug | CI `crypto-core` |
+| Proof purposes | `native/tests/device_identity.rs` (+1, 1 updated) | `push_token` (3) is its own signed domain; purpose 4 invalid | CI `crypto-core` |
+| Dart bindings | `test/media_types_test.dart` (7), `test/media_native_test.dart` (4) | View golden vector and strict decode (a full reference with key is refused as a view); object names equal to Rust; limits; wire values; redaction; Web stub fails closed; v6 calls through the real library (round trip, tampering, forged reference refused, empty input) | CI `crypto-core` (native), everywhere (types) |
+| Media service | `test/security/media/media_service_test.dart` (12) | Real cores and enrollment, rules-faithful fake object store: server sees ciphertext only and no plaintext on either device's disk; interrupted and offline uploads queue with **object before message**; lost upload ack (exactly one object); foreign object squatting at our path → `rejected`; substituted, modified and truncated objects → `corrupted`; corrupted cache re-downloaded once; interrupted download leaves nothing; deleted or missing object → `unavailable`; text and unknown messages are not media; input limits; lost outbox object abandoned; delete-for-me removes the cache; revoked device (no sends, no downloads, cache stays); no media support fails closed; logs carry categories only | CI `flutter` |
+| Push client | `test/security/notifications/push_tokens_test.dart` (9) | Strict content-free signal parsing; fresh `push_token` proof per challenge; no token → nothing; rotation; logout (signed clear, then delete at FCM, also when offline); untrusted device; logs carry neither token nor device ID | CI `flutter` |
+| Storage rules | `firebase/tests/storage/media_storage.test.js` (11, runs after the parallel files: cross-service reads need the emulators' own project) | Member active device creates; create-only (no overwrite, no metadata change); outsiders, anonymous, another account's device, cross-conversation; revoked, pending and unknown devices; closed conversation; fixed content type and metadata (no filename or caption); empty and non-opaque paths; members read, outsiders and anonymous do not; no list or delete; everything else denied | CI `security-rules` |
+| Push tokens rules | `firebase/tests/push_tokens.test.js` (4) | Owner, partner, outsider, anonymous: no read, list, create, update or delete | CI `security-rules` |
+| Push payloads and guards | `functions/test/notification.test.mjs` (8) | Exact message and sync payloads; no identifiers, topics or other platforms; token hash binding; token validation; purpose separation; static guard: notification modules never log or read documents whole; triggers read only `senderAccountId`, `senderDeviceId`, `status` and log counts only | CI `functions` |
+| Push flows | `functions/test/emulator/notification.test.mjs` (14) | Register, rotate, clear; a password alone cannot register (other key, other purpose); challenge bound to token, single use, one account; pending, revoked, expired, rejected and unknown devices refused; revoked between challenge and registration; one token, one device; fan-out targets (partner `m`, own devices `s`, sender none); revoked, pending and stale devices never targeted; unregistered and stale tokens removed; token claiming another account ignored; commit sync; revocation deletes the token and wakes both accounts; identity reset; other status changes; empty conversation | CI `functions` |
+| Device | `integration_test/media_test.dart` (1) | Platform key store slots, object in the slot's media directory, round trip, tampering, reopen, `media_baseline` (1, 8, 32 MiB) | CI Android emulator |
+
+**Performance baseline (host):** Windows dev host, x86_64-pc-windows-gnu
+release build, `cargo test --release --test media -- --ignored --nocapture`.
+
+| Object | Encrypt + hash + seal message | Hash + decrypt (memory) | Object size |
+| --- | --- | --- | --- |
+| 1 MiB | 33 ms (30 MiB/s; dominated by the fsynced MLS-state and history writes) | 7 ms (138 MiB/s) | 1,048,857 B |
+| 16 MiB | 146 ms (109 MiB/s) | 49 ms (323 MiB/s) | 16,781,337 B |
+| 64 MiB | 588 ms (109 MiB/s) | 194 ms (330 MiB/s) | 67,125,273 B |
+
+- **Android:** the `media_baseline` line in the CI emulator log (x86_64
+  emulator, not a phone). It is recorded in the PR report, not asserted.
+- **Memory:** encryption streams (O(64 KiB)). Decryption is O(plaintext),
+  with an exact-capacity buffer that is never reallocated.
+- **Failure behaviour:** covered by the tests above.
+
+**Not covered yet:** a real FCM delivery and real Storage
+(Blaze BLOCKED); OEM background-delivery behaviour; physical-device
+throughput; objects over 64 MiB (refused by design).
 
 ## Decision-gate tests (exist; experimental; regression suite)
 

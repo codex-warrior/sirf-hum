@@ -1,8 +1,9 @@
 //! Input size limits (Prompt 06 Part 6, D-059). Enforced at the API boundary
 //! *before* any parsing or allocation proportional to attacker input.
 //!
-//! These bound MLS protocol payloads only. Media never goes through MLS
-//! (encrypted-object architecture, E2EE-ARCHITECTURE §7).
+//! Most bound MLS protocol payloads. Media objects never go through MLS
+//! (only their key does, in a `media_ref` message); their limits are at the
+//! end (Prompt 11, D-093).
 
 /// Largest plaintext accepted by `encrypt` (text-sized application data).
 pub const MAX_PLAINTEXT_BYTES: usize = 64 * 1024;
@@ -51,6 +52,14 @@ pub const MAX_HISTORY_RECORD_BYTES: usize = 64 * 1024;
 
 /// Most history records returned or kept per conversation listing.
 pub const MAX_HISTORY_RECORDS: usize = 10_000;
+
+/// Largest media plaintext (Prompt 11, D-093). Decryption returns memory,
+/// so this also bounds what one `open_media` call allocates.
+pub const MAX_MEDIA_PLAINTEXT_BYTES: usize = 64 * 1024 * 1024;
+
+/// Largest media ciphertext object: header (25) + plaintext + one 16-byte
+/// tag per 64 KiB chunk. Matches the Storage rule.
+pub const MAX_MEDIA_CIPHERTEXT_BYTES: usize = 25 + MAX_MEDIA_PLAINTEXT_BYTES + 16 * 1024;
 
 /// Key packages added by one commit (≤ group size).
 pub const MAX_KEY_PACKAGES_PER_COMMIT: usize = MAX_GROUP_MEMBERS - 1;

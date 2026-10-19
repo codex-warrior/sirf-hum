@@ -161,6 +161,6 @@ void main() {
       ),
       _fails(CryptoErrorCode.unsupported),
     );
-    expect(web.expectedAbiVersion, 5);
+    expect(web.expectedAbiVersion, 6);
   });
 }

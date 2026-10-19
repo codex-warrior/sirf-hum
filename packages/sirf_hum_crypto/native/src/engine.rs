@@ -34,10 +34,15 @@ use crate::trust::{TrustPolicy, TrustSource};
 use crate::{CoreError, CoreResult};
 
 mod conversation;
+mod media;
 #[cfg(test)]
 mod trust_tests;
 pub use conversation::{
     LocalMessage, MessageDirection, MessageState, Received, Sent, StagedCommit,
+};
+pub use media::{
+    media_ciphertext_len, media_object_file_name, MediaClass, SentMedia, MEDIA_CHUNK_BYTES,
+    MEDIA_HEADER_LEN, MEDIA_ID_LEN, MEDIA_REF_LEN, MEDIA_VIEW_LEN,
 };
 
 /// RFC 9420 ciphersuite 0x0001 (D-042). Fixed per group; changes go through

@@ -20,6 +20,8 @@
 //!   created recovery key's text (`sh_crypto_create_recovery_key`, once, by
 //!   explicit user action, D-076). A recovery key typed by the user comes in
 //!   through `sh_crypto_recovery_approval` and is wiped after signing.
+//!   Decrypted media (`sh_crypto_open_media`, Prompt 11) leaves for display
+//!   too; media keys never do (D-094).
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
@@ -33,7 +35,7 @@ use crate::keystore::{
     EphemeralTestKeyStore, InsecureFileTestKeyStore, KeyEncryptionKeyProvider, PlatformProvidedKey,
 };
 use crate::store::FileStore;
-use crate::{CoreError, CryptoCore, Incoming};
+use crate::{CoreError, CryptoCore, Incoming, MediaClass};
 
 /// Bumped on any incompatible ABI change; Dart refuses mismatches.
 /// v2 (Prompt 07): platform store key, account check, device proof.
@@ -42,7 +44,10 @@ use crate::{CoreError, CryptoCore, Incoming};
 /// peer-side lineage verification.
 /// v5 (Prompt 10): device-pinned lineage trust, staged commits, messages with
 /// authenticated routing, sealed local history. v4 functions are unchanged.
-pub const ABI_VERSION: u32 = 5;
+/// v6 (Prompt 11): encrypted media objects (`send_media`, `open_media`),
+/// key-free media views in received messages and history, device proof
+/// purpose `push_token`. v5 functions are unchanged.
+pub const ABI_VERSION: u32 = 6;
 
 pub const KEYSTORE_EPHEMERAL_TEST: u32 = 1;
 pub const KEYSTORE_INSECURE_FILE_TEST: u32 = 2;
@@ -1179,5 +1184,94 @@ pub unsafe extern "C" fn sh_crypto_delete_local_message(
         let cid = slice(conversation, conversation_len)?;
         let mid = slice(message, message_len)?;
         with_core(h, |c| c.delete_local_message(cid, mid))
+    })
+}
+
+// ------------------------------------------------------------------ ABI v6
+//
+// Prompt 11 encrypted media (docs/security/E2EE-MEDIA-AND-NOTIFICATIONS.md,
+// D-093–D-096). Dart passes file paths and gets the ciphertext object, the
+// MLS message carrying the key and, from `open_media`, plaintext for
+// display. Media keys never cross this boundary.
+
+/// # Safety
+/// `ptr[..len]` must be readable (or null with `len == 0`).
+unsafe fn path_arg(ptr: *const u8, len: usize) -> Result<PathBuf, CoreError> {
+    open_dir(ptr, len)
+}
+
+/// Encrypts the plaintext file at `input` into a new ciphertext object in
+/// the directory `media_dir` (file name `<conversation hex>_<media hex>.shm`)
+/// and queues the MLS message delivering its key. Outputs: the message (as
+/// `sh_crypto_send_message`), the 16-byte media ID and the object's length.
+///
+/// # Safety
+/// Valid handle; readable inputs; writable outputs.
+#[no_mangle]
+pub unsafe extern "C" fn sh_crypto_send_media(
+    h: *const ShCore,
+    conversation: *const u8,
+    conversation_len: usize,
+    input: *const u8,
+    input_len: usize,
+    media_dir: *const u8,
+    media_dir_len: usize,
+    class: u32,
+    out_message_id: *mut ShBuf,
+    out_epoch: *mut u64,
+    out_ciphertext: *mut ShBuf,
+    out_media_id: *mut ShBuf,
+    out_object_len: *mut u64,
+) -> i32 {
+    guarded(|| {
+        if out_message_id.is_null()
+            || out_epoch.is_null()
+            || out_ciphertext.is_null()
+            || out_media_id.is_null()
+            || out_object_len.is_null()
+        {
+            return Err(CoreError::InvalidInput);
+        }
+        let cid = slice(conversation, conversation_len)?;
+        let input = path_arg(input, input_len)?;
+        let media_dir = path_arg(media_dir, media_dir_len)?;
+        let class = MediaClass::from_u32(class)?;
+        let media = with_core(h, |c| c.send_media(cid, &input, &media_dir, class))?;
+        set(out_epoch, media.sent.epoch)?;
+        set(out_object_len, media.ciphertext_len)?;
+        write(out_message_id, media.sent.message_id.to_vec())?;
+        write(out_media_id, media.media_id.to_vec())?;
+        write(out_ciphertext, media.sent.ciphertext)
+    })
+}
+
+/// Decrypts the media object of a message in this device's history from
+/// the ciphertext file at `path`. `out_plaintext` holds private content:
+/// display only; `sh_crypto_buf_free` wipes it.
+///
+/// # Safety
+/// Valid handle; readable inputs; writable `out_plaintext`.
+#[no_mangle]
+pub unsafe extern "C" fn sh_crypto_open_media(
+    h: *const ShCore,
+    conversation: *const u8,
+    conversation_len: usize,
+    message: *const u8,
+    message_len: usize,
+    path: *const u8,
+    path_len: usize,
+    out_plaintext: *mut ShBuf,
+) -> i32 {
+    guarded(|| {
+        if out_plaintext.is_null() {
+            return Err(CoreError::InvalidInput);
+        }
+        let cid = slice(conversation, conversation_len)?;
+        let mid = slice(message, message_len)?;
+        let path = path_arg(path, path_len)?;
+        let mut plaintext = with_core(h, |c| c.open_media(cid, mid, &path))?;
+        // Hand the buffer itself over (no extra copy); the caller's
+        // sh_crypto_buf_free wipes it.
+        write(out_plaintext, std::mem::take(&mut *plaintext))
     })
 }

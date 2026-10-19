@@ -23,8 +23,9 @@ pub mod store;
 pub mod trust;
 
 pub use crate::engine::{
-    AddResult, CryptoCore, Incoming, LocalMessage, MessageDirection, MessageState, PublicIdentity,
-    Received, RecoveryApproval, RecoveryKeyBundle, RosterEntry, Sent, StagedCommit, CIPHERSUITE,
-    IMPLEMENTATION,
+    media_ciphertext_len, media_object_file_name, AddResult, CryptoCore, Incoming, LocalMessage,
+    MediaClass, MessageDirection, MessageState, PublicIdentity, Received, RecoveryApproval,
+    RecoveryKeyBundle, RosterEntry, Sent, SentMedia, StagedCommit, CIPHERSUITE, IMPLEMENTATION,
+    MEDIA_CHUNK_BYTES, MEDIA_HEADER_LEN, MEDIA_ID_LEN, MEDIA_REF_LEN, MEDIA_VIEW_LEN,
 };
 pub use crate::error::{CoreError, CoreResult};
