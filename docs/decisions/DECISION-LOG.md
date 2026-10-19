@@ -876,7 +876,8 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
   - Plaintext is limited to 64 MiB, and empty media is refused.
 - **Dependencies:** no new crate. The change enables the `stream` feature of the already-pinned `chacha20poly1305 =0.10.1` and adds `sha2 =0.10.9` as a direct, exact-pinned dependency. `openmls_rust_crypto 0.6.0` already compiles that version. The D-054 pins are unchanged (`tool/check_crypto_core.sh`).
 - **Supersedes:** the Prompt 04 recommendation of libsodium `crypto_secretstream` (E2EE-ARCHITECTURE §7). The properties are the same: chunked, per-chunk authentication, truncation detection. There is no second native crypto library. **Trade-off:** libsodium had a published audit; the RustCrypto `aead::stream` module has none that we know of. It is listed as unaudited.
-- **Status:** Accepted for development · 2026-10-19. Unreviewed.
+- **Review brief:** E2EE-MEDIA-AND-NOTIFICATIONS §2, "D-093 review brief". It covers exact versions, the construction's source, audit status (none for `aead::stream`; NCC's 2020 review of `chacha20poly1305` predates 0.10.1 and did not cover it), properties, nonces, ordering, finalization, AAD, key lifecycle, size limits, and the custom composition around STREAM.
+- **Status:** Proposed for development · 2026-10-19. **Pending human security review;** not independently reviewed or audited. Not to be replaced before that review.
 
 ### D-094 — Media keys never leave the core
 - **Decision:**
