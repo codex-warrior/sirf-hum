@@ -1,7 +1,8 @@
 # Device Identity and Registration
 
-Status: **Foundation implemented (Prompt 07). Sirf Hum is NOT production E2EE
-yet.**
+Status: **Foundation implemented (Prompt 07); multi-device trust, revocation
+and recovery added (Prompt 08, [MULTI-DEVICE-TRUST](MULTI-DEVICE-TRUST.md)).
+Sirf Hum is NOT production E2EE yet.**
 
 - Nothing here has been independently reviewed.
 - No product feature uses device identity yet.
@@ -9,7 +10,7 @@ yet.**
   allows Cloud Functions to deploy (D-025).
 
 Decisions: D-066 (platform key store), D-069 (registry), D-070 (proof of
-possession), D-071 (account slots) in the
+possession), D-071 (account slots); Prompt 08: D-074–D-080 in the
 [Decision Log](../decisions/DECISION-LOG.md). Related:
 [KEY-MANAGEMENT](KEY-MANAGEMENT.md),
 [PAIRING-AND-DEVICE-TRUST](PAIRING-AND-DEVICE-TRUST.md),
@@ -117,35 +118,37 @@ crosses it, once per open, and it is zeroed immediately after.
 
 ## 3. Lifecycle
 
+Since Prompt 08: the full state machine, approval and recovery are in
+[MULTI-DEVICE-TRUST §3](MULTI-DEVICE-TRUST.md#3-enrollment-state-machine).
+
 ```text
  NEW INSTALL / NEW ACCOUNT ON DEVICE
    │ open(account): slot key from Keystore/Keychain (fresh if none)
    │ Rust core: device ID + device key + PIK + certificate (CSPRNG)
    │ private keys sealed locally
    ▼
- unknown ──client creates record (rules)────────────► pending
-                                                        │ issueDeviceChallenge (server)
-                                                        │ device signs challenge (Rust, D-070)
-                                                        │ activateDevice verifies (server)
-                                                        ▼
-                                                      active
+ unknown ──registerDevice (server)──► pending ──first device ever: proof of possession──► active
+                                         │      later devices: approval by a trusted ──┘
+                                         │      device or the recovery key
+                                         ├──► rejected · expired          (terminal)
  pending / active ──owner revokes (rules) or server──► revoked  (terminal)
 ```
 
 | Transition | Who | Enforced by |
 | --- | --- | --- |
-| unknown → pending | Owner's client | Security Rules (exact schema) |
-| pending → active | **Server only**, after proof of possession | `activateDevice` (Admin SDK); rules deny client `active` |
-| pending → revoked, active → revoked | Owner's client (`revokedReason: "user_removed"`) or server | Rules (one-way); Functions (future) |
-| revoked → anything | **Never** | Rules (`before.status in [pending, active]`); records can't be deleted, so a device ID can't be re-created; the uniqueness indexes keep the ID and key forever |
+| unknown → pending | **Server** (`registerDevice`: certificate verified, rate-limited, max 3 pending) | Function; rules deny client creates (Prompt 08) |
+| pending → active | **Server only**: bootstrap proof of possession (first device, once ever), or approval / recovery | `activateDevice`, `approveDevice`, `recoverDevice`; rules deny client `active` |
+| pending → rejected / expired | **Server** | `rejectDeviceApproval`; expiry (lazy + scheduled cleanup) |
+| pending → revoked, active → revoked | Owner's client (`revokedReason: "user_removed"`) or server | Rules (one-way) |
+| revoked / rejected / expired → anything | **Never** | Rules (`before.status in [pending, active]`); records can't be deleted, so a device ID can't be re-created; the uniqueness indexes keep the ID and key forever |
 
 A device that must work again after revocation gets a **new** device
-identity (new keys, new device ID). The recovery phase may define how; it
-will never reactivate the old one.
+identity (new keys, new device ID). Recovery (MULTI-DEVICE-TRUST §8)
+creates trust for a new identity; it never reactivates the old one.
 
-The client flow (`DeviceRegistrationFlow.ensureActive`) is idempotent. It
-resumes from `pending` with a new challenge, does nothing when `active`,
-and stops at `revoked`.
+The client flow (`DeviceRegistrationFlow.enroll`) is idempotent. It
+resumes from `pending` with a new challenge or request, does nothing when
+`active`, and stops at any terminal state.
 
 ## 4. Firestore schema
 
@@ -154,14 +157,18 @@ lower-case hex of the device ID.
 
 | Field | Type | Written by | Why the server needs it |
 | --- | --- | --- | --- |
-| `schemaVersion` | int `1` | client (create) | Readers reject versions they don't understand (D-061) |
-| `status` | `pending` / `active` / `revoked` | client (create, revoke), server (activate) | The lifecycle; future rules and fan-out read only active devices |
-| `platform` | `android` / `ios` | client (create) | Lets the owner recognise devices when managing them, and allows platform-specific policy (e.g. future attestation). Coarse: no model or OS version |
-| `certificate` | bytes ≤ 512 | client (create), immutable | The public identity binding (PIK → device ID → device key) that the server verifies at activation and other devices verify themselves |
-| `ciphersuite` | int `1` | client (create) | MLS capability (D-061); refuses future suites until supported |
-| `implementation` | `openmls/0.9.1` | client (create) | Implementation identifier (D-061), for compatibility handling |
-| `createdAt` | timestamp = request time | client (create, server-checked) | Audit and future cleanup of stale pending records |
-| `activatedAt` | timestamp | server | When proof of possession succeeded |
+| `schemaVersion` | int `1` | server (register) | Readers reject versions they don't understand (D-061) |
+| `status` | `pending` / `active` / `revoked` / `rejected` / `expired` | server (register, activate, reject, expire), owner (revoke) | The lifecycle; future rules and fan-out read only active devices |
+| `platform` | `android` / `ios` | client input, server-validated | Lets the owner recognise devices when managing them, and allows platform-specific policy (e.g. future attestation). Coarse: no model or OS version |
+| `certificate` | bytes ≤ 512 | client input, server-verified at registration; immutable | The public identity binding (PIK → device ID → device key) that the server verifies and other devices verify themselves |
+| `ciphersuite` | int `1` | server (register) | MLS capability (D-061); refuses future suites until supported |
+| `implementation` | `openmls/0.9.1` | server (register) | Implementation identifier (D-061), for compatibility handling |
+| `createdAt` | server timestamp | server (register) | Audit |
+| `expiresAt` | timestamp (pending only) | server (register); removed on activation | Server-authoritative expiry of never-activated devices (D-078) |
+| `activatedAt` | timestamp | server | When the device became trusted |
+| `activationMethod` | `first_device` / `approval` / `recovery` | server | How trust was established (audit, owner review) |
+| `approvedBy` | device ID (hex) | server, for `approval` | Lineage, so the owner can review devices approved by a later-revoked device (D-080) |
+| `rejectedAt` | timestamp | server, for `rejected` | When the owner rejected the request |
 | `revokedAt` | timestamp = request time | client (revoke) | When the device was retired |
 | `revokedReason` | `user_removed` | client (revoke) | A fixed enum, never free text |
 
@@ -176,7 +183,10 @@ Server-only collections (Admin SDK; rules deny every client):
 
 | Collection | Contents | Purpose |
 | --- | --- | --- |
-| `deviceChallenges/{challengeId}` | `accountId`, `deviceId`, `purpose`, 32-byte `challenge`, `expiresAt` | Single-use, 5-minute challenge; deleted by the first activation attempt |
+| `deviceChallenges/{challengeId}` | `accountId`, `deviceId`, `purpose` (`activation` / `recovery_registration`), 32-byte `challenge`, `expiresAt` | Single-use, 5-minute challenge; deleted by the first attempt |
+| `accountTrust/{accountId}` | `initializedAt`, `firstDeviceId`, optional `recoveryKey {publicKey, registeredByDeviceId, registeredAt}`, `lastRecoveryAt` | Makes first-device bootstrap once-ever; holds the recovery key's **public** half (D-075, D-076) |
+| `deviceApprovalRequests/{requestId}` | `accountId`, `deviceId`, 32-byte `challenge`, `status` (`open` / `proven`), `createdAt`, `expiresAt` | Single-use, 10-minute approval request; deleted by its first approval, rejection or recovery attempt |
+| `rateLimits/{accountId}__{operation}` | `windowStart`, `count` | Per-account fixed-window limits (D-077) |
 | `deviceIdIndex/{deviceId}` | `accountId` | A device ID is activated at most once, globally, forever |
 | `deviceKeyIndex/{sha256(deviceKey)}` | `accountId`, `deviceId` | A device public key is activated at most once, globally, forever |
 
@@ -186,13 +196,8 @@ The rules are in `firebase/firestore.rules` (default deny kept); the tests
 are in `firebase/tests/devices.test.js`.
 
 - **Read:** only the owner (`request.auth.uid == accountId`).
-- **Create:**
-  - only the owner;
-  - document ID `^[0-9a-f]{32}$`;
-  - exactly the seven creation fields;
-  - status `pending`, schema 1, ciphersuite 1, implementation pinned;
-  - `certificate is bytes`, between 1 and 512 bytes;
-  - `createdAt == request.time`.
+- **Create:** never from a client (Prompt 08). `registerDevice` writes the
+  `pending` record after verifying the certificate and applying rate limits.
 - **Update:**
   - only the owner;
   - only `pending|active → revoked`;
@@ -201,14 +206,20 @@ are in `firebase/tests/devices.test.js`.
   - reason `user_removed`.
 - **Delete:** never.
 
-Rules cannot verify signatures. That is why `active` is reachable only
-through the Function.
+Rules cannot verify signatures or count. That is why registration and
+`active` are reachable only through the Functions, and why terminal states
+can never change.
 
 ## 6. Proof of possession (D-070)
 
 Firebase Auth proves who the **account** is. A device record proves
 nothing. Activation additionally proves that the registering client holds
 the private key of the **device key named in the certificate**.
+
+**Since Prompt 08** (D-075), this activation path applies only to an
+account's **first** device, once ever. Later devices prove possession with
+purpose `enrollment` (2) and must be approved by a trusted device or the
+recovery key ([MULTI-DEVICE-TRUST §4](MULTI-DEVICE-TRUST.md#4-approval-handshake-d-075)).
 
 1. `issueDeviceChallenge({deviceId})`:
    - requires auth and App Check;
@@ -258,7 +269,7 @@ verification at pairing (future), not the server.
 
 | Attack | Result | Where tested |
 | --- | --- | --- |
-| Replayed registration (create the same record again) | Denied: `set` on an existing record is an update | rules |
+| Replayed registration (create the same record again) | Prompt 08: `registerDevice` refuses an existing record (`duplicate_device`), and clients cannot create at all | emulator, rules |
 | Replayed proof (same challenge twice) | `challenge_invalid`: consumed on first use | emulator |
 | Reused challenge after a failed attempt | `challenge_invalid` | emulator |
 | Stale challenge (> 5 min) | `challenge_expired` | emulator |
@@ -276,8 +287,10 @@ verification at pairing (future), not the server.
 
 ## 7. Revocation
 
-- **Server record:** owner revocation via rules (one-way), plus
-  server-side revocation in a future device-management phase.
+- **Server record:** owner revocation via rules (one-way) from any signed-in
+  session, plus server-side states `rejected` and `expired`. Revoked devices
+  cannot approve, register a recovery key, or use approvals signed before
+  revocation (D-080, MULTI-DEVICE-TRUST §6–§7).
 - **MLS:** revocation in groups is an MLS Remove commit plus the local
   revoked-devices list (Prompt 06, RECOVERY-AND-REVOCATION). Group wiring
   is future work.
@@ -359,27 +372,25 @@ an *account session* (non-cryptographic), which is not a device identity.
   - an `active` device's certificate is its MLS credential;
   - groups add only certified, trusted, non-revoked devices (D-057);
   - KeyPackage publishing will reference the active record.
-- **Device approval:**
-  - a second device of the same person must receive the PIK
-    device-to-device (PAIRING-AND-DEVICE-TRUST);
-  - today each device's identity creates its own PIK.
-- **Recovery:** restores the PIK onto a **new** device identity. It never
-  reactivates a revoked one and never uses a server key or escrow
-  (RECOVERY-AND-REVOCATION).
+- **Device approval (Prompt 08, D-074):** each device keeps its own PIK;
+  a trusted device's PIK signs an approval of the new one. No private key
+  is transferred (this supersedes the PIK-transfer idea in
+  PAIRING-AND-DEVICE-TRUST).
+- **Recovery (Prompt 08, D-076):** an optional single-use recovery key
+  approves a **new** device identity. It never reactivates a revoked one,
+  never restores history, and never uses a server key or escrow.
 
 ## 14. Limitations and open items
 
 - **Server activation is not deployable:** Cloud Functions need the Blaze
   plan (D-025). Until then deployed clients stay `pending` (`unavailable`
   on challenge). Activation logic is verified in the emulator only.
-- **Rate limits:** none on challenge issuance or pending-record creation
-  yet. An account can create many pending records under itself. App Check
-  and auth limit abuse.
-- **Pending records** are not cleaned up yet (`createdAt` enables it).
-- **Local rollback:** restoring a whole older slot directory *together
-  with* its key isn't possible off-device (keys don't migrate), but on a
-  rooted device an attacker could restore an older state. No monotonic
-  counter exists (D-066 residual).
+- **Rate limits and expiry:** added in Prompt 08 (D-077, D-078). The
+  scheduled cleanup needs Blaze; lazy expiry works without it.
+- **Local rollback:** not provided (D-079 open, MULTI-DEVICE-TRUST §9).
+  Restoring a whole older slot directory *together with* its key isn't
+  possible off-device (keys don't migrate), but on a rooted device an
+  attacker could restore an older state.
 - **Dart heap copies** of the store key from the channel codec cannot be
   reliably wiped.
 - **No attestation** (Play Integrity / App Attest) beyond App Check.

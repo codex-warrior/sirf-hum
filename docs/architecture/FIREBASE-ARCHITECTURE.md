@@ -77,15 +77,26 @@ D-070).
 
 | Path | Client access | Server (Admin SDK) |
 | --- | --- | --- |
-| `users/{uid}/devices/{deviceId}` | Owner: read; create exact `pending` v1 record; revoke one-way. No delete | `activateDevice` sets `active` after proof of possession |
-| `deviceChallenges/{id}` | None | `issueDeviceChallenge` creates; consumed by the first activation attempt |
+| `users/{uid}/devices/{deviceId}` | Owner: read; revoke one-way. **No create** (Prompt 08), no delete | `registerDevice` creates `pending`; `activateDevice` (first device only), `approveDevice`, `recoverDevice` set `active`; `rejectDeviceApproval` sets `rejected`; cleanup sets `expired` |
+| `deviceChallenges/{id}` | None | `issueDeviceChallenge` creates; consumed by the first attempt |
+| `deviceApprovalRequests/{id}` | None | `requestDeviceApproval` / `proveDeviceEnrollment`; consumed by approval, rejection or recovery |
+| `accountTrust/{uid}` | None | Once-ever bootstrap marker; recovery key **public** half |
+| `rateLimits/{uid}__{op}` | None | Per-account rate limits (D-077) |
 | `deviceIdIndex/{deviceId}`, `deviceKeyIndex/{sha256}` | None | Global uniqueness of activated device IDs and keys, kept forever |
 
-Callables: `issueDeviceChallenge` and `activateDevice` in `asia-south1`,
-`enforceAppCheck: true`, category-only errors. Tests:
+Callables:
+
+- `registerDevice`, `issueDeviceChallenge`, `activateDevice`;
+- `requestDeviceApproval`, `proveDeviceEnrollment`,
+  `listDeviceApprovalRequests`, `approveDevice`, `rejectDeviceApproval`;
+- `registerRecoveryKey`, `recoverDevice`.
+
+Plus the scheduled `cleanupExpiredDeviceRecords`. All run in
+`asia-south1` with `enforceAppCheck: true` and category-only errors.
+Design: [MULTI-DEVICE-TRUST](../security/MULTI-DEVICE-TRUST.md). Tests:
 
 - `firebase/tests/devices.test.js` (rules);
-- `functions/test/device_proof.test.mjs` (verifier, golden vector);
+- `functions/test/device_proof.test.mjs`, `functions/test/statements.test.mjs` (verifiers, golden vectors);
 - `functions/test/emulator/` (flows).
 
 ## Cloud Functions policy

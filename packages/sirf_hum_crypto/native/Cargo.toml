@@ -26,6 +26,10 @@ openmls_memory_storage = "=0.6.0"
 # openmls_rust_crypto 0.6.0 already depends on.
 chacha20poly1305 = { version = "=0.10.1", default-features = false, features = ["alloc", "getrandom"] }
 zeroize = { version = "=1.9.1", features = ["alloc"] }
+# Only to derive a recovery key's public half from its seed (D-076). Same
+# version openmls_rust_crypto 0.6.0 already compiles; signing stays on the
+# OpenMLS provider.
+ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["zeroize"] }
 
 [dev-dependencies]
 tempfile = "=3.27.0"

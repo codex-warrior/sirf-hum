@@ -44,13 +44,13 @@ The wrapper's own code is policy:
 | --- | --- | --- |
 | **Trust** | Device-local: plaintext and keys exist only inside the app process on the device. The server, network, Firebase and Web are outside. | Architecture; no network code in the core |
 | **Rust** | Owns all MLS state, private keys, epoch secrets and serialized state. Secrets are `Zeroizing` and wiped on drop, rollback and wipe. | `engine.rs` |
-| **Dart** | Sees an opaque handle, public identifiers, MLS wire messages, error codes, and decrypted application content from `processIncoming`. Never sees keys, OpenMLS objects or state bytes. | `ffi.rs` surface (no export function exists); `core_ffi.dart` |
+| **Dart** | Sees an opaque handle, public identifiers, MLS wire messages, error codes, decrypted application content from `processIncoming`, and (Prompt 08) a new recovery key's text exactly once for display, plus a user-typed recovery key going in. Never sees keys, OpenMLS objects or state bytes. | `ffi.rs` surface (no export function exists); `core_ffi.dart` |
 | **Identity** | Distinct types for each kind of identity material (table below). | `identity.rs`, `types.dart` |
 | **Storage** | Local only, app-private directory. Every record is sealed. Never written to Firestore or any server. | `store.rs`, `record.rs`; no Firebase dependency in the package |
 | **Secure storage** | The store key (Rust: KEK) comes from a `KeyEncryptionKeyProvider`. The platform adapter supplies a per-account key (Android Keystore-wrapped / iOS `ThisDeviceOnly` Keychain) via `sh_crypto_open_with_platform_key` (D-066, [DEVICE-IDENTITY](DEVICE-IDENTITY.md)). Test adapters are refused in release builds. | `keystore.rs` (`PlatformProvidedKey`); `lib/platform/secure_key_store.dart` |
 | **Firebase** | No crypto state, keys or plaintext. Only `EncryptedEnvelope` may reach infrastructure (already the rule). The package does not depend on Firebase. | Dependency graph; existing Security Rules unchanged |
 | **Web** | No private-content E2EE in V1 (D-046). Web compiles a stub where every call throws `unsupported`. | Conditional export on `dart.library.ffi`; `types_test.dart`; app test |
-| **Errors** | 18 stable `i32` codes (`account_mismatch`, -18, added in Prompt 07). No strings, payloads or native messages cross the ABI. Unknown codes become `internal`. | `error.rs`, `CryptoErrorCode` |
+| **Errors** | 19 stable `i32` codes (`account_mismatch` -18, Prompt 07; `recovery_key_invalid` -19, Prompt 08). No strings, payloads or native messages cross the ABI. Unknown codes become `internal`. | `error.rs`, `CryptoErrorCode` |
 | **Dependencies** | Exact pins; OpenMLS versions fixed (D-054); `cargo audit --deny warnings` with three documented ignores, re-verified on every run, for code that is never compiled or never shipped (D-068) | `tool/check_crypto_core.sh`, `tool/crypto_audit.sh` |
 | **Logging** | The core never logs. CI fails on printing/logging macros or crates in `src/` and on OpenMLS `crypto-debug`/`content-debug` features. Dart types print `<redacted>`. App-side logging goes through `AppLogger` with category names only. | `tool/check_crypto_core.sh`, the source-scan test, clippy `print_*`/`dbg_macro` deny, redaction tests |
 
@@ -159,7 +159,7 @@ byte over it.
 
 **Versioning** (D-061): the record format, identity and state schema
 versions, ciphersuite `0x0001` and `IMPLEMENTATION = "openmls/0.9.1"` are
-explicit. `ABI_VERSION` (currently 2: platform store key, account check and device proof, Prompt 07) is checked by Dart; a mismatch means
+explicit. `ABI_VERSION` (currently 3: platform store key, account check and device proof in Prompt 07; device approval, comparison code and recovery key in Prompt 08, [MULTI-DEVICE-TRUST](MULTI-DEVICE-TRUST.md)) is checked by Dart; a mismatch means
 `isAvailable == false`.
 
 ## Platform integration (D-063)

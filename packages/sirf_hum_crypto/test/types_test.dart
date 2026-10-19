@@ -12,7 +12,7 @@ void main() {
   test('error codes match the native table and unknown codes are internal', () {
     // Mirrors native/src/error.rs; a change there must be mirrored here.
     expect(CryptoErrorCode.values.map((e) => e.code), [
-      for (var i = -1; i >= -18; i--) i,
+      for (var i = -1; i >= -19; i--) i,
     ]);
     expect(CryptoErrorCode.fromCode(-999), CryptoErrorCode.internal);
     expect(CryptoErrorCode.fromCode(0), CryptoErrorCode.internal);
@@ -67,6 +67,7 @@ void main() {
     expect(KeyStoreKind.insecureTestFile.wireValue, 2);
     expect(KeyStoreKind.platform.wireValue, 100);
     expect(DeviceProofPurpose.activation.wireValue, 1);
+    expect(DeviceProofPurpose.enrollment.wireValue, 2);
   });
 
   test('Web implementation is unavailable and fails closed', () {

@@ -8,9 +8,9 @@ import 'package:sirf_hum_crypto/sirf_hum_crypto.dart';
 /// Platforms that can hold a device identity (Web cannot, D-046).
 enum DevicePlatform { android, ios }
 
-/// The public registration record a client creates (status `pending`).
-/// Exactly the fields `firebase/firestore.rules` accepts; each is justified
-/// in DEVICE-IDENTITY.md ("Server-visible fields").
+/// What a client sends to `registerDevice` (D-069). The server verifies the
+/// certificate and writes the `pending` record itself; every server-visible
+/// field is justified in DEVICE-IDENTITY.md §4.
 class PendingDeviceRegistration {
   PendingDeviceRegistration({
     required this.accountId,
@@ -47,36 +47,123 @@ class PendingDeviceRegistration {
   String toString() => 'PendingDeviceRegistration(<redacted>)';
 }
 
-/// A server-issued, single-use activation challenge (5-minute lifetime).
-class ActivationChallenge {
-  ActivationChallenge({required this.challengeId, required Uint8List challenge})
-    : challenge = Uint8List.fromList(challenge) {
-    if (challenge.length != 32) {
-      throw const DeviceRegistryException(DeviceRegistryFailure.invalidRecord);
-    }
+Uint8List _challengeBytes(Uint8List challenge) {
+  if (challenge.length != 32) {
+    throw const DeviceRegistryException(DeviceRegistryFailure.invalidRecord);
   }
+  return Uint8List.fromList(challenge);
+}
+
+/// A server-issued, single-use challenge (5-minute lifetime).
+class ActivationChallenge {
+  ActivationChallenge({
+    required this.challengeId,
+    required Uint8List challenge,
+    this.expiresAtUnix = 0,
+  }) : challenge = _challengeBytes(challenge);
 
   final String challengeId;
   final Uint8List challenge;
+
+  /// Signed into recovery-key registrations (whole seconds).
+  final int expiresAtUnix;
 
   @override
   String toString() => 'ActivationChallenge(<redacted>)';
 }
 
-/// Stable failure categories, matching functions/src/device/registration.ts.
+/// An approval request opened by a new device (D-075; 10-minute lifetime).
+class ApprovalRequest {
+  ApprovalRequest({
+    required this.requestId,
+    required Uint8List challenge,
+    required this.expiresAtUnix,
+  }) : challenge = _challengeBytes(challenge);
+
+  final String requestId;
+  final Uint8List challenge;
+  final int expiresAtUnix;
+
+  @override
+  String toString() => 'ApprovalRequest(<redacted>)';
+}
+
+/// A proven request shown to a trusted device for approval.
+class PendingApproval extends ApprovalRequest {
+  PendingApproval({
+    required super.requestId,
+    required super.challenge,
+    required super.expiresAtUnix,
+    required this.deviceIdHex,
+    required this.platform,
+    required Uint8List certificate,
+  }) : certificate = Uint8List.fromList(certificate);
+
+  final String deviceIdHex;
+  final String platform;
+  final Uint8List certificate;
+
+  @override
+  String toString() => 'PendingApproval(<redacted>)';
+}
+
+/// A device record as its owner can read it (public metadata).
+class DeviceRecord {
+  const DeviceRecord({
+    required this.deviceIdHex,
+    required this.status,
+    required this.platform,
+    this.activationMethod,
+    this.approvedByDeviceIdHex,
+  });
+
+  final String deviceIdHex;
+  final DeviceStatus status;
+  final String platform;
+
+  /// `first_device`, `approval` or `recovery` once active.
+  final String? activationMethod;
+
+  /// The approving device, for `approval` (D-075 lineage).
+  final String? approvedByDeviceIdHex;
+
+  @override
+  String toString() => 'DeviceRecord(${status.name}, <redacted>)';
+}
+
+/// Stable failure categories, matching functions/src/device/common.ts.
 enum DeviceRegistryFailure {
   invalidRecord,
   unauthenticated,
   deviceNotFound,
   deviceNotPending,
+  deviceExpired,
   challengeInvalid,
   challengeExpired,
   proofInvalid,
   certificateInvalid,
   duplicateDevice,
+  tooManyPending,
+
+  /// The account already has a trusted device: use the approval flow.
+  approvalRequired,
+  requestInvalid,
+  requestExpired,
+
+  /// The approving device is not (or no longer) trusted.
+  approverNotTrusted,
+  approvalInvalid,
+
+  /// No recovery key is registered for this account.
+  recoveryUnavailable,
+  recoveryInvalid,
+  rateLimited,
 
   /// The server returned a status this client does not understand.
   unexpectedState,
+
+  /// This device is not trusted, so it may not perform the operation.
+  deviceNotTrusted,
 
   /// Network, App Check or backend unavailable; safe to retry later.
   unavailable;
@@ -89,11 +176,21 @@ enum DeviceRegistryFailure {
         'unauthenticated' => unauthenticated,
         'device_not_found' => deviceNotFound,
         'device_not_pending' => deviceNotPending,
+        'device_expired' => deviceExpired,
         'challenge_invalid' => challengeInvalid,
         'challenge_expired' => challengeExpired,
         'proof_invalid' => proofInvalid,
         'certificate_invalid' => certificateInvalid,
         'duplicate_device' => duplicateDevice,
+        'too_many_pending' => tooManyPending,
+        'approval_required' => approvalRequired,
+        'request_invalid' => requestInvalid,
+        'request_expired' => requestExpired,
+        'approver_not_trusted' => approverNotTrusted,
+        'approval_invalid' => approvalInvalid,
+        'recovery_unavailable' => recoveryUnavailable,
+        'recovery_invalid' => recoveryInvalid,
+        'rate_limited' => rateLimited,
         _ => unavailable,
       };
 }
@@ -107,43 +204,126 @@ class DeviceRegistryException implements Exception {
   String toString() => 'DeviceRegistryException(${failure.name})';
 }
 
+/// Purposes of server challenges (functions/src/device/registration.ts).
+enum ChallengePurpose { activation, recoveryRegistration }
+
 /// Port for the server-side device registry, implemented by
-/// `lib/infrastructure/firebase/firestore_device_registry.dart`.
+/// `lib/infrastructure/firebase/firestore_device_registry.dart`. Every
+/// trust-changing call is a server-side Function; the server never receives
+/// private keys and cannot sign approvals.
 abstract interface class DeviceRegistry {
   /// The record's status, [DeviceStatus.unknown] when there is none.
   Future<DeviceStatus> status(AccountId account, String deviceIdHex);
 
-  /// Creates the `pending` record (Security Rules validate it).
-  Future<void> createPending(PendingDeviceRegistration registration);
+  /// All of the account's device records (owner read via the rules).
+  Future<List<DeviceRecord>> listDevices(AccountId account);
 
-  Future<ActivationChallenge> requestActivationChallenge(
+  /// Registers this device as `pending` (`registerDevice`).
+  Future<void> register(PendingDeviceRegistration registration);
+
+  Future<ActivationChallenge> requestChallenge(
     AccountId account,
     String deviceIdHex,
+    ChallengePurpose purpose,
   );
 
-  /// Submits the proof; the server verifies it and activates the device.
+  /// First device only: proof of possession activates it (`activateDevice`).
   Future<void> activate(
     AccountId account,
     String deviceIdHex,
     String challengeId,
     Uint8List proof,
   );
+
+  /// Opens an approval request for this pending device.
+  Future<ApprovalRequest> requestApproval(
+    AccountId account,
+    String deviceIdHex,
+  );
+
+  /// Proves possession for an open request (purpose `enrollment`).
+  Future<void> proveEnrollment(
+    AccountId account,
+    String requestId,
+    Uint8List proof,
+  );
+
+  /// Proven requests awaiting approval by a trusted device.
+  Future<List<PendingApproval>> pendingApprovals(AccountId account);
+
+  Future<void> approve(
+    AccountId account,
+    String requestId,
+    String approverDeviceIdHex,
+    Uint8List signature,
+  );
+
+  Future<void> reject(AccountId account, String requestId);
+
+  /// Owner revocation of any of the account's devices (one way, rules).
+  Future<void> revoke(AccountId account, String deviceIdHex);
+
+  Future<void> registerRecoveryKey(
+    AccountId account,
+    String registrarDeviceIdHex,
+    String challengeId,
+    Uint8List recoveryPublicKey,
+    Uint8List signature,
+  );
+
+  Future<void> recover(
+    AccountId account,
+    String requestId,
+    Uint8List signature,
+  );
 }
 
-/// Drives one device from unknown to active (DEVICE-IDENTITY.md, lifecycle).
+/// Where a device stands after [DeviceRegistrationFlow.enroll].
+sealed class EnrollmentState {
+  const EnrollmentState();
+}
+
+/// Trusted. Nothing more to do.
+final class EnrollmentActive extends EnrollmentState {
+  const EnrollmentActive();
+}
+
+/// Waiting for a trusted device (or the recovery key). Show [code] on this
+/// device; the user approves the request showing the same code elsewhere.
+final class EnrollmentAwaitingApproval extends EnrollmentState {
+  const EnrollmentAwaitingApproval({required this.request, required this.code});
+
+  final ApprovalRequest request;
+
+  /// Six-digit comparison code (not a secret).
+  final int code;
+
+  @override
+  String toString() => 'EnrollmentAwaitingApproval(<redacted>)';
+}
+
+/// Terminal on the server (revoked, rejected, expired): this identity will
+/// never be trusted again. The app needs a NEW identity (remove the account
+/// from this device, then enroll again).
+final class EnrollmentTerminal extends EnrollmentState {
+  const EnrollmentTerminal(this.status);
+
+  final DeviceStatus status;
+}
+
+/// Drives one device into trust (DEVICE-IDENTITY.md §3, §16).
 ///
-/// Idempotent: safe to rerun after any failure. It never retries a
-/// challenge (each attempt asks for a new one) and never tries to revive a
-/// revoked device.
+/// Idempotent: safe to rerun after any failure. It never reuses a challenge
+/// or request (each attempt asks for a new one) and never tries to revive a
+/// terminal device.
 class DeviceRegistrationFlow {
   const DeviceRegistrationFlow(this._registry);
 
   final DeviceRegistry _registry;
 
-  /// Registers and activates the device behind [core] for [account].
-  /// Returns the final status: [DeviceStatus.active], or
-  /// [DeviceStatus.revoked] (terminal: the caller needs a new identity).
-  Future<DeviceStatus> ensureActive({
+  /// Registers this device and either activates it (first device of the
+  /// account) or opens a proven approval request.
+  Future<EnrollmentState> enroll({
     required CryptoCore core,
     required AccountId account,
     required DevicePlatform platform,
@@ -155,7 +335,7 @@ class DeviceRegistrationFlow {
 
     var status = await _registry.status(account, deviceIdHex);
     if (status == DeviceStatus.unknown) {
-      await _registry.createPending(
+      await _registry.register(
         PendingDeviceRegistration(
           accountId: account,
           deviceId: identity.deviceId,
@@ -165,27 +345,66 @@ class DeviceRegistrationFlow {
       );
       status = DeviceStatus.pending;
     }
-    if (status == DeviceStatus.pending) {
-      final challenge = await _registry.requestActivationChallenge(
+    final EnrollmentState state;
+    if (status == DeviceStatus.active) {
+      state = const EnrollmentActive();
+    } else if (status.isTerminal) {
+      state = EnrollmentTerminal(status);
+    } else {
+      state = await _bootstrapOrRequest(core, account, deviceIdHex, identity);
+    }
+    _log(state);
+    return state;
+  }
+
+  Future<EnrollmentState> _bootstrapOrRequest(
+    CryptoCore core,
+    AccountId account,
+    String deviceIdHex,
+    PublicIdentity identity,
+  ) async {
+    try {
+      final challenge = await _registry.requestChallenge(
         account,
         deviceIdHex,
-      );
-      final proof = core.deviceProof(
-        DeviceProofPurpose.activation,
-        challenge.challenge,
+        ChallengePurpose.activation,
       );
       await _registry.activate(
         account,
         deviceIdHex,
         challenge.challengeId,
-        proof,
+        core.deviceProof(DeviceProofPurpose.activation, challenge.challenge),
       );
-      status = DeviceStatus.active;
+      return const EnrollmentActive();
+    } on DeviceRegistryException catch (e) {
+      if (e.failure != DeviceRegistryFailure.approvalRequired) rethrow;
     }
-    AppLogger.info(
-      'device_registration_status',
-      fields: {'status': SafeLogString(status.name)},
+    // Not the first device: trust must come from a trusted device or the
+    // recovery key. Prove possession now so approvers only see proven
+    // requests.
+    final request = await _registry.requestApproval(account, deviceIdHex);
+    await _registry.proveEnrollment(
+      account,
+      request.requestId,
+      core.deviceProof(DeviceProofPurpose.enrollment, request.challenge),
     );
-    return status;
+    return EnrollmentAwaitingApproval(
+      request: request,
+      code: CryptoCore.approvalCode(
+        newCertificate: identity.certificate,
+        challenge: request.challenge,
+      ),
+    );
   }
+
+  void _log(EnrollmentState state) => AppLogger.info(
+    'device_enrollment_state',
+    fields: {
+      'state': SafeLogString(switch (state) {
+        EnrollmentActive() => 'active',
+        EnrollmentAwaitingApproval() => 'awaiting_approval',
+        EnrollmentTerminal(:final status) => status.name,
+      }),
+    },
+  );
 }

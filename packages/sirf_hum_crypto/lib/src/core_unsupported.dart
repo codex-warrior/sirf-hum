@@ -5,7 +5,7 @@ import 'dart:typed_data';
 
 import 'package:sirf_hum_crypto/src/types.dart';
 
-const int expectedAbiVersion = 2;
+const int expectedAbiVersion = 3;
 
 Never _unsupported() =>
     throw const CryptoException(CryptoErrorCode.unsupported);
@@ -34,6 +34,28 @@ final class CryptoCore {
 
   Uint8List deviceProof(DeviceProofPurpose purpose, Uint8List challenge) =>
       _unsupported();
+
+  Uint8List approveDevice({
+    required Uint8List newCertificate,
+    required Uint8List challenge,
+    required int expiresAtUnix,
+  }) => _unsupported();
+
+  static int approvalCode({
+    required Uint8List newCertificate,
+    required Uint8List challenge,
+  }) => _unsupported();
+
+  RecoveryKeyBundle createRecoveryKey({
+    required Uint8List challenge,
+    required int expiresAtUnix,
+  }) => _unsupported();
+
+  RecoveryApprovalResult recoveryApproval({
+    required String recoveryKey,
+    required Uint8List challenge,
+    required int expiresAtUnix,
+  }) => _unsupported();
 
   PublicIdentity createIdentity(AccountId account) => _unsupported();
 

@@ -91,4 +91,49 @@ void main() {
     );
     expect(await service.open(accountA), isA<LocalIdentityCorrupted>());
   });
+
+  test(
+    'multi-device trust ops run natively with platform keys (Prompt 08)',
+    () async {
+      final a = await ready(accountA);
+      // A second device of the SAME account, in its own slot with its own
+      // platform key (on one phone only for this test).
+      const slot = 'itSecondDevice';
+      final dir = await keyStore.slotDirectory(slot);
+      final key = (await keyStore.storeKey(slot, create: true))!;
+      final b = CryptoCore.initializeWithPlatformKey(
+        directory: dir,
+        storeKey: key,
+      )..createIdentity(accountA);
+      addTearDown(() async {
+        b.close();
+        await keyStore.removeSlot(slot);
+      });
+      final challenge = Uint8List.fromList(List.filled(32, 3));
+      final certB = b.publicIdentity().certificate;
+      expect(a.identity.personKey, isNot(b.publicIdentity().personKey));
+      final approval = a.core.approveDevice(
+        newCertificate: certB,
+        challenge: challenge,
+        expiresAtUnix: 1900000000,
+      );
+      expect(approval, hasLength(64));
+      expect(
+        CryptoCore.approvalCode(newCertificate: certB, challenge: challenge),
+        inInclusiveRange(0, 999999),
+      );
+      final bundle = a.core.createRecoveryKey(
+        challenge: challenge,
+        expiresAtUnix: 1900000000,
+      );
+      expect(bundle.secret, startsWith('SHRK1-'));
+      final recovered = b.recoveryApproval(
+        recoveryKey: bundle.secret,
+        challenge: challenge,
+        expiresAtUnix: 1900000000,
+      );
+      expect(recovered.recoveryPublicKey, bundle.publicKey);
+      a.core.close();
+    },
+  );
 }

@@ -17,9 +17,11 @@ pub mod identity;
 pub mod keystore;
 pub mod limits;
 pub mod record;
+pub mod recovery;
 pub mod store;
 
 pub use crate::engine::{
-    AddResult, CryptoCore, Incoming, PublicIdentity, RosterEntry, CIPHERSUITE, IMPLEMENTATION,
+    AddResult, CryptoCore, Incoming, PublicIdentity, RecoveryApproval, RecoveryKeyBundle,
+    RosterEntry, CIPHERSUITE, IMPLEMENTATION,
 };
 pub use crate::error::{CoreError, CoreResult};

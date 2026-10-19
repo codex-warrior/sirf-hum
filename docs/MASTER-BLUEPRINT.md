@@ -3,7 +3,7 @@
 The index of record. Each section summarises what is **decided** and links
 to the detailed source of truth. Updated at the end of every phase.
 
-Last updated: **Prompt 07 — 2026-10-18**.
+Last updated: **Prompt 08 — 2026-10-18**.
 
 ## 1. Vision
 
@@ -86,6 +86,11 @@ Sirf Hum is NOT production E2EE yet:**
     account), `pending` → server proof of possession → `active` →
     `revoked` (D-069–D-071).
     → [DEVICE-IDENTITY](security/DEVICE-IDENTITY.md)
+  - Multi-device trust (Prompt 08): own PIK per device; approvals signed
+    by trusted devices; first-device bootstrap once ever; optional
+    single-use recovery key; one-way server-enforced revocation; rate
+    limits and expiry (D-074–D-080).
+    → [MULTI-DEVICE-TRUST](security/MULTI-DEVICE-TRUST.md)
   - No API exports keys or state.
   - The core never depends on Firebase.
   - Measured: Android `.so`, iOS XCFramework, wasm32 and Dart FFI all work
@@ -255,7 +260,8 @@ designed with privacy — all **post-V1** and individually reviewed.
 | 4 | Sign-in methods (baseline email link or email/password; phone optional) | Identity phase |
 | 5 | Commission the independent OpenMLS delta + crypto-core review (D-054 conditions, now including `packages/sirf_hum_crypto`); decide D-060 (past-epoch window) | Before production E2EE |
 | 5a | Local rollback protection and review of the platform key store (D-066 residual) | Before any real user's private content |
-| 5b | Blaze plan to deploy device activation Functions (D-025, D-069) | First real device activation |
+| 5b | Blaze plan to deploy device trust Functions and the cleanup schedule (D-025, D-069, D-078) | First real device activation |
+| 5c | Identity reset without devices or recovery key (D-076); rollback protection (D-079) | Before production E2EE |
 | 6 | Shared history after unpairing | Pairing phase (product + legal) |
 | 7 | LiveKit Cloud vs. self-hosted | Calls phase |
 | 8 | Analytics vendor and consent posture | First analytics event |

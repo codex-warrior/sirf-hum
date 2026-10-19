@@ -1,228 +1,274 @@
 /**
- * Device registration: challenge issuance and activation (D-069, D-070).
+ * Device registration, challenges and first-device bootstrap (D-069, D-070,
+ * D-075).
  *
- * Lifecycle (docs/security/DEVICE-IDENTITY.md):
- *   client creates   users/{uid}/devices/{deviceId}  status "pending"   (rules)
- *   server issues    deviceChallenges/{challengeId}  single-use, 5 min  (here)
- *   device signs the challenge with its device key (Rust core, D-070)
- *   server verifies certificate + proof, consumes the challenge, and sets
- *   status "active" (here)
+ *   registerDevice        client → server: create the `pending` record
+ *                         (certificate verified, rate-limited, capped)
+ *   issueDeviceChallenge  single-use challenge for `activation` (pending
+ *                         device) or `recovery_registration` (active device)
+ *   activateDevice        BOOTSTRAP ONLY: proof of possession activates the
+ *                         account's first device, once ever. Every later
+ *                         device needs approval by a trusted device or the
+ *                         recovery key (trust.ts): `approval_required`.
  *
- * Firebase Auth proves only who the *account* is. Activation additionally
- * requires proof of possession of the certified device key, so copied
- * metadata (a certificate, a public key, a device ID) never activates a
- * device. The server never receives private keys.
- *
- * Pure logic over an injected Firestore + clock so it is testable against the
- * emulator; callable wrappers live in ../index.ts.
+ * Firebase Auth proves the account; it never makes a device trusted.
+ * Pure logic over an injected Firestore + clock (emulator-tested); callable
+ * wrappers live in ../index.ts.
  */
 import { createHash, randomBytes } from 'node:crypto';
+import { type DocumentSnapshot, FieldValue, type Firestore, Timestamp } from 'firebase-admin/firestore';
+import { InvalidCertificateError, MAX_CERTIFICATE_BYTES, verifyCertificate } from './certificate';
 import {
-  type DocumentReference,
-  type DocumentSnapshot,
-  FieldValue,
-  type Firestore,
-  Timestamp,
-} from 'firebase-admin/firestore';
-import { InvalidCertificateError } from './certificate';
+  Collections,
+  DEVICE_ID_PATTERN,
+  DEVICE_SCHEMA_VERSION,
+  DeviceError,
+  type DeviceFailure,
+  deviceRef,
+  input,
+  MAX_PENDING_DEVICES,
+  PLATFORMS,
+  RECORD_ID_PATTERN,
+  requireAccount,
+  requireBytes,
+  requireBytesUpTo,
+  requirePattern,
+  toUnixSeconds,
+  trustRef,
+  TTL,
+} from './common';
 import { CHALLENGE_BYTES, InvalidProofError, PROOF_BYTES, ProofPurpose, verifyDeviceProof } from './proof';
+import { consume, requireBudget } from './rateLimit';
 
-export const CHALLENGE_TTL_MS = 5 * 60 * 1000;
-export const DEVICE_SCHEMA_VERSION = 1;
-
-export const ACCOUNT_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
-export const DEVICE_ID_PATTERN = /^[0-9a-f]{32}$/;
-const CHALLENGE_ID_PATTERN = /^[0-9a-f]{32}$/;
-
-export const Collections = {
-  users: 'users',
-  devices: 'devices',
-  challenges: 'deviceChallenges',
-  deviceIdIndex: 'deviceIdIndex',
-  deviceKeyIndex: 'deviceKeyIndex',
-} as const;
-
-/** Safe, stable failure categories (no data). Mapped to HttpsError codes. */
-export type RegistrationFailure =
-  | 'invalid_argument'
-  | 'unauthenticated'
-  | 'device_not_found'
-  | 'device_not_pending'
-  | 'challenge_invalid'
-  | 'challenge_expired'
-  | 'proof_invalid'
-  | 'certificate_invalid'
-  | 'duplicate_device';
-
-export class RegistrationError extends Error {
-  constructor(readonly failure: RegistrationFailure) {
-    super(failure);
-  }
-}
+export const CHALLENGE_PURPOSES = ['activation', 'recovery_registration'] as const;
+export type ChallengePurpose = (typeof CHALLENGE_PURPOSES)[number];
 
 export interface IssuedChallenge {
   readonly challengeId: string;
   /** Base64 of 32 random bytes. */
   readonly challenge: string;
   readonly expiresAtMillis: number;
+  /** The value signed into statements (whole seconds). */
+  readonly expiresAtUnix: number;
 }
 
-function requireAccount(uid: string | undefined): string {
-  if (uid === undefined) throw new RegistrationError('unauthenticated');
-  if (!ACCOUNT_ID_PATTERN.test(uid)) throw new RegistrationError('invalid_argument');
-  return uid;
-}
+export const keyIndexId = (deviceSignatureKey: Buffer): string =>
+  createHash('sha256').update(deviceSignatureKey).digest('hex');
 
-function requireDeviceId(value: unknown): string {
-  if (typeof value !== 'string' || !DEVICE_ID_PATTERN.test(value)) {
-    throw new RegistrationError('invalid_argument');
+/** Counts a failed verification toward the account's failure budget. */
+export async function recordFailure(db: Firestore, accountId: string, now: Date): Promise<void> {
+  try {
+    await consume(db, accountId, 'verificationFailure', now);
+  } catch (error) {
+    if (!(error instanceof DeviceError)) throw error;
   }
-  return value;
 }
 
-function deviceRef(db: Firestore, uid: string, deviceId: string) {
-  return db.collection(Collections.users).doc(uid).collection(Collections.devices).doc(deviceId);
+/**
+ * `null` when the record is a live pending device; otherwise the failure.
+ * Callers lazily expire stale pending records (the cleanup job does too).
+ */
+export function pendingFailure(device: DocumentSnapshot, now: Date): DeviceFailure | null {
+  if (!device.exists) return 'device_not_found';
+  if (device.get('status') !== 'pending') return 'device_not_pending';
+  if (device.get('schemaVersion') !== DEVICE_SCHEMA_VERSION) return 'certificate_invalid';
+  const expiresAt = device.get('expiresAt') as unknown;
+  if (!(expiresAt instanceof Timestamp) || expiresAt.toMillis() <= now.getTime()) return 'device_expired';
+  return null;
 }
 
-/** Issues a single-use activation challenge for the caller's pending device. */
-export async function issueActivationChallenge(
+/** Creates the caller's `pending` record after verifying its certificate. */
+export async function registerDevice(
+  db: Firestore,
+  uid: string | undefined,
+  data: unknown,
+  now: Date,
+): Promise<{ status: 'pending'; expiresAtMillis: number }> {
+  const accountId = requireAccount(uid);
+  const args = input(data);
+  const deviceId = requirePattern(args.deviceId, DEVICE_ID_PATTERN);
+  const platform = args.platform;
+  if (typeof platform !== 'string' || !(PLATFORMS as readonly string[]).includes(platform)) {
+    throw new DeviceError('invalid_argument');
+  }
+  const certificate = requireBytesUpTo(args.certificate, MAX_CERTIFICATE_BYTES);
+  let deviceSignatureKey: Buffer;
+  try {
+    const cert = verifyCertificate(certificate);
+    if (cert.deviceId.toString('hex') !== deviceId) throw new DeviceError('certificate_invalid');
+    deviceSignatureKey = cert.deviceSignatureKey;
+  } catch (error) {
+    if (error instanceof InvalidCertificateError) throw new DeviceError('certificate_invalid');
+    throw error;
+  }
+  await consume(db, accountId, 'register', now);
+
+  const devices = db.collection(Collections.users).doc(accountId).collection(Collections.devices);
+  const pending = await devices.where('status', '==', 'pending').count().get();
+  if (pending.data().count >= MAX_PENDING_DEVICES) throw new DeviceError('too_many_pending');
+
+  const expiresAt = new Date(now.getTime() + TTL.pendingDeviceMs);
+  await db.runTransaction(async (tx) => {
+    const ref = deviceRef(db, accountId, deviceId);
+    const [existing, idIndex, keyIndex] = await Promise.all([
+      tx.get(ref),
+      tx.get(db.collection(Collections.deviceIdIndex).doc(deviceId)),
+      tx.get(db.collection(Collections.deviceKeyIndex).doc(keyIndexId(deviceSignatureKey))),
+    ]);
+    // An existing record (even revoked) or an activated ID/key is never reused.
+    if (existing.exists || idIndex.exists || keyIndex.exists) throw new DeviceError('duplicate_device');
+    tx.create(ref, {
+      schemaVersion: DEVICE_SCHEMA_VERSION,
+      status: 'pending',
+      platform,
+      certificate,
+      ciphersuite: 1,
+      implementation: 'openmls/0.9.1',
+      createdAt: FieldValue.serverTimestamp(),
+      expiresAt: Timestamp.fromDate(expiresAt),
+    });
+  });
+  return { status: 'pending', expiresAtMillis: expiresAt.getTime() };
+}
+
+/**
+ * Issues a single-use challenge. `activation`: the caller's pending device,
+ * only while the account has no trusted device yet (otherwise
+ * `approval_required`, so callers switch to the approval flow).
+ * `recovery_registration`: the caller's active device.
+ */
+export async function issueDeviceChallenge(
   db: Firestore,
   uid: string | undefined,
   data: unknown,
   now: Date,
 ): Promise<IssuedChallenge> {
   const accountId = requireAccount(uid);
-  const deviceId = requireDeviceId((data as { deviceId?: unknown } | null)?.deviceId);
-  const device = await deviceRef(db, accountId, deviceId).get();
-  if (!device.exists) throw new RegistrationError('device_not_found');
-  if (device.get('status') !== 'pending') throw new RegistrationError('device_not_pending');
+  const args = input(data);
+  const deviceId = requirePattern(args.deviceId, DEVICE_ID_PATTERN);
+  const purpose = (args.purpose ?? 'activation') as unknown;
+  if (typeof purpose !== 'string' || !(CHALLENGE_PURPOSES as readonly string[]).includes(purpose)) {
+    throw new DeviceError('invalid_argument');
+  }
+  await requireBudget(db, accountId, 'verificationFailure', now);
+  await consume(db, accountId, 'challenge', now);
+
+  const [device, trust] = await Promise.all([deviceRef(db, accountId, deviceId).get(), trustRef(db, accountId).get()]);
+  if (purpose === 'activation') {
+    const failure = pendingFailure(device, now);
+    if (failure === 'device_expired') await device.ref.update({ status: 'expired' });
+    if (failure !== null) throw new DeviceError(failure);
+    if (trust.exists) throw new DeviceError('approval_required');
+  } else {
+    if (!device.exists) throw new DeviceError('device_not_found');
+    if (device.get('status') !== 'active') throw new DeviceError('approver_not_trusted');
+  }
 
   const challengeId = randomBytes(16).toString('hex');
   const challenge = randomBytes(CHALLENGE_BYTES);
-  const expiresAt = new Date(now.getTime() + CHALLENGE_TTL_MS);
+  const expiresAtUnix = toUnixSeconds(now.getTime() + TTL.challengeMs);
   await db.collection(Collections.challenges).doc(challengeId).create({
     accountId,
     deviceId,
-    purpose: ProofPurpose.activation,
+    purpose,
     challenge,
-    expiresAt: Timestamp.fromDate(expiresAt),
+    expiresAt: Timestamp.fromMillis(expiresAtUnix * 1000),
   });
   return {
     challengeId,
     challenge: challenge.toString('base64'),
-    expiresAtMillis: expiresAt.getTime(),
+    expiresAtMillis: expiresAtUnix * 1000,
+    expiresAtUnix,
   };
 }
 
-type Verdict =
-  | { failure: RegistrationFailure; deviceSignatureKey?: undefined }
-  | { failure: null; deviceSignatureKey: Buffer };
-
-/** All activation checks except uniqueness; reads nothing, writes nothing. */
-function verifyActivation(
+/** Checks a challenge snapshot against caller, device, purpose and clock. */
+export function challengeFailure(
+  snap: DocumentSnapshot,
   accountId: string,
   deviceId: string,
-  proof: Buffer,
-  challengeSnap: DocumentSnapshot,
-  deviceSnap: DocumentSnapshot,
+  purpose: ChallengePurpose,
   now: Date,
-): Verdict {
-  if (
-    challengeSnap.get('accountId') !== accountId ||
-    challengeSnap.get('deviceId') !== deviceId ||
-    challengeSnap.get('purpose') !== ProofPurpose.activation
-  ) {
-    return { failure: 'challenge_invalid' };
+): DeviceFailure | null {
+  if (!snap.exists) return 'challenge_invalid';
+  if (snap.get('accountId') !== accountId || snap.get('deviceId') !== deviceId || snap.get('purpose') !== purpose) {
+    return 'challenge_invalid';
   }
-  const expiresAt = challengeSnap.get('expiresAt') as unknown;
-  if (!(expiresAt instanceof Timestamp) || expiresAt.toMillis() <= now.getTime()) {
-    return { failure: 'challenge_expired' };
-  }
-  if (!deviceSnap.exists) return { failure: 'device_not_found' };
-  if (deviceSnap.get('status') !== 'pending') return { failure: 'device_not_pending' };
-  if (deviceSnap.get('schemaVersion') !== DEVICE_SCHEMA_VERSION) {
-    return { failure: 'certificate_invalid' };
-  }
-  const certificate = deviceSnap.get('certificate') as unknown;
-  const challenge = challengeSnap.get('challenge') as unknown;
-  if (!(certificate instanceof Uint8Array) || !(challenge instanceof Uint8Array)) {
-    return { failure: 'certificate_invalid' };
-  }
-  try {
-    const cert = verifyDeviceProof(
-      ProofPurpose.activation,
-      accountId,
-      Buffer.from(certificate),
-      Buffer.from(challenge),
-      proof,
-    );
-    // The certificate must certify exactly the device ID it is filed under.
-    if (cert.deviceId.toString('hex') !== deviceId) return { failure: 'certificate_invalid' };
-    return { failure: null, deviceSignatureKey: cert.deviceSignatureKey };
-  } catch (error) {
-    if (error instanceof InvalidCertificateError) return { failure: 'certificate_invalid' };
-    if (error instanceof InvalidProofError) return { failure: 'proof_invalid' };
-    throw error;
-  }
+  const expiresAt = snap.get('expiresAt') as unknown;
+  if (!(expiresAt instanceof Timestamp) || expiresAt.toMillis() <= now.getTime()) return 'challenge_expired';
+  return null;
 }
 
 /**
- * Verifies the proof and activates the device, atomically. The challenge is
- * consumed by the first activation attempt whatever its outcome, so a
- * challenge can never be retried or replayed.
+ * BOOTSTRAP: activates the account's first device after verifying its proof
+ * of possession, and marks the account's trust as initialized (forever). If
+ * the account already has (or ever had) a trusted device: `approval_required`.
+ * The challenge is consumed by the first attempt whatever its outcome.
  */
-export async function activateDevice(
-  db: Firestore,
-  uid: string | undefined,
-  data: unknown,
-  now: Date,
-): Promise<void> {
+export async function activateDevice(db: Firestore, uid: string | undefined, data: unknown, now: Date): Promise<void> {
   const accountId = requireAccount(uid);
-  const input = (data ?? {}) as { deviceId?: unknown; challengeId?: unknown; proof?: unknown };
-  const deviceId = requireDeviceId(input.deviceId);
-  if (typeof input.challengeId !== 'string' || !CHALLENGE_ID_PATTERN.test(input.challengeId)) {
-    throw new RegistrationError('invalid_argument');
-  }
-  if (typeof input.proof !== 'string' || input.proof.length > 128) {
-    throw new RegistrationError('invalid_argument');
-  }
-  const proof = Buffer.from(input.proof, 'base64');
-  if (proof.length !== PROOF_BYTES) throw new RegistrationError('invalid_argument');
+  const args = input(data);
+  const deviceId = requirePattern(args.deviceId, DEVICE_ID_PATTERN);
+  const challengeId = requirePattern(args.challengeId, RECORD_ID_PATTERN);
+  const proof = requireBytes(args.proof, PROOF_BYTES);
+  await requireBudget(db, accountId, 'verificationFailure', now);
 
-  const challengeRef = db.collection(Collections.challenges).doc(input.challengeId);
+  const challengeRef = db.collection(Collections.challenges).doc(challengeId);
   const devRef = deviceRef(db, accountId, deviceId);
-
-  // The transaction returns the failure instead of throwing so the challenge
-  // deletion (consumption) commits even when verification fails. Firestore
-  // requires every read before any write, so all checks run first.
-  const failure = await db.runTransaction(async (tx): Promise<RegistrationFailure | null> => {
-    const [challengeSnap, deviceSnap] = await Promise.all([tx.get(challengeRef), tx.get(devRef)]);
+  const failure = await db.runTransaction(async (tx): Promise<DeviceFailure | null> => {
+    const [challengeSnap, deviceSnap, trust] = await Promise.all([
+      tx.get(challengeRef),
+      tx.get(devRef),
+      tx.get(trustRef(db, accountId)),
+    ]);
     if (!challengeSnap.exists) return 'challenge_invalid';
 
-    const verdict = verifyActivation(accountId, deviceId, proof, challengeSnap, deviceSnap, now);
-    let indexes: { idRef: DocumentReference; keyRef: DocumentReference } | undefined;
-    let outcome: RegistrationFailure | null = verdict.failure;
-    if (verdict.failure === null) {
-      // Global uniqueness: a device ID or device key can be activated once,
-      // ever (revoked ones stay indexed), so copied public material can never
-      // become a second active device.
-      indexes = {
-        idRef: db.collection(Collections.deviceIdIndex).doc(deviceId),
-        keyRef: db
-          .collection(Collections.deviceKeyIndex)
-          .doc(createHash('sha256').update(verdict.deviceSignatureKey).digest('hex')),
-      };
-      const [idIndex, keyIndex] = await Promise.all([tx.get(indexes.idRef), tx.get(indexes.keyRef)]);
+    let outcome: DeviceFailure | null =
+      challengeFailure(challengeSnap, accountId, deviceId, 'activation', now) ?? pendingFailure(deviceSnap, now);
+    if (outcome === null && trust.exists) outcome = 'approval_required';
+
+    let keyId: string | undefined;
+    if (outcome === null) {
+      try {
+        const cert = verifyDeviceProof(
+          ProofPurpose.activation,
+          accountId,
+          Buffer.from(deviceSnap.get('certificate') as Uint8Array),
+          Buffer.from(challengeSnap.get('challenge') as Uint8Array),
+          proof,
+        );
+        if (cert.deviceId.toString('hex') !== deviceId) outcome = 'certificate_invalid';
+        else keyId = keyIndexId(cert.deviceSignatureKey);
+      } catch (error) {
+        if (error instanceof InvalidCertificateError) outcome = 'certificate_invalid';
+        else if (error instanceof InvalidProofError) outcome = 'proof_invalid';
+        else throw error;
+      }
+    }
+    const idIndexRef = db.collection(Collections.deviceIdIndex).doc(deviceId);
+    const keyIndexRef = keyId === undefined ? undefined : db.collection(Collections.deviceKeyIndex).doc(keyId);
+    if (outcome === null && keyIndexRef !== undefined) {
+      const [idIndex, keyIndex] = await Promise.all([tx.get(idIndexRef), tx.get(keyIndexRef)]);
       if (idIndex.exists || keyIndex.exists) outcome = 'duplicate_device';
     }
 
     tx.delete(challengeRef);
-    if (outcome !== null || indexes === undefined) return outcome;
-    tx.create(indexes.idRef, { accountId });
-    tx.create(indexes.keyRef, { accountId, deviceId });
-    tx.update(devRef, { status: 'active', activatedAt: FieldValue.serverTimestamp() });
+    if (outcome === 'device_expired') tx.update(devRef, { status: 'expired' });
+    if (outcome !== null || keyIndexRef === undefined) return outcome;
+    tx.create(trustRef(db, accountId), { initializedAt: FieldValue.serverTimestamp(), firstDeviceId: deviceId });
+    tx.create(idIndexRef, { accountId });
+    tx.create(keyIndexRef, { accountId, deviceId });
+    tx.update(devRef, {
+      status: 'active',
+      activatedAt: FieldValue.serverTimestamp(),
+      activationMethod: 'first_device',
+      expiresAt: FieldValue.delete(),
+    });
     return null;
   });
 
-  if (failure !== null) throw new RegistrationError(failure);
+  if (failure !== null) {
+    if (failure === 'proof_invalid' || failure === 'certificate_invalid') await recordFailure(db, accountId, now);
+    throw new DeviceError(failure);
+  }
 }

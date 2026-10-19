@@ -90,6 +90,25 @@ Branch protection and production reviewers are blocked by the GitHub plan.
 
 [DEVICE-IDENTITY](../security/DEVICE-IDENTITY.md)
 
+## Phase 08 — Recovery, revocation & multi-device security ✅
+
+- Every device keeps its own PIK and keys; trust between a person's
+  devices is a chain of PIK-signed approvals (D-074).
+- First-device bootstrap is once ever; later devices need approval by a
+  trusted device or the recovery key; a comparison code is shown on both
+  screens (D-075).
+- Optional single-use recovery key (D-076); no server or support recovery;
+  no history recovery.
+- One-way revocation enforced server-side, including for offline devices
+  (D-080).
+- Rate limits (D-077), expiry and cleanup (D-078); rollback protection
+  analysed but not provided (D-079 open).
+- **Not done:** deployment (Blaze), device-management UI, identity reset,
+  peer-side approval-chain verification. **Sirf Hum is NOT production
+  E2EE yet.**
+
+[MULTI-DEVICE-TRUST](../security/MULTI-DEVICE-TRUST.md)
+
 ## Proposed sequence
 
 Ordering principle: identity and cryptography come **before** any feature

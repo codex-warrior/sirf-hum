@@ -5,10 +5,11 @@
  * pairing invariants, and fan out privacy-safe notifications. They must
  * never require plaintext private content (docs/security/E2EE-REQUIREMENTS.md).
  *
- * Functions are added in the phase that owns them. Device registration
- * (Prompt 07, docs/security/DEVICE-IDENTITY.md): issueDeviceChallenge,
- * activateDevice. Deploying needs the Blaze plan (D-025); until then they run
- * only in the emulator.
+ * Functions are added in the phase that owns them. Device trust (Prompts
+ * 07–08, docs/security/DEVICE-IDENTITY.md): registration, first-device
+ * bootstrap, approval by a trusted device, recovery key, scheduled cleanup.
+ * Deploying needs the Blaze plan (D-025); until then they run only in the
+ * emulator.
  */
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -22,12 +23,19 @@ import {
   parseEnvironment,
   REGION,
 } from './config/environment';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { cleanupExpired } from './device/cleanup';
+import { DeviceError, type DeviceFailure } from './device/common';
+import { activateDevice as activate, issueDeviceChallenge as issueChallenge, registerDevice as register } from './device/registration';
 import {
-  activateDevice as activate,
-  issueActivationChallenge,
-  RegistrationError,
-  type RegistrationFailure,
-} from './device/registration';
+  approveDevice as approve,
+  listDeviceApprovalRequests as listRequests,
+  proveDeviceEnrollment as proveEnrollment,
+  recoverDevice as recover,
+  registerRecoveryKey as registerRecovery,
+  rejectDeviceApproval as reject,
+  requestDeviceApproval as requestApproval,
+} from './device/trust';
 
 const shEnv = defineString('SH_ENV');
 
@@ -44,16 +52,26 @@ onInit(() => {
 
 initializeApp();
 
-const FAILURE_CODES: Record<RegistrationFailure, FunctionsErrorCode> = {
+const FAILURE_CODES: Record<DeviceFailure, FunctionsErrorCode> = {
   invalid_argument: 'invalid-argument',
   unauthenticated: 'unauthenticated',
   device_not_found: 'not-found',
   device_not_pending: 'failed-precondition',
+  device_expired: 'failed-precondition',
   challenge_invalid: 'permission-denied',
   challenge_expired: 'deadline-exceeded',
   proof_invalid: 'permission-denied',
   certificate_invalid: 'invalid-argument',
   duplicate_device: 'already-exists',
+  too_many_pending: 'resource-exhausted',
+  approval_required: 'failed-precondition',
+  request_invalid: 'permission-denied',
+  request_expired: 'deadline-exceeded',
+  approver_not_trusted: 'permission-denied',
+  approval_invalid: 'permission-denied',
+  recovery_unavailable: 'failed-precondition',
+  recovery_invalid: 'permission-denied',
+  rate_limited: 'resource-exhausted',
 };
 
 /** Maps domain failures to callable errors carrying only the category. */
@@ -61,8 +79,8 @@ async function guarded<T>(event: string, run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {
-    if (error instanceof RegistrationError) {
-      // Category only: never challenges, proofs, certificates or IDs.
+    if (error instanceof DeviceError) {
+      // Category only: never challenges, proofs, signatures, keys or IDs.
       logger.info(event, { outcome: error.failure });
       throw new HttpsError(FAILURE_CODES[error.failure], error.failure);
     }
@@ -72,18 +90,61 @@ async function guarded<T>(event: string, run: () => Promise<T>): Promise<T> {
 }
 
 // App Check is defence in depth (FIREBASE-ARCHITECTURE.md), never the
-// authorization: auth + proof of possession are.
+// authorization: auth + signatures by trusted keys are.
 const deviceCallOptions = { enforceAppCheck: true } as const;
 
-export const issueDeviceChallenge = onCall(deviceCallOptions, (request) =>
-  guarded('device_challenge_issued', () =>
-    issueActivationChallenge(getFirestore(), request.auth?.uid, request.data, new Date()),
-  ),
+const callable = <T>(event: string, run: (uid: string | undefined, data: unknown, now: Date) => Promise<T>) =>
+  onCall(deviceCallOptions, (request) => guarded(event, () => run(request.auth?.uid, request.data, new Date())));
+
+const done = { ok: true } as const;
+
+export const registerDevice = callable('device_registered', (uid, data, now) => register(getFirestore(), uid, data, now));
+
+export const issueDeviceChallenge = callable('device_challenge_issued', (uid, data, now) =>
+  issueChallenge(getFirestore(), uid, data, now),
 );
 
-export const activateDevice = onCall(deviceCallOptions, (request) =>
-  guarded('device_activation', async () => {
-    await activate(getFirestore(), request.auth?.uid, request.data, new Date());
-    return { status: 'active' as const };
-  }),
+/** First device of an account only (bootstrap); later devices need approval. */
+export const activateDevice = callable('device_activation', async (uid, data, now) => {
+  await activate(getFirestore(), uid, data, now);
+  return { status: 'active' as const };
+});
+
+export const requestDeviceApproval = callable('device_approval_requested', (uid, data, now) =>
+  requestApproval(getFirestore(), uid, data, now),
 );
+
+export const proveDeviceEnrollment = callable('device_enrollment_proven', async (uid, data, now) => {
+  await proveEnrollment(getFirestore(), uid, data, now);
+  return done;
+});
+
+export const listDeviceApprovalRequests = callable('device_approval_listed', (uid, _data, now) =>
+  listRequests(getFirestore(), uid, now),
+);
+
+export const approveDevice = callable('device_approved', async (uid, data, now) => {
+  await approve(getFirestore(), uid, data, now);
+  return done;
+});
+
+export const rejectDeviceApproval = callable('device_approval_rejected', async (uid, data, now) => {
+  await reject(getFirestore(), uid, data, now);
+  return done;
+});
+
+export const registerRecoveryKey = callable('recovery_key_registered', async (uid, data, now) => {
+  await registerRecovery(getFirestore(), uid, data, now);
+  return done;
+});
+
+export const recoverDevice = callable('device_recovered', async (uid, data, now) => {
+  await recover(getFirestore(), uid, data, now);
+  return done;
+});
+
+/** Needs Cloud Scheduler (Blaze, D-025). Lazy expiry works without it. */
+export const cleanupExpiredDeviceRecords = onSchedule({ schedule: 'every 24 hours', timeZone: 'Etc/UTC' }, async () => {
+  const result = await cleanupExpired(getFirestore(), new Date());
+  logger.info('device_cleanup', { ...result });
+});

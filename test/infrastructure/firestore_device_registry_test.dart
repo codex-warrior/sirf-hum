@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -15,28 +16,36 @@ void main() {
     certificate: Uint8List.fromList(List.filled(185, 1)),
   );
 
-  test('the pending record has exactly the fields the rules accept', () {
-    final rules = File('firebase/firestore.rules').readAsStringSync();
-    final listed = RegExp(
-      r'let fields = \[([^\]]*)\]',
-      multiLine: true,
-    ).firstMatch(rules)!.group(1)!;
-    final ruleFields = RegExp(r"'(\w+)'").allMatches(listed).map((m) => m[1]);
+  test('registration sends exactly what registerDevice reads', () {
+    // Prompt 08: the server writes the pending record itself; the client
+    // sends only these three inputs (functions/src/device/registration.ts).
+    final payload = FirestoreDeviceRegistry.registrationPayload(registration);
+    expect(payload.keys.toSet(), {'deviceId', 'platform', 'certificate'});
+    final server = File(
+      'functions/src/device/registration.ts',
+    ).readAsStringSync();
+    for (final key in payload.keys) {
+      expect(server, contains('args.$key'), reason: 'server reads $key');
+    }
+    expect(payload['deviceId'], registration.deviceIdHex);
+    expect(payload['platform'], 'ios');
     expect(
-      FirestoreDeviceRegistry.pendingFields(registration).keys.toSet(),
-      ruleFields.toSet(),
+      base64Decode(payload['certificate']! as String),
+      registration.certificate,
     );
   });
 
-  test('values match the rules: pending, v1, ciphersuite 1, bytes', () {
-    final f = FirestoreDeviceRegistry.pendingFields(registration);
-    expect(f['status'], 'pending');
-    expect(f['schemaVersion'], 1);
-    expect(f['ciphersuite'], 1);
-    expect(f['implementation'], 'openmls/0.9.1');
-    expect(f['platform'], 'ios');
-    expect(f['certificate'], isA<Blob>());
-    expect(f['createdAt'], isA<FieldValue>());
+  test('revocation writes exactly the fields the rules allow', () {
+    final rules = File('firebase/firestore.rules').readAsStringSync();
+    final allowed = RegExp(
+      r'affectedKeys\(\)\.hasOnly\(\[([^\]]*)\]\)',
+    ).firstMatch(rules)!.group(1)!;
+    final ruleFields = RegExp(r"'(\w+)'").allMatches(allowed).map((m) => m[1]);
+    final fields = FirestoreDeviceRegistry.revocationFields();
+    expect(fields.keys.toSet(), ruleFields.toSet());
+    expect(fields['status'], 'revoked');
+    expect(fields['revokedReason'], 'user_removed');
+    expect(fields['revokedAt'], isA<FieldValue>());
   });
 
   test('implementation string matches the crypto core', () {

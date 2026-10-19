@@ -16,7 +16,7 @@ import 'package:ffi/ffi.dart';
 import 'package:sirf_hum_crypto/src/types.dart';
 
 /// ABI version this Dart code was written against (native ABI_VERSION).
-const int expectedAbiVersion = 2;
+const int expectedAbiVersion = 3;
 
 // True in release (product) builds, where test key stores are refused.
 const bool _isReleaseBuild = bool.fromEnvironment('dart.vm.product');
@@ -83,6 +83,82 @@ external int _deviceProof(
   Pointer<Uint8> challenge,
   int len,
   Pointer<_ShBuf> out,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint8>,
+    Size,
+    Uint64,
+    Pointer<_ShBuf>,
+  )
+>(symbol: 'sh_crypto_approve_device')
+external int _approveDevice(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> cert,
+  int certLen,
+  Pointer<Uint8> challenge,
+  int challengeLen,
+  int expiresAt,
+  Pointer<_ShBuf> out,
+);
+
+@Native<
+  Int32 Function(Pointer<Uint8>, Size, Pointer<Uint8>, Size, Pointer<Uint32>)
+>(symbol: 'sh_crypto_approval_code')
+external int _approvalCode(
+  Pointer<Uint8> cert,
+  int certLen,
+  Pointer<Uint8> challenge,
+  int challengeLen,
+  Pointer<Uint32> out,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Uint64,
+    Pointer<_ShBuf>,
+    Pointer<_ShBuf>,
+    Pointer<_ShBuf>,
+  )
+>(symbol: 'sh_crypto_create_recovery_key')
+external int _createRecoveryKey(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> challenge,
+  int challengeLen,
+  int expiresAt,
+  Pointer<_ShBuf> secret,
+  Pointer<_ShBuf> publicKey,
+  Pointer<_ShBuf> signature,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint8>,
+    Size,
+    Uint64,
+    Pointer<_ShBuf>,
+    Pointer<_ShBuf>,
+  )
+>(symbol: 'sh_crypto_recovery_approval')
+external int _recoveryApproval(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> key,
+  int keyLen,
+  Pointer<Uint8> challenge,
+  int challengeLen,
+  int expiresAt,
+  Pointer<_ShBuf> signature,
+  Pointer<_ShBuf> publicKey,
 );
 
 @Native<Void Function(Pointer<_ShCore>)>(symbol: 'sh_crypto_close')
@@ -251,6 +327,12 @@ final _finalizer = NativeFinalizer(
   ).cast(),
 );
 
+/// Expiry values are whole seconds since the epoch, never negative.
+int _u64(int value) {
+  if (value < 0) throw const CryptoException(CryptoErrorCode.invalidInput);
+  return value;
+}
+
 void _check(int rc) {
   if (rc != 0) throw CryptoException(CryptoErrorCode.fromCode(rc));
 }
@@ -411,6 +493,130 @@ final class CryptoCore implements Finalizable {
         (c, cl) =>
             _output((o) => _deviceProof(_h, purpose.wireValue, c, cl, o)),
       );
+
+  /// Approves another device of this account (D-075): signs the approval
+  /// statement with this device's PIK and trusts the new device's person key
+  /// locally. Returns the 64-byte signature for the server, which decides
+  /// whether it counts (approver still active, request live).
+  Uint8List approveDevice({
+    required Uint8List newCertificate,
+    required Uint8List challenge,
+    required int expiresAtUnix,
+  }) => _input(
+    newCertificate,
+    (n, nl) => _input(
+      challenge,
+      (c, cl) => _output(
+        (o) => _approveDevice(_h, n, nl, c, cl, _u64(expiresAtUnix), o),
+      ),
+    ),
+  );
+
+  /// The six-digit code both devices show, so the user approves the device
+  /// in their hand (D-075). Not a secret.
+  static int approvalCode({
+    required Uint8List newCertificate,
+    required Uint8List challenge,
+  }) {
+    if (!isAvailable) throw const CryptoException(CryptoErrorCode.unsupported);
+    final out = calloc<Uint32>();
+    try {
+      _input(
+        newCertificate,
+        (n, nl) => _input(
+          challenge,
+          (c, cl) => _check(_approvalCode(n, nl, c, cl, out)),
+        ),
+      );
+      return out.value;
+    } finally {
+      calloc.free(out);
+    }
+  }
+
+  /// Creates a recovery key (D-076) and signs its registration. The returned
+  /// [RecoveryKeyBundle.secret] must be shown to the user once and never
+  /// stored, sent or logged; Dart strings cannot be wiped.
+  RecoveryKeyBundle createRecoveryKey({
+    required Uint8List challenge,
+    required int expiresAtUnix,
+  }) => _input(challenge, (c, cl) {
+    final secret = calloc<_ShBuf>();
+    final publicKey = calloc<_ShBuf>();
+    final signature = calloc<_ShBuf>();
+    try {
+      _check(
+        _createRecoveryKey(
+          _h,
+          c,
+          cl,
+          _u64(expiresAtUnix),
+          secret,
+          publicKey,
+          signature,
+        ),
+      );
+      final text = _copy(secret.ref);
+      try {
+        return RecoveryKeyBundle(
+          secret: utf8.decode(text),
+          publicKey: _copy(publicKey.ref),
+          registrationSignature: _copy(signature.ref),
+        );
+      } finally {
+        wipeBytes(text);
+      }
+    } finally {
+      for (final b in [secret, publicKey, signature]) {
+        _bufFree(b.ref);
+        calloc.free(b);
+      }
+    }
+  });
+
+  /// Signs a recovery approval for THIS device with the user-typed recovery
+  /// key. The native copy of the key is wiped after signing.
+  RecoveryApprovalResult recoveryApproval({
+    required String recoveryKey,
+    required Uint8List challenge,
+    required int expiresAtUnix,
+  }) {
+    final keyBytes = Uint8List.fromList(utf8.encode(recoveryKey));
+    try {
+      return _input(
+        keyBytes,
+        (k, kl) => _input(challenge, (c, cl) {
+          final signature = calloc<_ShBuf>();
+          final publicKey = calloc<_ShBuf>();
+          try {
+            _check(
+              _recoveryApproval(
+                _h,
+                k,
+                kl,
+                c,
+                cl,
+                _u64(expiresAtUnix),
+                signature,
+                publicKey,
+              ),
+            );
+            return RecoveryApprovalResult(
+              signature: _copy(signature.ref),
+              recoveryPublicKey: _copy(publicKey.ref),
+            );
+          } finally {
+            for (final b in [signature, publicKey]) {
+              _bufFree(b.ref);
+              calloc.free(b);
+            }
+          }
+        }),
+      );
+    } finally {
+      wipeBytes(keyBytes);
+    }
+  }
 
   /// Trusts a person key the user has verified out of band (D-064). Devices
   /// certified by untrusted person keys are rejected at the boundary.
