@@ -880,7 +880,21 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Investigation:** [D-093-SECURITY-REVIEW](../security/D-093-SECURITY-REVIEW.md) (2026-10-19). Engineering recommendation: *merge with specific security changes*, meaning documentation corrections F1 and F2 (applied) plus human sign-off. Pre-v2 follow-up: F3. This is not an approval.
 - **F4 evidence pass (2026-10-19):** the paper was obtained (co-author's copy). `StreamBE32` matches its nonce encoding, final flag and state machine. **Deviation:** Sirf Hum passes the media AAD to every segment, while the paper's STREAM uses it on segment 1 only (ε afterwards), so Theorem 2 does not literally cover the implemented variant. No weakness found. Resolve by (a) review of the adapted reduction or (b) switching to the paper's AD schedule (review §13.6). **Sign-off blocked until then.**
 - **F4 correction (option (b), 2026-10-19):** Sirf Hum's AD schedule now matches the paper. The media AAD goes on the first chunk only and the empty AD on every later chunk, so Theorem 2 applies directly and the adapted proof is no longer needed. This is a pre-production format correction: no compatibility mode, and old multi-chunk objects fail closed. Nothing was deployed. No change to the primitive, nonces, key handling, header, digest, `media_ref` or limits. Review §14.
-- **Status:** PROPOSED — PENDING HUMAN SECURITY REVIEW · 2026-10-19. Not independently reviewed or audited. Not to be replaced before that review.
+- **Status:** **APPROVED FOR PRE-PRODUCTION IMPLEMENTATION** · 2026-10-19 (human security review, owner decision; PR #10 head `54ddce6`, CI run 39243698359 green). Proposed earlier the same day, pending that review.
+  - **Human security review: completed.** It accepted the final STREAM AAD schedule (the media AAD on the first chunk, the empty AD on every later chunk), which follows the published STREAM construction (HRRV 2015, Fig. 8). It also accepted the implementation as having passed the required security and regression checks, and the documented residual risks for this pre-production stage.
+  - **This approval does NOT mean:** that an independent security audit was completed; production E2EE certification; zero vulnerabilities; or approval for a production launch.
+  - **`aead::stream` remains unaudited** (no known independent audit of the module or of `aead 0.5.2`). Sirf Hum's composition around it is also unaudited: the object format, media AAD, authenticated ciphertext digest and MLS key delivery.
+  - **The broader Sirf Hum E2EE system remains subject to a future independent security review** (D-054 conditions; THREAT-MODEL unresolved risks).
+  - **Production deployment remains blocked** until the production-readiness requirements are met: Blaze/deployment (D-025), the independent review, and the remaining open items.
+  - **Residual risks accepted for pre-production (not removed):**
+    - F3: the format version is not in the authenticated reference; required before any format v2.
+    - F5: zeroization of media-key copies inside OpenMLS is not established.
+    - F7: server-controlled upload metadata can cause a denial of service.
+    - F8: no audit of `aead::stream` or of the composition.
+    - F9: no end-to-end forged-reference test.
+    - Also: exact media sizes are visible (E45), and XChaCha20-Poly1305 has no authoritative specification (expired IETF draft).
+
+    See D-093-SECURITY-REVIEW §10 and §14.
 
 ### D-094 — Media keys never leave the core
 - **Decision:**

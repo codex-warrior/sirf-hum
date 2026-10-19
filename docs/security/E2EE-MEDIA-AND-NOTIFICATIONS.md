@@ -145,8 +145,9 @@ the encrypted payload and the AAD, never on the server.
 
 ### D-093 review brief (for human security review)
 
-**Status: PROPOSED — PENDING HUMAN SECURITY REVIEW. NOT independently
-reviewed, NOT audited.** Investigation:
+**Status: APPROVED FOR PRE-PRODUCTION IMPLEMENTATION** (human security
+review, 2026-10-19). **NOT independently reviewed, NOT audited, NOT approved
+for production.** `aead::stream` remains unaudited. Investigation:
 [D-093-SECURITY-REVIEW](D-093-SECURITY-REVIEW.md). Nothing below claims an audit of the STREAM implementation, and
 no audit should be inferred. Every fact was checked against the pinned
 sources in `Cargo.lock` on 2026-10-19.

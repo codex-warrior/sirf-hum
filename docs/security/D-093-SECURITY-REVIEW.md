@@ -1,9 +1,17 @@
 # D-093 Security Review: Media Encryption Construction
 
-**D-093 status: PROPOSED — PENDING HUMAN SECURITY REVIEW.** This document is
-an internal engineering investigation. It is **not** an independent review
-or an audit, and it does not approve D-093. Nothing here establishes that
-the construction is "secure" in a production sense.
+**D-093 status: APPROVED FOR PRE-PRODUCTION IMPLEMENTATION** (human
+security review completed, 2026-10-19; PR #10 head `54ddce6`, CI run
+39243698359 green). See the Decision Log for the full record.
+
+The approval rests on this investigation, which is an internal engineering
+investigation. It is **not** an independent review or an audit:
+- `aead::stream` remains unaudited;
+- the broader E2EE system awaits an independent security review;
+- production deployment remains blocked.
+
+Nothing here establishes that the construction is "secure" in a production
+sense, and the residual risks in §10 and §14 remain.
 
 - Date: 2026-10-19. Scope: PR #10 at commit `251a53d`
   (`packages/sirf_hum_crypto/native/src/engine/media.rs` and the parts of
@@ -659,8 +667,10 @@ Existing tests are unchanged and pass:
 - the previous STREAM-layer unit tests (wrong key, AAD fields, swap,
   repeat, truncation, prefix).
 
-**Status.** F4 is resolved in code. D-093 remains **PROPOSED — PENDING
-HUMAN SECURITY REVIEW**. The sign-off should cover this change, F8 (no audit
-of `aead::stream` and the composition), and the open low findings (F3, F5,
-F7, F9).
+**Status.** F4 is resolved in code. The human security review then
+approved D-093 **for pre-production implementation** (2026-10-19). It
+covered this change and accepted F8 (no audit of `aead::stream` or of the
+composition) and the open low findings (F3, F5, F7, F9) as residual risks
+for this stage. **Not** an independent audit, production certification or
+launch approval.
 
