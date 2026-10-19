@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sirf_hum/infrastructure/firebase/firebase_bootstrap.dart';
@@ -49,5 +51,23 @@ void main() {
     );
 
     expect(await bootstrap.initialize(_config()), FirebaseStatus.failed);
+  });
+
+  test(
+    'an initialization that never returns does not hang app start',
+    () async {
+      final bootstrap = FirebaseBootstrap(
+        initializer: (_) => Completer<void>().future,
+        timeout: const Duration(milliseconds: 20),
+      );
+      expect(await bootstrap.initialize(_config()), FirebaseStatus.failed);
+    },
+  );
+
+  test('the default bound is short enough to show the app', () {
+    expect(
+      FirebaseBootstrap.defaultTimeout,
+      lessThanOrEqualTo(const Duration(seconds: 15)),
+    );
   });
 }

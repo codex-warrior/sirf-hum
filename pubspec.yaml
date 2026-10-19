@@ -31,6 +31,10 @@ dependencies:
   # hook, so Android/iOS builds need the Rust toolchain (rustup).
   sirf_hum_crypto:
     path: packages/sirf_hum_crypto
+  # Account session (Prompt 13, D-107): observes and restores the signed-in
+  # account and signs out. No sign-in method is chosen yet. Imported only by
+  # lib/infrastructure.
+  firebase_auth: ^6.7.0
 
 dev_dependencies:
   flutter_lints: ^6.0.0
