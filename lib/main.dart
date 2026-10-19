@@ -7,8 +7,13 @@ import 'package:sirf_hum/app/app_providers.dart';
 import 'package:sirf_hum/app/environment_guard.dart';
 import 'package:sirf_hum/core/logging/app_logger.dart';
 import 'package:sirf_hum/infrastructure/firebase/app_check_bootstrap.dart';
+import 'package:sirf_hum/infrastructure/firebase/callable_pairing_backend.dart';
 import 'package:sirf_hum/infrastructure/firebase/crash_reporting.dart';
+import 'package:sirf_hum/infrastructure/firebase/firebase_account_session.dart';
 import 'package:sirf_hum/infrastructure/firebase/firebase_bootstrap.dart';
+import 'package:sirf_hum/infrastructure/firebase/firestore_couple_profiles.dart';
+import 'package:sirf_hum/security/account/account_session.dart';
+import 'package:sirf_hum/session/session_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -47,6 +52,17 @@ Future<void> main() async {
       overrides: [
         appConfigProvider.overrideWithValue(config),
         firebaseStatusProvider.overrideWithValue(firebaseStatus),
+        // Without configuration the session is signed out (the defaults); a
+        // configured build whose Firebase failed cannot know the account.
+        if (firebaseStatus == FirebaseStatus.failed)
+          accountSessionProvider.overrideWithValue(
+            const UnavailableAccountSession(),
+          ),
+        if (firebaseStatus == FirebaseStatus.ready) ...[
+          accountSessionProvider.overrideWithValue(FirebaseAccountSession()),
+          pairingBackendProvider.overrideWithValue(CallablePairingBackend()),
+          coupleProfilesProvider.overrideWithValue(FirestoreCoupleProfiles()),
+        ],
       ],
       child: const SirfHumApp(),
     ),

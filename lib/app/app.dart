@@ -1,25 +1,50 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sirf_hum/app/router.dart';
 import 'package:sirf_hum/design_system/design_system.dart';
+import 'package:sirf_hum/session/session_controller.dart';
 
-class SirfHumApp extends StatefulWidget {
+class SirfHumApp extends ConsumerStatefulWidget {
   const SirfHumApp({super.key, this.initialLocation});
 
   final String? initialLocation;
 
   @override
-  State<SirfHumApp> createState() => _SirfHumAppState();
+  ConsumerState<SirfHumApp> createState() => _SirfHumAppState();
 }
 
-class _SirfHumAppState extends State<SirfHumApp> {
-  late final GoRouter _router = buildRouter(
-    initialLocation: widget.initialLocation,
-  );
+class _SirfHumAppState extends ConsumerState<SirfHumApp> {
+  // Bumped on every session change so the router re-runs its redirect.
+  final _sessionChanged = ValueNotifier<int>(0);
+  late final GoRouter _router;
+  late final AppLifecycleListener _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    ref.listenManual(
+      sessionProvider,
+      (_, _) => _sessionChanged.value++,
+      fireImmediately: true,
+    );
+    _router = buildRouter(
+      session: () => ref.read(sessionProvider),
+      refresh: _sessionChanged,
+      initialLocation: widget.initialLocation,
+    );
+    // Returning to the app asks the server again ("Return" in the core
+    // loop): a couple formed or a sign-in ended while away shows up.
+    _lifecycle = AppLifecycleListener(
+      onResume: () => ref.read(sessionProvider.notifier).refresh(),
+    );
+  }
 
   @override
   void dispose() {
+    _lifecycle.dispose();
     _router.dispose();
+    _sessionChanged.dispose();
     super.dispose();
   }
 

@@ -1,88 +1,173 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sirf_hum/app/app.dart';
 import 'package:sirf_hum/app/product_area.dart';
+import 'package:sirf_hum/security/couple/pairing.dart';
+
+import '../support/session_fakes.dart';
 
 void main() {
-  void setWindow(WidgetTester tester, Size size) {
-    tester.view.physicalSize = size;
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-  }
+  int selectedIndex(WidgetTester tester) =>
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex;
+
+  final areaTitles = {
+    ProductArea.home: 'Asha & Ravi',
+    ProductArea.together: 'Spend time together, wherever you are.',
+    ProductArea.moments: 'Your story, just for the two of you.',
+    ProductArea.future: 'Where the two of you are going.',
+    ProductArea.us: 'The two of you.',
+  };
 
   testWidgets('phone layout shows the five areas in a bottom bar', (
     tester,
   ) async {
-    setWindow(tester, const Size(390, 844));
-    await tester.pumpWidget(const SirfHumApp());
-    await tester.pumpAndSettle();
+    setPhoneWindow(tester);
+    await pumpSirfHum(tester);
 
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.byType(NavigationRail), findsNothing);
+    expect(find.byType(NavigationDestination), findsNWidgets(5));
     for (final area in ProductArea.values) {
-      expect(find.text(area.label), findsWidgets);
+      expect(
+        find.widgetWithText(NavigationDestination, area.label),
+        findsOneWidget,
+      );
     }
-    expect(find.text(ProductArea.home.purpose), findsOneWidget);
+    expect(selectedIndex(tester), ProductArea.home.index);
   });
 
-  testWidgets('selecting an area navigates to it', (tester) async {
-    setWindow(tester, const Size(390, 844));
-    await tester.pumpWidget(const SirfHumApp());
-    await tester.pumpAndSettle();
+  testWidgets('every area is reachable and marked selected', (tester) async {
+    setPhoneWindow(tester);
+    await pumpSirfHum(tester);
 
-    await tester.tap(find.byIcon(ProductArea.moments.icon));
-    await tester.pumpAndSettle();
-
-    expect(find.text(ProductArea.moments.purpose), findsOneWidget);
+    for (final area in ProductArea.values.reversed) {
+      await tester.tap(find.byIcon(area.icon).hitTestable().first);
+      await tester.pumpAndSettle();
+      expect(selectedIndex(tester), area.index, reason: area.name);
+      expect(find.text(areaTitles[area]!), findsOneWidget, reason: area.name);
+    }
   });
 
   testWidgets('deep link opens the requested area', (tester) async {
-    setWindow(tester, const Size(390, 844));
-    await tester.pumpWidget(
-      SirfHumApp(initialLocation: ProductArea.future.path),
-    );
-    await tester.pumpAndSettle();
+    setPhoneWindow(tester);
+    await pumpSirfHum(tester, initialLocation: ProductArea.future.path);
 
-    expect(find.text(ProductArea.future.purpose), findsOneWidget);
+    expect(selectedIndex(tester), ProductArea.future.index);
+    expect(find.text(areaTitles[ProductArea.future]!), findsOneWidget);
+  });
+
+  testWidgets('a deep link opened while loading lands after loading', (
+    tester,
+  ) async {
+    setPhoneWindow(tester);
+    final backend = FakePairingBackend(() async {
+      await Future<void>.delayed(const Duration(seconds: 1));
+      return paired;
+    });
+    await pumpSirfHum(
+      tester,
+      backend: backend,
+      initialLocation: ProductArea.moments.path,
+      settle: false,
+    );
+    await tester.pump();
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.bySemanticsLabel('Opening Sirf Hum'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(selectedIndex(tester), ProductArea.moments.index);
   });
 
   testWidgets('wide layout uses a navigation rail', (tester) async {
-    setWindow(tester, const Size(1280, 800));
-    await tester.pumpWidget(const SirfHumApp());
-    await tester.pumpAndSettle();
+    setPhoneWindow(tester, const Size(1280, 800));
+    await pumpSirfHum(tester);
 
     expect(find.byType(NavigationRail), findsOneWidget);
     expect(find.byType(NavigationBar), findsNothing);
+    expect(find.text('Asha & Ravi'), findsOneWidget);
+  });
+
+  testWidgets('no shell without a couple, whatever the deep link', (
+    tester,
+  ) async {
+    setPhoneWindow(tester);
+    for (final area in ProductArea.values) {
+      // A fresh app per link, so nothing carries over between them.
+      await tester.pumpWidget(const SizedBox());
+      await pumpSirfHum(
+        tester,
+        backend: FakePairingBackend.returning(const PairingNone()),
+        initialLocation: area.path,
+      );
+      expect(find.byType(NavigationBar), findsNothing, reason: area.name);
+      expect(find.text('Invite your person.'), findsOneWidget);
+    }
+  });
+
+  testWidgets('losing the couple state leaves the shell', (tester) async {
+    setPhoneWindow(tester);
+    final session = FakeAccountSession(alice);
+    await pumpSirfHum(tester, session: session);
+    expect(find.byType(NavigationBar), findsOneWidget);
+
+    session.emit(null);
+    await tester.pumpAndSettle();
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.text('A private home for the two of you.'), findsOneWidget);
   });
 
   group('accessibility guidelines', () {
     for (final brightness in Brightness.values) {
-      testWidgets('pass in ${brightness.name} mode', (tester) async {
-        setWindow(tester, const Size(390, 844));
-        tester.platformDispatcher.platformBrightnessTestValue = brightness;
-        addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
-        final handle = tester.ensureSemantics();
+      for (final area in ProductArea.values) {
+        testWidgets('${area.name} passes in ${brightness.name} mode', (
+          tester,
+        ) async {
+          setPhoneWindow(tester);
+          tester.platformDispatcher.platformBrightnessTestValue = brightness;
+          addTearDown(
+            tester.platformDispatcher.clearPlatformBrightnessTestValue,
+          );
+          final handle = tester.ensureSemantics();
 
-        await tester.pumpWidget(const SirfHumApp());
-        await tester.pumpAndSettle();
+          await pumpSirfHum(tester, initialLocation: area.path);
 
-        await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
-        await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
-        await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
-        await expectLater(tester, meetsGuideline(textContrastGuideline));
-        handle.dispose();
+          await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+          await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
+          await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+          await expectLater(tester, meetsGuideline(textContrastGuideline));
+          handle.dispose();
+        });
+      }
+    }
+
+    for (final area in ProductArea.values) {
+      testWidgets('${area.name} survives 200% text without overflow', (
+        tester,
+      ) async {
+        setPhoneWindow(tester, const Size(360, 740));
+        tester.platformDispatcher.textScaleFactorTestValue = 2;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+        await pumpSirfHum(tester, initialLocation: area.path);
+
+        expect(tester.takeException(), isNull);
       });
     }
 
-    testWidgets('survives 200% text scaling without overflow', (tester) async {
-      setWindow(tester, const Size(390, 844));
-      tester.platformDispatcher.textScaleFactorTestValue = 2;
-      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-
-      await tester.pumpWidget(const SirfHumApp());
-      await tester.pumpAndSettle();
-
-      expect(tester.takeException(), isNull);
+    testWidgets('navigation destinations are announced by name', (
+      tester,
+    ) async {
+      setPhoneWindow(tester);
+      final handle = tester.ensureSemantics();
+      await pumpSirfHum(tester);
+      for (final area in ProductArea.values) {
+        expect(
+          find.semantics.byLabel(RegExp(area.label)),
+          findsWidgets,
+          reason: area.label,
+        );
+      }
+      handle.dispose();
     });
   });
 }

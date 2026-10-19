@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 
 /// The five primary areas of Sirf Hum (docs/product/PRODUCT-CONSTITUTION.md).
 ///
-/// Labels and icons are provisional scaffolding; the navigation design is
-/// decided in a later design phase. "Our Money" is deliberately absent: it
-/// is a future, separately reviewed area and not part of V1.
+/// The bottom navigation, in order (D-108). Icons are Material outlines until
+/// the identity phase picks an icon set. "Our Money" is deliberately absent:
+/// it is a future, separately reviewed area and not part of V1.
 enum ProductArea {
   home(
     path: '/home',
@@ -55,4 +55,12 @@ enum ProductArea {
   final String purpose;
   final IconData icon;
   final IconData selectedIcon;
+
+  /// The area whose root is exactly [path], or null.
+  static ProductArea? fromPath(String? path) {
+    for (final area in values) {
+      if (area.path == path) return area;
+    }
+    return null;
+  }
 }
