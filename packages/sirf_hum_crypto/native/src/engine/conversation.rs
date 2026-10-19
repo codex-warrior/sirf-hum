@@ -823,3 +823,62 @@ fn decode_hex16(s: &str) -> CoreResult<[u8; 16]> {
     }
     Ok(out)
 }
+
+#[cfg(test)]
+mod golden {
+    use super::*;
+
+    /// Shared with `packages/sirf_hum_crypto/test/messaging_types_test.dart`.
+    pub(crate) const HISTORY_RECORD_HEX: &str = concat!(
+        "01",
+        "11111111111111111111111111111111",
+        "22222222222222222222222222222222",
+        "33333333333333333333333333333333",
+        "01",
+        "01",
+        "0000000000000005",
+        "00000000000003e8",
+        "0000000000000000",
+        "00000002",
+        "6869",
+        "01",
+        "00000002",
+        "aabb",
+    );
+
+    /// D-089 AAD for conversation 0x11.., message 0x22.., sender 0x33...
+    pub(crate) const AAD_HEX: &str = concat!(
+        "5369726648756d2d4d65737361676541414401",
+        "0001",
+        "0001",
+        "11111111111111111111111111111111",
+        "22222222222222222222222222222222",
+        "33333333333333333333333333333333",
+    );
+
+    #[test]
+    fn history_record_and_aad_match_the_golden_vectors() {
+        let record = LocalMessage {
+            message_id: [0x22; 16],
+            sender_device_id: DeviceId([0x33; 16]),
+            direction: MessageDirection::Outgoing,
+            state: MessageState::Queued,
+            epoch: 5,
+            created_at_ms: 1000,
+            server_time_ms: 0,
+            payload: Zeroizing::new(b"hi".to_vec()),
+            ciphertext: Some(vec![0xaa, 0xbb]),
+        };
+        let encoded = record.encode(&[0x11; 16]);
+        assert_eq!(hex(&encoded), HISTORY_RECORD_HEX);
+        let back = LocalMessage::decode(&encoded, &[0x11; 16], &[0x22; 16]).unwrap();
+        assert_eq!(back.payload.as_slice(), b"hi");
+        assert_eq!(
+            LocalMessage::decode(&encoded, &[0x12; 16], &[0x22; 16]).unwrap_err(),
+            CoreError::StateCorruption,
+            "a record for another conversation"
+        );
+        let aad = message_aad(1, 1, &[0x11; 16], &[0x22; 16], &DeviceId([0x33; 16]));
+        assert_eq!(hex(&aad), AAD_HEX);
+    }
+}

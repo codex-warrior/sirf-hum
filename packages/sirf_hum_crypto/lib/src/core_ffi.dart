@@ -17,7 +17,7 @@ import 'package:sirf_hum_crypto/src/lineage.dart';
 import 'package:sirf_hum_crypto/src/types.dart';
 
 /// ABI version this Dart code was written against (native ABI_VERSION).
-const int expectedAbiVersion = 4;
+const int expectedAbiVersion = 5;
 
 // True in release (product) builds, where test key stores are refused.
 const bool _isReleaseBuild = bool.fromEnvironment('dart.vm.product');
@@ -370,6 +370,337 @@ external int _roster(
   Pointer<_ShBuf> out,
 );
 
+// ------------------------------------------------------------------ ABI v5
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Uint64,
+    Pointer<Uint32>,
+  )
+>(symbol: 'sh_crypto_trust_lineage')
+external int _trustLineage(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> blob,
+  int len,
+  int epoch,
+  Pointer<Uint32> count,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint64>,
+    Pointer<_ShBuf>,
+    Pointer<_ShBuf>,
+  )
+>(symbol: 'sh_crypto_create_conversation_group')
+external int _createConversationGroup(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> c,
+  int cl,
+  Pointer<Uint8> kps,
+  int kpsl,
+  Pointer<Uint64> fromEpoch,
+  Pointer<_ShBuf> commit,
+  Pointer<_ShBuf> welcome,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint64>,
+    Pointer<_ShBuf>,
+    Pointer<_ShBuf>,
+  )
+>(symbol: 'sh_crypto_stage_add_members')
+external int _stageAddMembers(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> g,
+  int gl,
+  Pointer<Uint8> kps,
+  int kpsl,
+  Pointer<Uint64> fromEpoch,
+  Pointer<_ShBuf> commit,
+  Pointer<_ShBuf> welcome,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint64>,
+    Pointer<_ShBuf>,
+  )
+>(symbol: 'sh_crypto_stage_remove_members')
+external int _stageRemoveMembers(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> g,
+  int gl,
+  Pointer<Uint8> devices,
+  int dl,
+  Pointer<Uint64> fromEpoch,
+  Pointer<_ShBuf> commit,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint64>,
+    Pointer<_ShBuf>,
+  )
+>(symbol: 'sh_crypto_stage_self_update')
+external int _stageSelfUpdate(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> g,
+  int gl,
+  Pointer<Uint64> fromEpoch,
+  Pointer<_ShBuf> commit,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint32>,
+    Pointer<Uint64>,
+  )
+>(symbol: 'sh_crypto_staged_commit_epoch')
+external int _stagedCommitEpoch(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> g,
+  int gl,
+  Pointer<Uint32> has,
+  Pointer<Uint64> epoch,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Uint64,
+    Pointer<Uint64>,
+  )
+>(symbol: 'sh_crypto_confirm_commit')
+external int _confirmCommit(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> g,
+  int gl,
+  int fromEpoch,
+  Pointer<Uint64> epoch,
+);
+
+@Native<Int32 Function(Pointer<_ShCore>, Pointer<Uint8>, Size, Uint64)>(
+  symbol: 'sh_crypto_discard_commit',
+)
+external int _discardCommit(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> g,
+  int gl,
+  int fromEpoch,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Uint64,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint32>,
+    Pointer<Uint64>,
+  )
+>(symbol: 'sh_crypto_process_commit')
+external int _processCommit(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> g,
+  int gl,
+  int epoch,
+  Pointer<Uint8> sender,
+  int sl,
+  Pointer<Uint8> commit,
+  int cl,
+  Pointer<Uint32> kind,
+  Pointer<Uint64> newEpoch,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint64>,
+  )
+>(symbol: 'sh_crypto_join_conversation')
+external int _joinConversation(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> c,
+  int cl,
+  Pointer<Uint8> w,
+  int wl,
+  Pointer<Uint64> epoch,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint8>,
+    Size,
+    Pointer<_ShBuf>,
+    Pointer<Uint64>,
+    Pointer<_ShBuf>,
+  )
+>(symbol: 'sh_crypto_send_message')
+external int _sendMessage(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> c,
+  int cl,
+  Pointer<Uint8> p,
+  int pl,
+  Pointer<_ShBuf> messageId,
+  Pointer<Uint64> epoch,
+  Pointer<_ShBuf> ciphertext,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint64>,
+    Pointer<_ShBuf>,
+  )
+>(symbol: 'sh_crypto_reencrypt_message')
+external int _reencryptMessage(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> c,
+  int cl,
+  Pointer<Uint8> m,
+  int ml,
+  Pointer<Uint64> epoch,
+  Pointer<_ShBuf> ciphertext,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint8>,
+    Size,
+    Uint64,
+  )
+>(symbol: 'sh_crypto_mark_message_sent')
+external int _markMessageSent(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> c,
+  int cl,
+  Pointer<Uint8> m,
+  int ml,
+  int serverTimeMs,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint8>,
+    Size,
+    Uint64,
+    Uint32,
+    Uint32,
+    Pointer<Uint8>,
+    Size,
+    Uint64,
+    Pointer<Uint32>,
+    Pointer<_ShBuf>,
+  )
+>(symbol: 'sh_crypto_receive_message')
+external int _receiveMessage(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> c,
+  int cl,
+  Pointer<Uint8> m,
+  int ml,
+  Pointer<Uint8> s,
+  int sl,
+  int epoch,
+  int schema,
+  int protocol,
+  Pointer<Uint8> ct,
+  int ctl,
+  int serverTimeMs,
+  Pointer<Uint32> duplicate,
+  Pointer<_ShBuf> payload,
+);
+
+@Native<
+  Int32 Function(
+    Pointer<_ShCore>,
+    Pointer<Uint8>,
+    Size,
+    Pointer<Uint32>,
+    Pointer<_ShBuf>,
+  )
+>(symbol: 'sh_crypto_device_account')
+external int _deviceAccount(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> d,
+  int dl,
+  Pointer<Uint32> has,
+  Pointer<_ShBuf> account,
+);
+
+@Native<
+  Int32 Function(Pointer<_ShCore>, Pointer<Uint8>, Size, Pointer<_ShBuf>)
+>(symbol: 'sh_crypto_history')
+external int _history(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> c,
+  int cl,
+  Pointer<_ShBuf> out,
+);
+
+@Native<
+  Int32 Function(Pointer<_ShCore>, Pointer<Uint8>, Size, Pointer<Uint8>, Size)
+>(symbol: 'sh_crypto_delete_local_message')
+external int _deleteLocalMessage(
+  Pointer<_ShCore> h,
+  Pointer<Uint8> c,
+  int cl,
+  Pointer<Uint8> m,
+  int ml,
+);
+
 @Native<Int32 Function(Pointer<_ShCore>)>(symbol: 'sh_crypto_wipe')
 external int _wipe(Pointer<_ShCore> h);
 
@@ -385,6 +716,13 @@ final _finalizer = NativeFinalizer(
 /// Expiry values are whole seconds since the epoch, never negative.
 int _u64(int value) {
   if (value < 0) throw const CryptoException(CryptoErrorCode.invalidInput);
+  return value;
+}
+
+int _u32(int value) {
+  if (value < 0 || value > 0xffffffff) {
+    throw const CryptoException(CryptoErrorCode.invalidInput);
+  }
   return value;
 }
 
@@ -852,6 +1190,358 @@ final class CryptoCore implements Finalizable {
         ),
     ];
   }
+
+  // ---------------------------------------------------------------- ABI v5
+  // Messaging core (docs/security/E2EE-MESSAGING-DESIGN.md).
+
+  /// Verifies an account lineage (D-084) and applies it to this device's
+  /// trust (D-085): the root's person key must be anchored with
+  /// [trustVerifiedPersonKey]; [trustEpoch] is the server's
+  /// `accountTrust.trustEpoch` and must not go backwards for that account
+  /// ([CryptoErrorCode.trustStateStale]). Returns how many devices of that
+  /// account are now trusted.
+  int trustLineage(LineageRequest request, int trustEpoch) =>
+      _input(request.encode(), (b, bl) {
+        final count = calloc<Uint32>();
+        try {
+          _check(_trustLineage(_h, b, bl, _u64(trustEpoch), count));
+          return count.value;
+        } finally {
+          calloc.free(count);
+        }
+      });
+
+  /// Creates the conversation's MLS group (group ID = conversation ID) and
+  /// stages its first commit adding [keyPackages]. Nothing is active until
+  /// [confirmCommit] (epoch 0); [discardCommit] deletes the group again.
+  StagedCommit createConversationGroup(
+    ConversationId conversation,
+    List<Uint8List> keyPackages,
+  ) => _input(
+    conversation.bytes,
+    (c, cl) => _input(
+      encodeByteList(keyPackages),
+      (k, kl) => _staged(
+        withWelcome: true,
+        (e, commit, welcome) =>
+            _createConversationGroup(_h, c, cl, k, kl, e, commit, welcome),
+      ),
+    ),
+  );
+
+  /// Stages a commit adding devices; each credential is validated first.
+  StagedCommit stageAddMembers(
+    ConversationId conversation,
+    List<Uint8List> keyPackages,
+  ) => _input(
+    conversation.bytes,
+    (c, cl) => _input(
+      encodeByteList(keyPackages),
+      (k, kl) => _staged(
+        withWelcome: true,
+        (e, commit, welcome) =>
+            _stageAddMembers(_h, c, cl, k, kl, e, commit, welcome),
+      ),
+    ),
+  );
+
+  /// Stages a commit removing devices (e.g. revoked ones).
+  StagedCommit stageRemoveMembers(
+    ConversationId conversation,
+    List<DeviceId> devices,
+  ) => _input(
+    conversation.bytes,
+    (c, cl) => _input(
+      Uint8List.fromList([for (final d in devices) ...d.bytes]),
+      (d, dl) => _staged(
+        withWelcome: false,
+        (e, commit, _) => _stageRemoveMembers(_h, c, cl, d, dl, e, commit),
+      ),
+    ),
+  );
+
+  /// Stages a self update (fresh leaf keys).
+  StagedCommit stageSelfUpdate(ConversationId conversation) => _input(
+    conversation.bytes,
+    (c, cl) => _staged(
+      withWelcome: false,
+      (e, commit, _) => _stageSelfUpdate(_h, c, cl, e, commit),
+    ),
+  );
+
+  StagedCommit _staged(
+    int Function(
+      Pointer<Uint64> fromEpoch,
+      Pointer<_ShBuf> commit,
+      Pointer<_ShBuf> welcome,
+    )
+    call, {
+    required bool withWelcome,
+  }) {
+    final epoch = calloc<Uint64>();
+    final commit = calloc<_ShBuf>();
+    final welcome = calloc<_ShBuf>();
+    try {
+      _check(call(epoch, commit, welcome));
+      return StagedCommit(
+        fromEpoch: epoch.value,
+        commit: _copy(commit.ref),
+        welcome: withWelcome ? _copy(welcome.ref) : null,
+      );
+    } finally {
+      _bufFree(commit.ref);
+      _bufFree(welcome.ref);
+      calloc
+        ..free(epoch)
+        ..free(commit)
+        ..free(welcome);
+    }
+  }
+
+  /// The epoch of the staged commit, or null when none is staged.
+  int? stagedCommitEpoch(ConversationId conversation) =>
+      _input(conversation.bytes, (c, cl) {
+        final has = calloc<Uint32>();
+        final epoch = calloc<Uint64>();
+        try {
+          _check(_stagedCommitEpoch(_h, c, cl, has, epoch));
+          return has.value == 1 ? epoch.value : null;
+        } finally {
+          calloc
+            ..free(has)
+            ..free(epoch);
+        }
+      });
+
+  /// Applies the staged commit the server accepted for [fromEpoch]; returns
+  /// the new epoch. Repeating it is idempotent; anything else throws
+  /// [CryptoErrorCode.noStagedCommit].
+  int confirmCommit(ConversationId conversation, int fromEpoch) =>
+      _input(conversation.bytes, (c, cl) {
+        final epoch = calloc<Uint64>();
+        try {
+          _check(_confirmCommit(_h, c, cl, _u64(fromEpoch), epoch));
+          return epoch.value;
+        } finally {
+          calloc.free(epoch);
+        }
+      });
+
+  /// Drops the staged commit for [fromEpoch] (refused, or another won).
+  void discardCommit(ConversationId conversation, int fromEpoch) => _input(
+    conversation.bytes,
+    (c, cl) => _check(_discardCommit(_h, c, cl, _u64(fromEpoch))),
+  );
+
+  /// Processes another member's commit the server accepted for [epoch].
+  IncomingResult processCommit(
+    ConversationId conversation, {
+    required int epoch,
+    required DeviceId sender,
+    required Uint8List commit,
+  }) => _input(
+    conversation.bytes,
+    (c, cl) => _input(
+      sender.bytes,
+      (s, sl) => _input(commit, (m, ml) {
+        final kind = calloc<Uint32>();
+        final newEpoch = calloc<Uint64>();
+        try {
+          _check(
+            _processCommit(
+              _h,
+              c,
+              cl,
+              _u64(epoch),
+              s,
+              sl,
+              m,
+              ml,
+              kind,
+              newEpoch,
+            ),
+          );
+          return switch (kind.value) {
+            _incomingCommit => IncomingCommit(newEpoch.value),
+            _incomingRemoved => const IncomingRemoved(),
+            _ => throw const CryptoException(CryptoErrorCode.internal),
+          };
+        } finally {
+          calloc
+            ..free(kind)
+            ..free(newEpoch);
+        }
+      }),
+    ),
+  );
+
+  /// Joins the conversation from a Welcome; returns the epoch joined.
+  int joinConversation(ConversationId conversation, Uint8List welcome) =>
+      _input(
+        conversation.bytes,
+        (c, cl) => _input(welcome, (w, wl) {
+          final epoch = calloc<Uint64>();
+          try {
+            _check(_joinConversation(_h, c, cl, w, wl, epoch));
+            return epoch.value;
+          } finally {
+            calloc.free(epoch);
+          }
+        }),
+      );
+
+  /// Encrypts one message payload (private content; its native copy is
+  /// wiped). The core generates the message ID and seals the payload and
+  /// queued ciphertext into local history.
+  SentMessage sendMessage(ConversationId conversation, Uint8List payload) =>
+      _input(
+        conversation.bytes,
+        (c, cl) => _input(payload, (p, pl) {
+          final id = calloc<_ShBuf>();
+          final epoch = calloc<Uint64>();
+          final ct = calloc<_ShBuf>();
+          try {
+            _check(_sendMessage(_h, c, cl, p, pl, id, epoch, ct));
+            return SentMessage(
+              messageId: MessageId(_copy(id.ref)),
+              epoch: epoch.value,
+              ciphertext: _copy(ct.ref),
+            );
+          } finally {
+            _bufFree(id.ref);
+            _bufFree(ct.ref);
+            calloc
+              ..free(id)
+              ..free(epoch)
+              ..free(ct);
+          }
+        }),
+      );
+
+  /// Re-encrypts a queued message under the current epoch (same ID).
+  SentMessage reencryptMessage(ConversationId conversation, MessageId id) =>
+      _input(
+        conversation.bytes,
+        (c, cl) => _input(id.bytes, (m, ml) {
+          final epoch = calloc<Uint64>();
+          final ct = calloc<_ShBuf>();
+          try {
+            _check(_reencryptMessage(_h, c, cl, m, ml, epoch, ct));
+            return SentMessage(
+              messageId: id,
+              epoch: epoch.value,
+              ciphertext: _copy(ct.ref),
+            );
+          } finally {
+            _bufFree(ct.ref);
+            calloc
+              ..free(epoch)
+              ..free(ct);
+          }
+        }),
+      );
+
+  /// The server accepted a queued message: keep only its payload.
+  void markMessageSent(
+    ConversationId conversation,
+    MessageId id, {
+    required int serverTimeMs,
+  }) => _input(
+    conversation.bytes,
+    (c, cl) => _input(
+      id.bytes,
+      (m, ml) => _check(_markMessageSent(_h, c, cl, m, ml, _u64(serverTimeMs))),
+    ),
+  );
+
+  /// Verifies every envelope field against what MLS authenticated, then
+  /// decrypts and seals the message into history. Throws on any mismatch
+  /// (state unchanged, so the genuine message still decrypts later).
+  ReceivedMessage receiveMessage(
+    ConversationId conversation, {
+    required MessageId messageId,
+    required DeviceId sender,
+    required int epoch,
+    required int schemaVersion,
+    required int protocolVersion,
+    required Uint8List ciphertext,
+    required int serverTimeMs,
+  }) => _input(
+    conversation.bytes,
+    (c, cl) => _input(
+      messageId.bytes,
+      (m, ml) => _input(
+        sender.bytes,
+        (s, sl) => _input(ciphertext, (t, tl) {
+          final duplicate = calloc<Uint32>();
+          final payload = calloc<_ShBuf>();
+          try {
+            _check(
+              _receiveMessage(
+                _h,
+                c,
+                cl,
+                m,
+                ml,
+                s,
+                sl,
+                _u64(epoch),
+                _u32(schemaVersion),
+                _u32(protocolVersion),
+                t,
+                tl,
+                _u64(serverTimeMs),
+                duplicate,
+                payload,
+              ),
+            );
+            return ReceivedMessage(
+              payload: _copy(payload.ref),
+              duplicate: duplicate.value == 1,
+            );
+          } finally {
+            _bufFree(payload.ref);
+            calloc
+              ..free(duplicate)
+              ..free(payload);
+          }
+        }),
+      ),
+    ),
+  );
+
+  /// The account a verified lineage assigned to [device], or null.
+  String? deviceAccount(DeviceId device) => _input(device.bytes, (d, dl) {
+    final has = calloc<Uint32>();
+    final out = calloc<_ShBuf>();
+    try {
+      _check(_deviceAccount(_h, d, dl, has, out));
+      return has.value == 1 ? utf8.decode(_copy(out.ref)) : null;
+    } finally {
+      _bufFree(out.ref);
+      calloc
+        ..free(has)
+        ..free(out);
+    }
+  });
+
+  /// The conversation's sealed local history (unordered; private content).
+  List<LocalMessage> history(ConversationId conversation) => decodeHistory(
+    _input(
+      conversation.bytes,
+      (c, cl) => _output((o) => _history(_h, c, cl, o)),
+    ),
+    conversation,
+  );
+
+  /// Deletes one message from this device only ("delete for me").
+  void deleteLocalMessage(ConversationId conversation, MessageId id) => _input(
+    conversation.bytes,
+    (c, cl) => _input(
+      id.bytes,
+      (m, ml) => _check(_deleteLocalMessage(_h, c, cl, m, ml)),
+    ),
+  );
 
   /// Deletes all local crypto records for this device and resets the core.
   void wipe() => _check(_wipe(_h));
