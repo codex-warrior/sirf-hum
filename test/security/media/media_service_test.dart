@@ -491,6 +491,69 @@ void main() {
       );
     });
 
+    test('queueMedia and queuePayload seal without uploading; the flush '
+        'sends objects before what follows them', () async {
+      final photoId = await services['a1']!.queueMedia(
+        inputPath: input(_photo(2000)).path,
+        mediaClass: MediaClass.image,
+      );
+      final textId = await services['a1']!.queuePayload(
+        Uint8List.fromList([1, 3, 0, 0]),
+      );
+      expect(storage.objects, isEmpty);
+      expect(server.messageDocs, isEmpty);
+      expect(
+        services['a1']!.messages().map((m) => m.state),
+        everyElement(MessageState.queued),
+      );
+      expect(await services['a1']!.flushOutbox(), 2);
+      expect(storage.objects, hasLength(1));
+      expect(server.messageDocs.keys, containsAll([photoId, textId]));
+      // Media references stay core-only even through queuePayload.
+      await expectLater(
+        services['a1']!.queuePayload(Uint8List.fromList([1, 2, 0])),
+        throwsA(isA<CryptoException>()),
+      );
+    });
+
+    test('discardQueued drops only queued outgoing messages, with their '
+        'object', () async {
+      final id = await services['a1']!.queueMedia(
+        inputPath: input(_photo(2000)).path,
+        mediaClass: MediaClass.image,
+      );
+      expect(Directory(mediaDirs['a1']!).listSync(), hasLength(1));
+      expect(services['a1']!.discardQueued(id), isTrue);
+      expect(services['a1']!.messages(), isEmpty);
+      expect(Directory(mediaDirs['a1']!).listSync(), isEmpty);
+      expect(await services['a1']!.flushOutbox(), 0);
+      expect(storage.objects, isEmpty);
+
+      await services['a1']!.sendText('sent already');
+      final sent = services['a1']!.messages().single.messageIdHex;
+      expect(services['a1']!.discardQueued(sent), isFalse);
+      await services['b1']!.sync();
+      final received = services['b1']!.messages().single.messageIdHex;
+      expect(services['b1']!.discardQueued(received), isFalse);
+      expect(services['a1']!.discardQueued('00' * 16), isFalse);
+    });
+
+    test('a revoked device cannot queue media or payloads', () async {
+      registries[accountA.value]!.statuses[hex('a1')] = DeviceStatus.revoked;
+      await expectLater(
+        services['a1']!.queueMedia(
+          inputPath: input(_photo(10)).path,
+          mediaClass: MediaClass.image,
+        ),
+        messaging(MessagingFailure.deviceNotTrusted),
+      );
+      await expectLater(
+        services['a1']!.queuePayload(Uint8List.fromList([1, 3, 0])),
+        messaging(MessagingFailure.deviceNotTrusted),
+      );
+      expect(Directory(mediaDirs['a1']!).listSync(), isEmpty);
+    });
+
     test('without media support every media call fails closed', () async {
       final plain = MessagingService(
         core: cores['a1']!,
