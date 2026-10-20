@@ -49,7 +49,6 @@ from PRODUCTION-BLOCKERS); **Ind.** = needs independent review.
 | **P17-16** | Dependency scanning | Known-vulnerable Dart/Flutter/Gradle dependency ships unnoticed | Advisory gates for every shipped ecosystem | Rust: `cargo audit` (D-068). Functions: none before Prompt 17 (now D-124). Dart/Flutter/Gradle: none | Low | Unknown | Exact Rust pins, lockfiles | — | Add OSV-Scanner (or Dependabot alerts) for `pubspec.lock` and Gradle | P2 | No |
 | **P17-17** | Local state (D-079) | Older copy of the whole state restored on the same phone (E22) | Documented precisely; no protection claimed | See §4.3: not detected; bounded by the next lineage refresh and MLS removal | Low: needs write access to app-private files with the Keystore usable (root / device compromise, T4) | Re-trusts a revoked device until refresh; resurrects "deleted for me" history; restores consumed MLS keys (forward-secrecy loss for that window) | Server trust is server-side; IDs/keys/PIKs indexed forever; MLS removal; OpenMLS `reuse_guard` | New Rust `documented_limit_a_restored_older_state_is_not_detected_until_refreshed`; existing restored-state tests | **Accepted residual for pre-production**; decide an external freshness anchor or explicit acceptance before public launch | P2 | Yes |
 | **P17-18** | Retention / deletion | Removed or deleted content persists | Honest semantics (E72, D-116) | Server never deletes messages, commits, Welcomes or media (rules forbid it); "remove" and "delete for me" are not erasure; no account deletion flow (D-105) | — | Ciphertext retained indefinitely; metadata retained | Honest UI wording | — | Retention and account-deletion design (Play policy requires account deletion) | P2 | Yes |
-
 | **P17-19** | MLS framing (Rust core) | Server reads the exact length of every message, caption and notebook record (E12, E62, E70) | "Padded sizes" (THREAT-MODEL E2, E12; E2EE-ARCHITECTURE §8) | OpenMLS `padding_size` never set (default 0): measured 219 vs 368 bytes for a 2- and a 150-byte payload | High (passive server/DB observer) | Content-length side channel (e.g. yes/no answers, caption length) | None | None | **Fixed (D-126):** 256-byte padding on create and join configs; RFC 9420 zero padding, no format change. Test fails without it. Lengths still leak to within a block | Fixed | Yes |
 
 No finding shows a break of message, media or notebook **confidentiality**
@@ -57,15 +56,22 @@ against the server, a database dump, or another couple.
 
 ## 3. Critical / high findings
 
-None of **critical** severity. One **high-for-production** item, which is a
-missing component rather than a defect in shipped code:
+None of **critical** severity (no confidentiality or trust break found).
+Two **high** items, both open:
 
-- **P17-09** — partner PIK verification does not exist; messaging fails
-  closed until it does. Building it as silent trust-on-first-use would make
-  a compromised server undetectable at first contact.
+- **P17-05 (availability)** — any Firebase session of either account, with
+  no device key at all, can win `commits/{epoch}` with filler bytes and
+  stall the couple's conversation permanently: rules never parse MLS, every
+  device then fails closed (tested), and no re-provisioning exists. A
+  password compromise is therefore a conversation kill switch. Content
+  stays confidential.
+- **P17-09 (missing component)** — partner PIK verification does not
+  exist; messaging fails closed until it does. Building it as silent
+  trust-on-first-use would make a compromised server undetectable at first
+  contact.
 
 The Medium items fixed in this prompt (P17-01, -02, -03, -19) and the open
-Medium items (P17-05, -06, -08, -17) are in §2. P17-19 is the one case where
+Medium items (P17-06, -08, -17) are in §2. P17-19 is the one case where
 a documented security property (padded message sizes) was simply absent from
 the implementation.
 
@@ -93,7 +99,7 @@ the implementation.
 | 10 | First device cannot race into two roots | **Holds** | One transaction over `accountTrust`; emulator `two first devices bootstrapping at once: only one becomes the root` |
 | 11 | Recovery key single-use | **Holds** | Deleted in the activating transaction; emulator `two recovery attempts with one single-use key: one wins` |
 | 12 | Recovery cannot silently restore the old identity | **Holds** | Recovery activates a **new** device (new PIK) and never history; reset opens a new identity epoch; old root PIK can no longer root it (D-122) |
-| 13 | Trust state cannot move backwards | **Server: holds** (one-way transitions, terminal states, rules deny client writes). **Device: holds against stale server views, not against local file rollback** |
+| 13 | Trust state cannot move backwards | **Server: holds. Device: partly** | Server: one-way transitions, terminal states, rules deny client writes. Device: holds against stale server views (D-083), not against a local file rollback (§4.3) |
 | 14 | Old/restored local state cannot regain server trust | **Holds** | Status is server-side; indexes forever; restored state is the same (revoked) device |
 
 ### 4.2 Remaining limits of the chain (documented, unchanged)
@@ -119,7 +125,7 @@ If an older copy of the slot directory is put back:
 | --- | --- |
 | Not detected: every record authenticates (same key) | — (no monotonic anchor exists) |
 | Local trust forgets later revocations: a revoked device is trusted again, and the trust-epoch floors roll back, so older server views are accepted | The next `refreshTrust` with the server's current lineage re-learns the revocation permanently (tested). A **colluding server** can keep serving the old view |
-| MLS state returns to an older epoch: the device re-processes the server's commits and messages from there | It cannot pass a commit that removed it (`restored_pre_removal_state_cannot_decrypt_new_epoch`) |
+| MLS state returns to an older epoch: the device re-processes the server's commits and messages from there | It cannot pass a commit that removed it (`restored_pre_removal_state_cannot_decrypt_new_epoch`); a commit it authored after the snapshot makes it fail closed (`stateDiverged`) |
 | Message keys already consumed reappear (messages of that window decrypt again) | Forward secrecy is lost only for that device's own past window; it gains nothing it was not entitled to read |
 | Re-sending within a rolled-back epoch would re-use sender-ratchet generations | OpenMLS `reuse_guard` (32 random bits XORed into each nonce, RFC 9420 §6.3.1) makes nonce reuse improbable, not impossible; receivers have consumed those generations and reject the messages |
 | "Delete for me" records and cached ciphertext come back | Not erasure (already documented) |
