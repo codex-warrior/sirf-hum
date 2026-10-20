@@ -87,6 +87,7 @@ MomentsService.create:
   flushOutbox      (objects, then messages, in creation order; media first within one ms)
   → saved | savedOnPhone (offline/interrupted: finishes on refresh)
   ── permanent refusal (not a member / device not trusted): discard what the server has not taken, report failure
+  ── transient failure after sealing (offline, registry or transport unreachable): savedOnPhone, finishes on refresh
 ```
 
 - **Single flight:** the composer ignores a second Save; a saved composer
@@ -188,10 +189,10 @@ paths, handles, message/media/device/account IDs (tested).
 | S7 | Revoked device access | No create/fetch/download (client), no writes (rules), no new keys (MLS removal). Residual: content it already holds (D-096) |
 | S8 | Stale device access | `pending`/`unknown` treated like revoked (tested) |
 | S9 | Replayed upload | Create-only objects/messages; MLS replay protection (D-091) |
-| S10 | Duplicate upload | Lost-ack recognition; one object, one message each (tested) |
+| S10 | Duplicate upload | Lost-ack recognition; one object, one message each. A device-status check that fails offline *after* sealing is `savedOnPhone`, never a failure that would invite a second save (found in the pre-merge review, fixed, tested) |
 | S11 | Metadata leakage | Server learns: object count and exact sizes, timing, uploader device, message count (residual E45; padding deferred). No class, names, EXIF, captions, dates |
 | S12 | Caption leakage | Caption only inside MLS ciphertext and sealed history; scanned for in server data, both slots and logs (tested) |
-| S13 | Local plaintext fallback | None. No plaintext cache or file is written by the app; web fails closed |
+| S13 | Local plaintext fallback | None: the app writes no plaintext cache or file, and web fails closed. The only plaintext files are the system picker's own temporary copies in the app-private cache; the core reads them, never copies them, and they are deleted after the save (D-117) |
 | S14 | Insecure cache | Ciphertext-only object cache in the backup-excluded slot (D-096); decrypted bytes in memory only, wiped on dispose; decoded images evicted on sign-out/lost trust |
 | S15 | Insecure logs | Categories and counts only (tested in service and controller) |
 | S16 | Signed-out access | No backend calls (gated on a paired session); rules deny anonymous |
@@ -200,7 +201,7 @@ paths, handles, message/media/device/account IDs (tested).
 | S19 | Concurrent uploads | Two concurrent saves → two moments, no duplicates (tested) |
 | S20 | Partial upload | Nothing leaves before the whole moment is sealed; objects before references; a manifest arriving early shows "photos on their way" |
 | S21 | Interrupted encryption | A failed photo discards every sealed part (tested). A crash between photos and manifest can leave sealed photos without a manifest; they upload as orphan media messages that no moment shows (residual, E66) |
-| S22 | Interrupted upload | Sealed outbox resumes; object first (tested) |
+| S22 | Interrupted upload | Sealed outbox resumes; object first (tested), including when the device registry is unreachable mid-save |
 | S23 | Corrupted ciphertext | Hash + AEAD fail closed, one re-download, then "couldn't be opened" (tested) |
 | S24 | Unauthorized deletion | No client can delete objects or messages (rules, tested); deletion is not offered (D-116) |
 | S25 | Server-side plaintext visibility | The server never holds keys, captions, dates or photos; Functions are not involved |
@@ -228,4 +229,10 @@ composition with the Prompt 10/11 formats. No security claim may be made.
 - No deletion, editing, albums, search or notifications for moments.
 - New devices do not see moments from before they joined (no history
   transfer, as for messages).
-- A future chat must hide kind-3 manifests and the media they claim.
+- A future chat must hide kind-3 manifests and the media they claim: it
+  MUST filter `momentProtocolMessageIds(history)` (tested; rule recorded in
+  E2EE-MESSAGING-DESIGN). Unclaimed photos (E66) would show there as
+  photos the person sent.
+- If a sealed photo's encrypted file is lost before upload (`object_lost`,
+  D-096), its manifest still goes: the sender sees "Some photos couldn't be
+  kept", the partner "Some photos are still on their way" indefinitely.

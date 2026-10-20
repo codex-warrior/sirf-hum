@@ -29,6 +29,9 @@ String saveFailureMessage(MomentFailure? failure) => switch (failure) {
   MomentFailure.outboxFull =>
     'A lot is still waiting to upload. Try again once you’re online. Nothing '
         'was saved.',
+  MomentFailure.unavailable =>
+    'You seem to be offline, so this phone couldn’t check it’s still '
+        'trusted. Nothing was saved. Try again when you’re online.',
   _ => 'Your memory couldn’t be saved. Nothing was shared. Try again.',
 };
 

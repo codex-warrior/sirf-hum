@@ -28,10 +28,23 @@ class _Registries implements DeviceRegistry {
 
   final Map<String, FakeRegistry> byAccount;
 
+  /// Status answers left before the registry goes "offline" and throws
+  /// exactly what `FirestoreDeviceRegistry` throws then. Null: always up.
+  int? statusBudget;
+
   FakeRegistry _r(AccountId a) => byAccount[a.value]!;
 
   @override
-  Future<DeviceStatus> status(AccountId a, String d) => _r(a).status(a, d);
+  Future<DeviceStatus> status(AccountId a, String d) {
+    final budget = statusBudget;
+    if (budget != null) {
+      if (budget <= 0) {
+        throw const DeviceRegistryException(DeviceRegistryFailure.unavailable);
+      }
+      statusBudget = budget - 1;
+    }
+    return _r(a).status(a, d);
+  }
 
   @override
   Future<AccountTrustState> trustState(AccountId a) => _r(a).trustState(a);
@@ -94,6 +107,7 @@ void main() {
     final messaging = <String, MessagingService>{};
     final moments = <String, MomentsService>{};
     final mediaDirs = <String, String>{};
+    final registryOf = <String, _Registries>{};
     var clock = 1000;
     var picked = 0;
 
@@ -143,7 +157,7 @@ void main() {
         account: account,
         conversation: cid,
         transport: server,
-        registry: _Registries(registries),
+        registry: registryOf[name] = _Registries(registries),
         media: MediaSupport(
           storage: storage,
           files: const IoMediaFiles(),
@@ -293,6 +307,56 @@ void main() {
 
       await moments['b1']!.refresh();
       expect(shown('b1'), hasLength(1));
+    });
+
+    test('device registry offline AFTER sealing: saved on the phone, never '
+        'a failure, and it finishes exactly once', () async {
+      // One photo: queueMedia and queuePayload each check status (2); the
+      // upload's check is the first to fail, as FirestoreDeviceRegistry
+      // does offline.
+      registryOf['a1']!.statusBudget = 2;
+      expect(
+        await moments['a1']!.create(draft([_photo(3000)])),
+        MomentSaveOutcome.savedOnPhone,
+      );
+      expect(shown('a1').single.status, MomentStatus.saving);
+      expect(server.messageDocs, isEmpty);
+
+      registryOf['a1']!.statusBudget = null;
+      await moments['a1']!.refresh();
+      expect(shown('a1').single.status, MomentStatus.saved);
+      expect(storage.uploads, 1);
+      expect(server.messageDocs, hasLength(2));
+      await moments['b1']!.refresh();
+      expect(shown('b1'), hasLength(1), reason: 'one moment, no duplicate');
+    });
+
+    test('device registry offline BEFORE sealing: unavailable, nothing '
+        'kept', () async {
+      registryOf['a1']!.statusBudget = 0;
+      await expectLater(
+        moments['a1']!.create(draft([_photo(100)])),
+        fails(MomentFailure.unavailable),
+      );
+      expect(history('a1'), isEmpty);
+      expect(Directory(mediaDirs['a1']!).listSync(), isEmpty);
+    });
+
+    test('device registry offline: refresh and uncached photos are '
+        'unavailable, never a local failure', () async {
+      await moments['a1']!.create(draft([_photo(100)]));
+      await moments['b1']!.refresh();
+      final photo = shown('b1').single.photos.single;
+      registryOf['b1']!.statusBudget = 0;
+      await expectLater(
+        moments['b1']!.refresh(),
+        fails(MomentFailure.unavailable),
+      );
+      await expectLater(
+        moments['b1']!.openPhoto(photo),
+        fails(MomentFailure.unavailable),
+      );
+      expect(shown('b1'), hasLength(1), reason: 'what is here stays');
     });
 
     test('photos always reach the server before the moment that lists '

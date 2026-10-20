@@ -262,6 +262,22 @@ void main() {
     );
   });
 
+  test('a chat must hide exactly the moments protocol messages', () {
+    final text = TextPayload(text: 'hi', clientTimeMs: 1).encode();
+    final bad = _manifest(8, [3]).payload..[11] = 9;
+    final ids = momentProtocolMessageIds([
+      _msg(1, text),
+      _photo(2),
+      _photo(3),
+      _photo(4), // an orphan: no manifest claims it
+      _manifest(9, [2]),
+      _msg(8, bad), // unreadable manifest
+    ], isOwnAccount: (d) => d == _own);
+    expect(ids, {_id(9), _id(2), _id(8)});
+    expect(ids, isNot(contains(_id(1))), reason: 'chat text stays');
+    expect(ids, isNot(contains(_id(4))), reason: 'unclaimed photos stay');
+  });
+
   test('handles and entries never print identifiers', () {
     final entries = _assemble([
       _photo(1),

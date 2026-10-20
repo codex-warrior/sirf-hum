@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:sirf_hum/core/logging/app_logger.dart';
 import 'package:sirf_hum/core/logging/log_value.dart';
+import 'package:sirf_hum/security/device/device_registration.dart';
 import 'package:sirf_hum/security/media/media_storage.dart';
 import 'package:sirf_hum/security/messaging/conversation_transport.dart';
 import 'package:sirf_hum/security/messaging/messaging_service.dart';
@@ -255,6 +256,13 @@ class MomentsService implements MomentsBackend {
       _log('moment_upload_deferred', e.failure.name);
     } on MediaException catch (e) {
       _log('moment_upload_deferred', e.failure.name);
+    } on DeviceRegistryException catch (e) {
+      // Device status could not be confirmed (offline): the moment is
+      // sealed and finishes on the next refresh. Reporting a failure here
+      // would invite a second, duplicate moment.
+      _log('moment_upload_deferred', e.failure.name);
+    } on TransportException catch (e) {
+      _log('moment_upload_deferred', e.failure.name);
     }
     _log('moment_upload_completed', outcome.name, {'photos': count});
     return outcome;
@@ -380,6 +388,12 @@ class MomentsService implements MomentsBackend {
       MessagingFailure.rejected => MomentFailure.rejected,
     },
     TransportException() => MomentFailure.unavailable,
+    // The device registry could not answer (offline) or refused. Never
+    // treated as trusted; only categorized.
+    DeviceRegistryException(:final failure) =>
+      failure == DeviceRegistryFailure.unavailable
+          ? MomentFailure.unavailable
+          : MomentFailure.rejected,
     // Local state failures (corruption, persistence) must surface as
     // themselves: they are never a "bad moment".
     _ => throw e,

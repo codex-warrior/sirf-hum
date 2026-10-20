@@ -1116,7 +1116,8 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
   - `MomentsController` is the only producer of an ID-free `MomentsState`; it runs only for a paired session, on a platform that may hold private content, with a backend, and rebuilds on any session change (generation check).
   - Local first, then `refresh` = `refreshTrust` (active device + lineage) → `sync` → `flushOutbox`. A device that is not trusted is `MomentsBlocked`: the timeline is dropped and decoded images are evicted.
   - Pages of 24 moments. Photos decrypt on demand, one at a time, at display size; bytes live in memory only and are wiped on dispose; failed photo loads are never retried automatically.
-  - Saving seals every part before anything is uploaded; any failure before the manifest is sealed discards everything; a permanent refusal after sealing (not a member, device not trusted) discards what the server has not taken and reports the failure. Otherwise the outcome is `saved` or `savedOnPhone`, never a duplicate.
+  - Saving seals every part before anything is uploaded; any failure before the manifest is sealed discards everything; a permanent refusal after sealing (not a member, device not trusted) discards what the server has not taken and reports the failure. A transient failure after sealing (offline: transport or device registry unreachable) is `savedOnPhone`. Otherwise the outcome is `saved`, never a duplicate.
+  - A chat view of the conversation must omit `momentProtocolMessageIds` (every manifest and every claimed photo).
   - Detail and the new-memory flow are pushed pages: no moment is ever in a URL.
 - **Status:** Accepted for development · 2026-10-20.
 
@@ -1128,6 +1129,6 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Status:** Accepted · 2026-10-20. Backend wiring: **Blocked** (D-107, D-025).
 
 ### D-117 — System photo picker (`image_picker`) and EXIF
-- **Decision:** add `image_picker` (flutter.dev), used only by `features/moments/data/system_photo_picker.dart` and wired in `main.dart` on Android only. On Android 13+ it is the system Photo Picker: no storage permission, and the app sees only the chosen photos. The plugin's temporary copies (plaintext, app-private cache) are read only inside the core and deleted when the composer goes away, after any save still reading them. No resizing or re-encoding (it would write more plaintext files).
+- **Decision:** add `image_picker` (flutter.dev), used only by `features/moments/data/system_photo_picker.dart` and wired in `main.dart` on every platform except web (Android is the only target, D-092; iOS is not built). On Android 13+ it is the system Photo Picker: no storage permission, and the app sees only the chosen photos. The plugin's temporary copies (plaintext, app-private cache) are read only inside the core and deleted when the composer goes away, after any save still reading them. No resizing or re-encoding (it would write more plaintext files).
 - **EXIF:** stays inside the encrypted photo; the server never sees it, but the partner's device receives it, including any location. Stripping before encryption needs on-device re-encoding without plaintext at rest; deferred and tracked (E68).
 - **Status:** Accepted for development · 2026-10-20.

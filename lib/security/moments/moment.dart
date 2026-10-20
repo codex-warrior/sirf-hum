@@ -221,6 +221,21 @@ List<MomentEntry> assembleMoments(
   return entries;
 }
 
+/// The message IDs that belong to the moments protocol (D-114): every
+/// kind-3 manifest — readable or not — and every photo a shown moment
+/// claims. A chat view of the same conversation MUST leave these out, so
+/// memories never appear as stray chat photos or "unsupported message"
+/// rows. Photos no moment claims (e.g. orphans, E66) are not included.
+Set<String> momentProtocolMessageIds(
+  List<LocalMessage> history, {
+  required bool Function(DeviceId device) isOwnAccount,
+}) => {
+  for (final m in history)
+    if (MomentPayload.isMoment(m.payload)) _hex(m.messageId),
+  for (final e in assembleMoments(history, isOwnAccount: isOwnAccount))
+    if (e is Moment) ...e.photos.map((p) => p.value),
+};
+
 MediaRefView? _mediaOf(LocalMessage m) {
   if (!MediaRefView.isMedia(m.payload)) return null;
   try {
