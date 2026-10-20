@@ -542,7 +542,8 @@ void main() {
       );
       cores['a1']!.discardCommit(cid, 1);
       expect(server.epoch, 1);
-      expect(server.commits, isEmpty);
+      // Only the group's creation (epoch 0, from setUp) was ever accepted.
+      expect(server.commits.keys, [0]);
       // Nothing stalled: every device syncs and a message flows.
       for (final n in ['a1', 'a2', 'b1', 'b2']) {
         expect((await services[n]!.sync()).epoch, 1, reason: n);
