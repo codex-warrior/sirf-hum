@@ -238,6 +238,31 @@ D-113–D-117):
 
   A real build shows the Moments area with an honest entry state.
 
+**Prompt 16: Future + Us.** Plan the future and build a shared identity
+([FUTURE-AND-US-ARCHITECTURE](../architecture/FUTURE-AND-US-ARCHITECTURE.md),
+D-118–D-121):
+- **Implemented (development, unreviewed):**
+  - one couple notebook as kind-4 MLS application messages in the
+    couple's existing conversation (create / update / remove, last change
+    wins, terminal remove); no new server schema, rules, crypto or ABI;
+  - `MessagingService.exclusive`: one lock for every feature on the
+    conversation (Moments now uses it);
+  - Future: plans, places, things to try, important dates; coming up / by
+    kind / done; never "missed"; add, edit, mark done, remove;
+  - Us: names, together since, our story, little things, rituals,
+    important dates, sign-out; Home shows the soonest plan ahead;
+  - one editor (pushed page, single flight), honest empty / loading /
+    error / blocked / offline states, web fail-closed;
+  - payload, assembly, controller, screen, real-core service and
+    on-device tests.
+- **Pre-production:** nothing reviewed; Sirf Hum is NOT production E2EE.
+- **Blocked by Blaze / sign-in:** a production backend (D-121, as D-116).
+- **Deferred:** erasure and retention for removed records, history
+  compaction, notifications and reminders, recurring dates, letters,
+  devices and privacy settings in Us.
+
+  A real build shows Future and Us with honest entry states.
+
 ## Proposed sequence
 
 Ordering principle: identity and cryptography come **before** any feature

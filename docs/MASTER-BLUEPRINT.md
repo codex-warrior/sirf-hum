@@ -3,7 +3,7 @@
 The index of record. Each section summarises what is **decided** and links
 to the detailed source of truth. Updated at the end of every phase.
 
-Last updated: **Prompt 15 — 2026-10-20**.
+Last updated: **Prompt 16 — 2026-10-20**.
 
 ## 1. Vision
 
@@ -64,8 +64,11 @@ pairing, server-created couples; undeployed, no UI,
 (Prompt 13), Together foundation (Prompt 14), and Moments (Prompt 15: photos
 and an encrypted kind-3 manifest in the couple's MLS conversation, no new
 server state or crypto, no production backend yet,
-[MOMENTS-ARCHITECTURE](architecture/MOMENTS-ARCHITECTURE.md), D-113–D-117).
-Sirf Hum is NOT production E2EE yet:**
+[MOMENTS-ARCHITECTURE](architecture/MOMENTS-ARCHITECTURE.md), D-113–D-117),
+and Future + Us (Prompt 16: one couple notebook as kind-4 messages in the
+same conversation, no new server state or crypto, no production backend yet,
+[FUTURE-AND-US-ARCHITECTURE](architecture/FUTURE-AND-US-ARCHITECTURE.md),
+D-118–D-121). Sirf Hum is NOT production E2EE yet:**
 
 - the platform key store exists (Prompt 07, D-066) but nothing is reviewed;
 - device identity and registration exist (Prompt 07) but server activation
@@ -222,7 +225,7 @@ with `tool/verify.sh --all`. →
 
 ## 11. Feature roadmap
 
-Prompts 01–15 done (through the Moments foundation; nothing deployed).
+Prompts 01–16 done (through Future and Us; nothing deployed).
 Next steps are confirmed prompt by prompt. → [ROADMAP](phases/ROADMAP.md)
 
 ## 12. Business model

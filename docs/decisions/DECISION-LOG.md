@@ -107,6 +107,10 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-110 | Bounded Firebase start-up wait; a failed start is "couldn't start", never "signed out" | Accepted | 2026-10-19 |
 | D-111 | Together: ID-free finite state machine, activity list, realtime port with no identifiers; only supported activities start | Accepted (development) | 2026-10-20 |
 | D-112 | No production Together backend or presence yet (privacy D-100/T10, device trust needs Functions); production wires none, fake is test-only | Accepted; backend design **Open** | 2026-10-20 |
+| D-118 | Future and Us are one couple notebook carried as MLS application messages in the couple's conversation; `MessagingService.exclusive` serializes every feature on the conversation | Accepted (development) | 2026-10-20 |
+| D-119 | Notebook payload v1 (kind 4: create / update / remove ops) and assembly rules (server order, last change wins, terminal remove, shared editing) | Accepted (development); **unreviewed** | 2026-10-20 |
+| D-120 | Future and Us product model: four Future kinds, planned/done, never "missed"; story, little things, rituals, together since; V1 limits; no scores, streaks, reminders or calendars | Accepted (development) | 2026-10-20 |
+| D-121 | Notebook client behaviour: one ID-free controller for Future and Us; no production backend yet; web fails closed | Accepted; backend wiring **Blocked** (D-107, D-025) | 2026-10-20 |
 
 ---
 
@@ -1132,3 +1136,43 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Decision:** add `image_picker` (flutter.dev), used only by `features/moments/data/system_photo_picker.dart` and wired in `main.dart` on every platform except web (Android is the only target, D-092; iOS is not built). On Android 13+ it is the system Photo Picker: no storage permission, and the app sees only the chosen photos. The plugin's temporary copies (plaintext, app-private cache) are read only inside the core and deleted when the composer goes away, after any save still reading them. No resizing or re-encoding (it would write more plaintext files).
 - **EXIF:** stays inside the encrypted photo; the server never sees it, but the partner's device receives it, including any location. Stripping before encryption needs on-device re-encoding without plaintext at rest; deferred and tracked (E68).
 - **Status:** Accepted for development · 2026-10-20.
+
+### D-118 — Future and Us are one couple notebook in the MLS conversation (Prompt 16)
+- **Decision:**
+  - Future's plans and Us's story, little things, rituals and "together since" are **one notebook** with five sections. Each change is one kind-4 MLS application message built by Dart in the couple's existing conversation (D-104), as a moment's manifest is (D-113).
+  - No new server schema, Security Rules, Functions, cryptographic primitive, crate or ABI version. Titles, notes, details and dates are private content: only inside MLS ciphertext and the sealed history (D-089, D-090).
+  - The couple binding is the server-provisioned conversation; the author binding is the MLS-authenticated sender device. No `coupleId`, account or device field exists in a record.
+  - `MessagingService.exclusive` serializes state-changing operations (trust refresh, sync, seal, flush) of **every** feature on the conversation. `MomentsService` now uses it instead of its own queue, so a notebook sync can never interleave with a moment being sealed.
+- **Reason:** composing the existing trust, membership, encryption and outbox systems means Future and Us cannot weaken them, and no second couple, trust, crypto or authorization model exists. The lock closes a race that appears as soon as a second feature shares the conversation.
+- **Alternatives considered:** Firestore documents per plan or profile field (rejected: plaintext private content on the server, or a second key system if encrypted outside MLS); a dedicated conversation (rejected for V1: needs Functions and Blaze for provisioning and a second MLS group, for no security gain); phone-only storage (rejected: not shared).
+- **Status:** Accepted for development · 2026-10-20. Design: [FUTURE-AND-US-ARCHITECTURE](../architecture/FUTURE-AND-US-ARCHITECTURE.md).
+
+### D-119 — Notebook payload v1 and assembly rules
+- **Decision:**
+  - Payload: `version 1 | kind 4 | client time u64 | schema u16 = 1 | op u8 (create, update, remove) | target record id [16] (zero for create) | section u8 | category u8 | status u8 | date (y u16, m u8, d u8; zero = none) | title len u16 + UTF-8 | note len u16 + UTF-8 | detail len u8 + UTF-8`. Strict decode; values must be valid for the section; a remove carries no content.
+  - A record's ID is the message ID of its create (chosen by the core).
+  - Assembly in server order (server time, else local time for a queued change, then message ID): `update` replaces every field of a live record of the same section (last change wins); `remove` is terminal; changes to an absent record do nothing; a wrong-section change or an undecodable payload is counted as unreadable.
+  - Either partner may change or remove any record (shared, like a paper notebook). Authorship is shown, not enforced.
+  - Remove hides a record on both phones. It is **not erasure**: earlier versions stay sealed in each phone's history and as ciphertext on the server until a retention design exists.
+  - A chat view must omit `notebookProtocolMessageIds`.
+- **Reason:** append-only MLS messages cannot be edited, so edits are operations; deterministic ordering makes both phones converge without a server-side merge.
+- **Status:** Accepted for development · 2026-10-20. **Unreviewed.**
+
+### D-120 — Future and Us product model and V1 limits
+- **Decision:**
+  - Future kinds: plan, place, something to try, important date. Status: planned / done. Any real day is allowed and a passed day is never "missed"; important dates are single days with no recurrence.
+  - Future files plans as Coming up / by kind / Important dates / Done together.
+  - Us: couple names (session), "together since" (one date), Our story (named parts with optional date), Our little things (eight kinds, including "another little thing"), Rituals (name, free-text "how often", note), Important dates (Future's important-date records), sign-out.
+  - Live-record limits: Future 200, story 12, little things 30, rituals 12, together-since 1.
+  - No relationship scores, streaks, progress, reminders, calendar, recurrence, external calendars, time zones, location, presence, monitoring, AI analysis, public profiles, likes, followers or feeds.
+- **Reason:** PRODUCT-CONSTITUTION and UX-PRINCIPLES: a private home for two, not a productivity tool or social profile. Small controlled sets keep the format closed and the UI calm.
+- **Status:** Accepted for development · 2026-10-20.
+
+### D-121 — Notebook client behaviour; no production backend yet
+- **Decision:**
+  - `NotebookController` is the only producer of an ID-free `NotebookState` (unavailable, loading, ready, blocked, failed), shared by Future, Us and Home. It runs only for a paired session, on a platform that may hold private content, with a backend; it rebuilds on any session change and drops late answers and late writes (generation check). Writes go only through it, only while ready.
+  - Local first, then `refresh` = `refreshTrust` → `sync` → `flushOutbox`. A device that is not trusted is `blocked`: entries dropped, writes refused.
+  - One editor for every section, as a pushed page (never a URL): Save in the app bar, single flight, cannot be left mid-save.
+  - Production wires no `NotebookBackend` (`notebookBackendProvider` is `null`), for the same reasons as D-116; Future and Us show honest entry states. The fake backend lives under `test/` only.
+  - Web shows the shells, names and sign-out, never the notebook (D-046).
+- **Status:** Accepted · 2026-10-20. Backend wiring: **Blocked** (D-107, D-025).

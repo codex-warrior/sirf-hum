@@ -15,5 +15,7 @@ Dependency direction: `presentation → application → domain ← data`.
 Features never import another feature's `data/` or `presentation/`; shared
 concepts move to `lib/core` (or a shared domain) after review.
 
-Areas: `home`, `together`, `moments`, `future`, `us`. "Our Money" is a
+Areas: `home`, `together`, `moments`, `future`, `us`. `notebook` is not an
+area: it is the couple notebook shared by Future, Us and Home (D-121), so
+those three may import it. "Our Money" is a
 future area and must not be created without an explicit, reviewed phase.

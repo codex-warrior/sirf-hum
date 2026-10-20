@@ -1,5 +1,7 @@
 # Us
 
-The couple's names and sign-out (Prompt 13, `presentation/us_screen.dart`).
-Profile editing, rituals, letters, devices and privacy settings come in later
-prompts and are named as such, not mocked.
+Who the two of you are together (Prompt 16, D-120): names, together since,
+your story, your little things, your rituals, important dates, and
+sign-out (`presentation/us_screen.dart`). The records are the couple
+notebook (`features/notebook/`). Letters, devices and privacy settings are
+later prompts and are not mocked.
