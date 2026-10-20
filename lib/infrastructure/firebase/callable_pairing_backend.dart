@@ -110,6 +110,28 @@ class CallablePairingBackend implements PairingBackend {
   Future<PairingState> state() async =>
       PairingState.parse(await _call('getPairingState', const {}));
 
+  @override
+  Future<PairingChallenge> requestUnpairChallenge({
+    required String deviceIdHex,
+    required String coupleId,
+  }) async {
+    final data = await _call('requestUnpairChallenge', {
+      'deviceId': deviceIdHex,
+      'coupleId': coupleId,
+    });
+    final id = data['challengeId'];
+    final challenge = data['challenge'];
+    if (id is! String || challenge is! String) throw _unavailable;
+    return PairingChallenge(
+      challengeId: id,
+      challenge: base64Decode(challenge),
+    );
+  }
+
+  @override
+  Future<void> unpair(SignedPairingStep step, String coupleId) =>
+      _call('unpairCouple', {..._signed(step), 'coupleId': coupleId});
+
   static const _unavailable = PairingException(PairingFailure.unavailable);
 
   static Map<String, Object?> _signed(SignedPairingStep step) => {

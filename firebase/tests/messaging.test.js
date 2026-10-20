@@ -249,6 +249,35 @@ describe('messages (D-089)', () => {
     await assertFails(sendAs(A));
   });
 
+  // Prompt 17C. Unpairing (D-136) closes the conversation: its contents
+  // become unreadable for both former partners, while the document still
+  // tells their devices it closed. Recovery (D-135) retires it: the couple
+  // still reads its own history, but nothing new can be written.
+  test('closed (unpaired): contents unreadable, document readable, nothing writable', async () => {
+    await provision({ state: 'closed' });
+    await seed(`${conv()}/messages/${MID}`, { ...message(), serverTime: Timestamp.now() });
+    await seed(`${conv()}/commits/1`, { ...commitDoc(), createdAt: Timestamp.now() });
+    await seed(`${conv()}/welcomes/${B1}_1`, { ...welcomeDoc(), createdAt: Timestamp.now() });
+    await seed(`${conv()}/keyPackages/${A1}`, { schemaVersion: 1, accountId: A, deviceId: A1, keyPackage: bytes(100), updatedAt: Timestamp.now() });
+    for (const who of [A, B]) {
+      await assertSucceeds(getDoc(doc(asUser(who), conv())), 'learns it closed');
+      for (const sub of [`messages/${MID}`, 'commits/1', `welcomes/${B1}_1`, `keyPackages/${A1}`]) {
+        await assertFails(getDoc(doc(asUser(who), `${conv()}/${sub}`)), `${who} ${sub}`);
+      }
+    }
+    await assertFails(getDocs(collection(asUser(A), `${conv()}/messages`)));
+    await assertFails(setDoc(doc(asUser(A), `${conv()}/keyPackages/${A1}`), { schemaVersion: 1, accountId: A, deviceId: A1, keyPackage: bytes(100), updatedAt: serverTimestamp() }));
+  });
+
+  test('retired (recovered): the couple still reads its history; nothing new is written', async () => {
+    await provision({ state: 'retired' });
+    await seed(`${conv()}/messages/${MID}`, { ...message(), serverTime: Timestamp.now() });
+    await assertSucceeds(getDoc(doc(asUser(B), `${conv()}/messages/${MID}`)));
+    await assertFails(sendAs(A, {}, MID2));
+    await assertFails(setDoc(doc(asUser(A), `${conv()}/keyPackages/${A1}`), { schemaVersion: 1, accountId: A, deviceId: A1, keyPackage: bytes(100), updatedAt: serverTimestamp() }));
+    await assertFails(getDoc(doc(asUser(X), `${conv()}/messages/${MID}`)));
+  });
+
   test('7–9. ciphertext, sender, ID, epoch and conversation cannot be edited', async () => {
     await provision();
     await assertSucceeds(sendAs(A));

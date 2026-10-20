@@ -721,8 +721,13 @@ describe('server authority and enumeration resistance', () => {
       'confirmPairing',
       'createPairingInvitation',
       'getPairingState',
+      // Prompt 17C (D-136): a Firestore trigger (silent sync), not a callable.
+      'notifyOnCoupleChange',
       'rejectPairing',
       'requestPairingChallenge',
+      // Prompt 17C (D-136): leaving, from an active device only.
+      'requestUnpairChallenge',
+      'unpairCouple',
     ]);
     for (const name of exported) assert.ok(!/lookup|search|find|user|account|provision/i.test(name), `unexpected export ${name}`);
   });

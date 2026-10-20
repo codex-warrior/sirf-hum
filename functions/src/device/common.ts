@@ -71,7 +71,15 @@ export type DeviceFailure =
   /** The commit's epoch already moved or has a commit (first wins, D-088, D-127). */
   | 'commit_conflict'
   /** Unknown conversation, not a member, or closed: one category (no probing). */
-  | 'conversation_unavailable';
+  | 'conversation_unavailable'
+  /**
+   * Recovery (D-135): the conversation's epoch, state or the account's trust
+   * epoch moved since the recovery was signed, or it is no longer the
+   * couple's current conversation. Nothing changed.
+   */
+  | 'conversation_changed'
+  /** Unpairing (D-136): unknown couple, not a member, or already dissolved. */
+  | 'couple_unavailable';
 
 export class DeviceError extends Error {
   constructor(readonly failure: DeviceFailure) {

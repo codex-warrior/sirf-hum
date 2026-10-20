@@ -65,6 +65,13 @@ enters the pairing code, trusted-device rejection, identity-reset alerts,
 Dart advisory scanning and GitHub security controls. Still open: conversation
 re-provisioning, unpairing (D-134), deployment, sign-in, independent review.
 
+**Prompt 17C closure** ([PROMPT-17C-CLOSURE](security/audit/PROMPT-17C-CLOSURE.md),
+D-135, D-136): device-bound conversation recovery (retire and re-provision a
+new MLS group) and unilateral, device-bound unpairing. **Sirf Hum is not yet
+production E2EE; independent security/cryptographic review is still
+required.** Deployment, sign-in, App Check and production configuration are
+Prompt 18.
+
 ## 8. E2EE architecture
 
 Requirements: private content is encrypted on the device; the server never

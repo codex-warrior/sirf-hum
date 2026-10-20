@@ -26,7 +26,9 @@ service firebase.storage {
     //   update never (no overwrite, no metadata change)
     //   delete never in Phase 0 (server retention is deferred)
     match /conversations/{conversationId}/media/{mediaId} {
-      allow get: if isMember(conversationId);
+      // Not once the couple was dissolved (closed, D-136).
+      allow get: if isMember(conversationId)
+        && firestore.get(conversationPath(conversationId)).data.state != 'closed';
       allow list: if false;
       allow create: if validMediaCreate(conversationId, mediaId);
       allow update, delete: if false;

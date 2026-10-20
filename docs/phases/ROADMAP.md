@@ -286,6 +286,13 @@ controls. Deferred with reasons: picker cache sweep, web CSP, Gradle
 scanning, local rollback, deletion. Open: conversation re-provisioning,
 unpairing (D-134), deployment, sign-in, independent review.
 
+**Prompt 17C: Final security engineering closure** ([closure](../security/audit/PROMPT-17C-CLOSURE.md),
+D-135, D-136): conversation recovery and secure unpairing built and tested
+adversarially; every item classified (fixed, deferred to Prompt 18,
+requires external review); prohibited claims listed. Not production E2EE;
+independent review still required. Next: Prompt 18 (deployment, sign-in,
+App Check), only when authorized.
+
 ## Proposed sequence
 
 Ordering principle: identity and cryptography come **before** any feature

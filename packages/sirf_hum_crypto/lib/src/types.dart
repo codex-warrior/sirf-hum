@@ -104,7 +104,13 @@ enum DeviceProofPurpose {
 
   /// An active device rejecting a pending device (Prompt 17B, D-129). The
   /// server binds the challenge to the approval request.
-  approvalRejection(6);
+  approvalRejection(6),
+
+  /// An active device retiring a stalled conversation (Prompt 17C, D-135).
+  conversationRecovery(7),
+
+  /// An active device ending its couple (Prompt 17C, D-136).
+  unpair(8);
 
   const DeviceProofPurpose(this.wireValue);
 

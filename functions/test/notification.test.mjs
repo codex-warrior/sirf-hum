@@ -140,9 +140,10 @@ describe('no content reaches Functions code or logs (static guard)', () => {
     assert.doesNotMatch(triggers, /\.data\(\)|ciphertext'|\.get\('ciphertext/);
     const reads = [...triggers.matchAll(/\.get\('([A-Za-z]+)'\)/g)].map((m) => m[1]);
     // `reset`: the identity-reset status only (D-132), never the record.
-    assert.deepEqual([...new Set(reads)].sort(), ['reset', 'senderAccountId', 'senderDeviceId', 'status']);
+    // `members`: who to wake when a couple is dissolved (D-136).
+    assert.deepEqual([...new Set(reads)].sort(), ['members', 'reset', 'senderAccountId', 'senderDeviceId', 'status']);
     const logs = [...triggers.matchAll(/logger\.\w+\(([^;]*)\);/g)].map((m) => m[1]);
-    assert.equal(logs.length, 4);
+    assert.equal(logs.length, 5);
     for (const args of logs) assert.match(args, /^'push_fanout', \{ \.\.\.result \}$/);
   });
 });

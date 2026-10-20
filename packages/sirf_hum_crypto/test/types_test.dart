@@ -72,6 +72,8 @@ void main() {
     expect(DeviceProofPurpose.pairing.wireValue, 4);
     expect(DeviceProofPurpose.commit.wireValue, 5);
     expect(DeviceProofPurpose.approvalRejection.wireValue, 6);
+    expect(DeviceProofPurpose.conversationRecovery.wireValue, 7);
+    expect(DeviceProofPurpose.unpair.wireValue, 8);
   });
 
   test('Web implementation is unavailable and fails closed', () {

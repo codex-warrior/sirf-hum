@@ -309,3 +309,17 @@ ends the pairing (`invalidated`, reason `confirmation_code_mismatch`). An
 intercepted link therefore pairs a stranger only if the inviter types the
 stranger's code. The partner's identity itself is verified afterwards with
 the safety number (D-128).
+
+## Prompt 17C: secure unpairing (D-136, supersedes D-134)
+
+Either partner leaves **unilaterally**, but only from one of their own
+**active** devices: `PairingService.unpair(account, coupleId)` signs
+`unpairAuthorizationChallenge` with device-proof purpose 8 and calls
+`unpairCouple`. A password or session alone cannot unpair. In one
+transaction the couple becomes `dissolved`, every conversation of the
+couple `closed` (rules: no contents, media or writes), and both
+`accountPartners` records are deleted; both accounts' devices get a silent
+sync. Devices stay trusted on their own accounts. Re-pairing is a new couple
+through the full invitation, acceptance and code flow. Each phone keeps what
+it already decrypted. Full answers to the design questions:
+[PROMPT-17C-CLOSURE §2](audit/PROMPT-17C-CLOSURE.md#2-secure-unpairing-d-136-supersedes-d-134).

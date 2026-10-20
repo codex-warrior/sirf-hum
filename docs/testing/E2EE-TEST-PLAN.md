@@ -239,3 +239,10 @@ against OpenMLS 0.9.1 **and** mls-rs 0.56.0, natively and on wasm32:
 
 They probe library behaviour in our model. Cryptographic correctness comes
 from the upstream vectors and independent review.
+
+## Prompt 17C: conversation recovery and unpairing
+
+Adversarial tests for D-135 and D-136 at every boundary (Rust, Functions
+emulator and unit, Security Rules, Dart with fakes and native in CI). The
+property-to-test map is in
+[TEST-MATRIX](../security/audit/TEST-MATRIX.md#conversation-recovery-and-unpairing-prompt-17c).

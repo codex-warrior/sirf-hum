@@ -9,6 +9,9 @@ class ConversationRecord {
     required this.members,
     required this.epoch,
     required this.active,
+    this.retired = false,
+    this.successorIdHex,
+    this.predecessorIdHex,
   });
 
   /// The two member accounts (server-authoritative).
@@ -19,8 +22,17 @@ class ConversationRecord {
   final int epoch;
   final bool active;
 
+  /// Retired by recovery (D-135): readable, never writable again; the
+  /// couple continues in [successorIdHex].
+  final bool retired;
+  final String? successorIdHex;
+
+  /// The conversation this one replaced (recovery, D-135), if any.
+  final String? predecessorIdHex;
+
   @override
-  String toString() => 'ConversationRecord(epoch: $epoch, active: $active)';
+  String toString() =>
+      'ConversationRecord(epoch: $epoch, active: $active, retired: $retired)';
 }
 
 /// A device's published KeyPackage (public).
@@ -169,6 +181,28 @@ abstract interface class ConversationTransport {
   );
 
   Future<CommitRecord?> commit(ConversationId id, int epoch);
+
+  /// A single-use challenge for this device to recover the stalled
+  /// conversation [id] at [epoch] under the account's [trustEpoch]
+  /// (Prompt 17C, D-135). Throws [TransportException] when refused (not a
+  /// member, device not active, state moved) or unreachable.
+  Future<CommitChallenge> requestRecoveryChallenge(
+    ConversationId id, {
+    required String deviceIdHex,
+    required int epoch,
+    required int trustEpoch,
+  });
+
+  /// Retires [id] and returns its successor, after the server verifies
+  /// [authorization] (device proof purpose `conversationRecovery` over
+  /// `recoveryAuthorizationChallenge`). Throws [TransportException].
+  Future<ConversationId> recoverConversation(
+    ConversationId id, {
+    required String deviceIdHex,
+    required int epoch,
+    required int trustEpoch,
+    required CommitAuthorization authorization,
+  });
 
   Future<List<WelcomeRecord>> welcomesFor(ConversationId id, String deviceHex);
 

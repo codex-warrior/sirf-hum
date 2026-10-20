@@ -524,6 +524,69 @@ fn every_envelope_field_is_cryptographically_bound() {
     );
 }
 
+/// D-135 (Prompt 17C): recovery re-provisions a NEW MLS group (new
+/// conversation ID) for the same members after a winning commit stalled the
+/// old one. The old commit cannot be replayed into the new group, the old
+/// sealed history stays readable, and the new group works normally.
+#[test]
+fn recovery_reprovisions_a_new_group_old_history_stays_and_old_commit_cannot_replay() {
+    let mut a = Device::new("accountA");
+    let mut b = Device::new("accountB");
+    a.anchor(&b);
+    b.anchor(&a);
+    let (old, new) = (conversation(0x31), conversation(0x32));
+    conversation_of(&mut a, &mut [&mut b], &old);
+    let before = a.send(&old, b"before the stall");
+    assert_eq!(b.recv(&old, &a, &before).unwrap(), b"before the stall");
+
+    // A's commit wins the old epoch on the server, but B cannot process the
+    // bytes it is handed (here: a corrupted copy): the old group stalls.
+    let staged = a.core.stage_self_update(&old).unwrap();
+    let mut broken = staged.commit.clone();
+    let last = broken.len() - 1;
+    broken[last] ^= 0x55;
+    assert!(b
+        .core
+        .process_commit(&old, 1, a.device_id(), &broken)
+        .is_err());
+    assert_eq!(b.core.epoch(&old).unwrap(), 1, "B cannot move on");
+
+    // Recovery: a new group for the same members, from B this time.
+    conversation_of(&mut b, &mut [&mut a], &new);
+    // The old commit (genuine or broken) is never accepted by the new
+    // group, from either side: it belongs to the old group ID.
+    for commit in [&staged.commit, &broken] {
+        assert!(a
+            .core
+            .process_commit(&new, 1, b.device_id(), commit)
+            .is_err());
+        assert!(b
+            .core
+            .process_commit(&new, 1, a.device_id(), commit)
+            .is_err());
+    }
+    assert_eq!(b.core.epoch(&new).unwrap(), 1);
+
+    // The old history is untouched on both phones.
+    let texts = |d: &Device, cid: &[u8]| -> Vec<Vec<u8>> {
+        d.core
+            .history(cid)
+            .unwrap()
+            .into_iter()
+            .map(|m| m.payload.to_vec())
+            .collect()
+    };
+    assert_eq!(texts(&b, &old), vec![b"before the stall".to_vec()]);
+    assert_eq!(texts(&a, &old), vec![b"before the stall".to_vec()]);
+
+    // The new group works normally in both directions.
+    let hello = b.send(&new, b"after recovery");
+    assert_eq!(a.recv(&new, &b, &hello).unwrap(), b"after recovery");
+    let reply = a.send(&new, b"still us");
+    assert_eq!(b.recv(&new, &a, &reply).unwrap(), b"still us");
+    assert!(texts(&a, &new).len() == 2 && texts(&a, &old).len() == 1);
+}
+
 #[test]
 fn ciphertext_copied_into_another_conversation_fails() {
     let mut a = Device::new("accountA");

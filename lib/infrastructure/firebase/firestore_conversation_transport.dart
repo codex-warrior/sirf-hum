@@ -87,10 +87,15 @@ class FirestoreConversationTransport implements ConversationTransport {
         if (members is! List || epoch is! int) {
           throw const TransportException(TransportFailure.malformed);
         }
+        final successor = data['successorId'];
+        final predecessor = data['predecessorId'];
         return ConversationRecord(
           members: [for (final m in members) '$m'],
           epoch: epoch,
           active: data['state'] == 'active',
+          retired: data['state'] == 'retired',
+          successorIdHex: successor is String ? successor : null,
+          predecessorIdHex: predecessor is String ? predecessor : null,
         );
       });
 
@@ -175,6 +180,76 @@ class FirestoreConversationTransport implements ConversationTransport {
       // way the caller re-reads commits/{epoch} to learn what happened.
       return WriteResult(
         _unreachable(e.code) ? WriteOutcome.unavailable : WriteOutcome.refused,
+      );
+    }
+  }
+
+  @override
+  Future<CommitChallenge> requestRecoveryChallenge(
+    ConversationId id, {
+    required String deviceIdHex,
+    required int epoch,
+    required int trustEpoch,
+  }) async {
+    try {
+      final result = await _functions
+          .httpsCallable('requestRecoveryChallenge')
+          .call<Map<String, dynamic>>({
+            'deviceId': deviceIdHex,
+            'conversationId': _hex(id),
+            'epoch': epoch,
+            'trustEpoch': trustEpoch,
+          });
+      final challengeId = result.data['challengeId'];
+      final nonce = result.data['challenge'];
+      if (challengeId is! String || nonce is! String) {
+        throw const TransportException(TransportFailure.malformed);
+      }
+      return CommitChallenge(
+        challengeId: challengeId,
+        nonce: base64.decode(nonce),
+      );
+    } on FirebaseFunctionsException catch (e) {
+      throw TransportException(
+        _unreachable(e.code)
+            ? TransportFailure.unavailable
+            : TransportFailure.denied,
+      );
+    } on FormatException {
+      throw const TransportException(TransportFailure.malformed);
+    }
+  }
+
+  @override
+  Future<ConversationId> recoverConversation(
+    ConversationId id, {
+    required String deviceIdHex,
+    required int epoch,
+    required int trustEpoch,
+    required CommitAuthorization authorization,
+  }) async {
+    try {
+      final result = await _functions
+          .httpsCallable('recoverConversation')
+          .call<Map<String, dynamic>>({
+            'deviceId': deviceIdHex,
+            'conversationId': _hex(id),
+            'epoch': epoch,
+            'trustEpoch': trustEpoch,
+            'challengeId': authorization.challengeId,
+            'proof': base64.encode(authorization.proof),
+          });
+      final successor = result.data['conversationId'];
+      if (successor is! String ||
+          !RegExp(r'^[0-9a-f]{32}$').hasMatch(successor)) {
+        throw const TransportException(TransportFailure.malformed);
+      }
+      return ConversationId(EncryptedMessageEnvelope.bytesOfHex(successor));
+    } on FirebaseFunctionsException catch (e) {
+      throw TransportException(
+        _unreachable(e.code)
+            ? TransportFailure.unavailable
+            : TransportFailure.denied,
       );
     }
   }

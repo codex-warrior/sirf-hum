@@ -470,3 +470,22 @@ in one transaction. Refused or unreachable: the following `sync` discards
 the staged commit as before. A Firebase session alone can no longer move a
 conversation's epoch. Conversation recovery after a trusted device's
 invalid commit is designed in D-127 and not built (P1-3b).
+
+## Prompt 17C: conversation recovery (D-135)
+
+When a trusted device wins an epoch with a commit nobody can process
+(`stateDiverged`), `MessagingService.recover()` asks
+`requestRecoveryChallenge` for a nonce bound to the conversation, its
+stalled epoch and the account's trust epoch, signs
+`recoveryAuthorizationChallenge` (`lib/security/messaging/lifecycle_authorization.dart`)
+in the core with device-proof purpose 7 and calls `recoverConversation`.
+The server retires the conversation (`state: 'retired'`, `successorId`;
+readable, never writable) and creates its successor (new ID = new MLS group
+ID, `predecessorId`, epoch 0); both partner records move to it. Every
+device then sees `MessagingFailure.retired`, follows
+`MessagingService.successor()` only when the successor names this
+conversation as predecessor with the same members, and builds the new group
+from verified lineage like a new couple's. Old history stays; queued
+messages stay in the old conversation and are never re-sent automatically.
+The Rust test `recovery_reprovisions_a_new_group_old_history_stays_and_old_commit_cannot_replay`
+shows old commits cannot enter the new group.

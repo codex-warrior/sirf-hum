@@ -47,9 +47,13 @@ describe('provisionConversation (D-086)', () => {
     const source = readFileSync(new URL('../../lib/index.js', import.meta.url), 'utf8');
     const exported = [...source.matchAll(/exports\.(\w+)\s*=/g)].map((m) => m[1]);
     assert.ok(exported.includes('revokeDevice'), 'export scan works');
-    // Since Prompt 12 the only way to a conversation is the signed,
-    // two-consent pairing confirmation (pairing.test.mjs covers its surface).
+    // Since Prompt 12 the only way to a NEW couple's conversation is the
+    // signed, two-consent pairing confirmation (pairing.test.mjs covers its
+    // surface). Since Prompt 17C the one other conversation-creating
+    // callable is recovery (D-135): device-bound, and only a successor for
+    // an existing, active couple (recovery.test.mjs).
     for (const name of exported) {
+      if (name === 'recoverConversation') continue;
       assert.ok(!/conversation|provision/i.test(name), `unexpected export ${name}`);
     }
     assert.ok(!source.includes('provisionConversation'), 'not wired into any function');

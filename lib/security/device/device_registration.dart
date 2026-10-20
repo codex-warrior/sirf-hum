@@ -190,7 +190,15 @@ enum DeviceRegistryFailure {
   commitConflict,
 
   /// Unknown conversation, not a member, or closed (D-127): one category.
-  conversationUnavailable;
+  conversationUnavailable,
+
+  /// Recovery (D-135): the conversation's epoch or state, or the account's
+  /// trust epoch, moved since the recovery was signed, or it is no longer
+  /// the couple's current conversation. Nothing changed; re-sync first.
+  conversationChanged,
+
+  /// Unpairing (D-136): unknown couple, not a member, or already dissolved.
+  coupleUnavailable;
 
   /// Maps the server's category string; anything unknown is [unavailable]
   /// (retryable), never success.
@@ -222,6 +230,8 @@ enum DeviceRegistryFailure {
         'device_not_active' => deviceNotTrusted,
         'commit_conflict' => commitConflict,
         'conversation_unavailable' => conversationUnavailable,
+        'conversation_changed' => conversationChanged,
+        'couple_unavailable' => coupleUnavailable,
         _ => unavailable,
       };
 }

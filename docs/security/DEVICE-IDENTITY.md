@@ -397,7 +397,10 @@ an *account session* (non-cryptographic), which is not a device identity.
 - **Rate limits and expiry:** added in Prompt 08 (D-077, D-078). The
   scheduled cleanup needs Blaze; lazy expiry works without it. Prompt 12
   adds the pairing limits `pairing`, `pairingInvitation` and
-  `pairingRedeemFailure` (D-103) and proof purpose 4 (D-102).
+  `pairingRedeemFailure` (D-103) and proof purpose 4 (D-102). Later
+  purposes: 5 `commit` (D-127), 6 `approval_rejection` (D-129),
+  7 `conversation_recovery` (D-135) and 8 `unpair` (D-136), with limits
+  `commit`, `conversationRecovery` (3/24 h) and `unpair` (5/24 h).
 - **Local rollback:** not provided (D-079 open, MULTI-DEVICE-TRUST §10).
   The trust epoch (D-083) only refuses older *server* views.
   Restoring a whole older slot directory *together with* its key isn't

@@ -12,6 +12,7 @@ import 'package:sirf_hum/security/device/device_status.dart';
 import 'package:sirf_hum/security/device/device_trust_service.dart';
 import 'package:sirf_hum/security/messaging/commit_authorization.dart';
 import 'package:sirf_hum/security/messaging/conversation_transport.dart';
+import 'package:sirf_hum/security/messaging/lifecycle_authorization.dart';
 import 'package:sirf_hum/security/messaging/message_envelope.dart';
 import 'package:sirf_hum/security/messaging/messaging_service.dart';
 import 'package:sirf_hum_crypto/sirf_hum_crypto.dart';
@@ -200,6 +201,26 @@ void main() {
       );
     }
 
+    /// The server-side recovery proof check (D-135), as for commits.
+    bool verifyRecoveryProof(
+      String deviceHex,
+      Uint8List signed,
+      Uint8List proof,
+    ) {
+      for (final e in cores.entries) {
+        if (hex(e.key) != deviceHex) continue;
+        final expected = e.value.deviceProof(
+          DeviceProofPurpose.conversationRecovery,
+          signed,
+        );
+        return expected.length == proof.length &&
+            Iterable<int>.generate(
+              proof.length,
+            ).every((i) => expected[i] == proof[i]);
+      }
+      return false;
+    }
+
     setUp(() async {
       root = Directory.systemTemp.createTempSync('sh_messaging_');
       registries = {
@@ -208,12 +229,15 @@ void main() {
       };
       registry = _Registries(registries);
       denyCommits = false;
-      server = FakeTransport(
-        members: [accountA.value, accountB.value],
-        statusOf: (account, device) =>
-            registries[account]?.statuses[device] ?? DeviceStatus.unknown,
-        verifyCommitProof: verifyCommitProof,
-      );
+      server =
+          FakeTransport(
+              members: [accountA.value, accountB.value],
+              statusOf: (account, device) =>
+                  registries[account]?.statuses[device] ?? DeviceStatus.unknown,
+              verifyCommitProof: verifyCommitProof,
+            )
+            ..verifyRecoveryProof = verifyRecoveryProof
+            ..trustEpochOf = ((a) => registries[a]!.trustEpoch);
       cores.clear();
       services.clear();
       await enroll('a1', accountA);
@@ -656,6 +680,310 @@ void main() {
       await expectLater(
         services['a1']!.sendText('closed'),
         matcher(MessagingFailure.notMember),
+      );
+    });
+
+    // ---------------------------------------- recovery (Prompt 17C, D-135)
+
+    /// The successor's server, as recoverConversation provisioned it.
+    FakeTransport successorServer() => FakeTransport(
+      members: [accountA.value, accountB.value],
+      statusOf: server.statusOf,
+      verifyCommitProof: verifyCommitProof,
+    );
+
+    CommitAuthorization recoverySigned(
+      String name,
+      AccountId account,
+      CommitChallenge c,
+      int epoch,
+      int trust, {
+      DeviceProofPurpose purpose = DeviceProofPurpose.conversationRecovery,
+    }) => CommitAuthorization(
+      challengeId: c.challengeId,
+      proof: cores[name]!.deviceProof(
+        purpose,
+        recoveryAuthorizationChallenge(
+          nonce: c.nonce,
+          accountId: account.value,
+          deviceId: cores[name]!.publicIdentity().deviceId.bytes,
+          conversationId: cid.bytes,
+          epoch: epoch,
+          trustEpoch: trust,
+        ),
+      ),
+    );
+
+    test(
+      'recovery: a new group for the couple; old history stays, the old '
+      'conversation is read-only, pending messages are not re-sent',
+      () async {
+        expect(await services['a1']!.sendText('before'), SendOutcome.sent);
+        for (final n in ['a2', 'b1', 'b2']) {
+          await services[n]!.sync();
+        }
+        // Queued (offline) in the old group, never silently moved.
+        server.offline = true;
+        expect(await services['a2']!.sendText('queued'), SendOutcome.queued);
+        server.offline = false;
+
+        final next = await services['b1']!.recover();
+        expect(server.retired, isTrue);
+        expect(
+          EncryptedMessageEnvelope.hexOf(next.bytes),
+          server.successorIdHex,
+        );
+        // Every device of both accounts finds the same, verified successor.
+        for (final n in ['a1', 'a2', 'b1', 'b2']) {
+          final found = await services[n]!.successor();
+          expect(found?.bytes, next.bytes, reason: n);
+        }
+        // The old conversation takes nothing more.
+        final before = server.writes;
+        await expectLater(
+          services['a1']!.sendText('into the old group'),
+          matcher(MessagingFailure.retired),
+        );
+        await expectLater(
+          services['a2']!.flushOutbox(),
+          matcher(MessagingFailure.retired),
+        );
+        await expectLater(
+          services['b2']!.recover(),
+          matcher(MessagingFailure.retired),
+        );
+        expect(server.writes, before);
+        // Old history stays on the phones.
+        for (final n in ['a1', 'b1', 'b2']) {
+          expect(texts(n), contains('before'), reason: n);
+        }
+
+        // The new group: built from verified lineage like a new couple's.
+        final fresh = successorServer();
+        final successors = <String, MessagingService>{};
+        for (final (n, a) in [
+          ('a1', accountA),
+          ('a2', accountA),
+          ('b1', accountB),
+          ('b2', accountB),
+        ]) {
+          final svc = successors[n] = MessagingService(
+            core: cores[n]!,
+            account: a,
+            conversation: next,
+            transport: fresh,
+            registry: registry,
+            clock: () => ++clock,
+          );
+          await svc.refreshTrust();
+          await svc.publishKeyPackage();
+        }
+        expect((await successors['b1']!.sync()).epoch, 1);
+        for (final n in ['a1', 'a2', 'b2']) {
+          expect((await successors[n]!.sync()).joined, isTrue, reason: n);
+        }
+        expect(await successors['a1']!.sendText('after'), SendOutcome.sent);
+        expect(await successors['b2']!.sendText('reply'), SendOutcome.sent);
+        for (final n in ['a2', 'b1']) {
+          final r = await successors[n]!.sync();
+          expect(r.failures, isEmpty, reason: n);
+          expect([
+            for (final m in successors[n]!.messages()) m.text,
+          ], containsAll(['after', 'reply']));
+        }
+        // Nothing from the old outbox reached the new conversation.
+        expect(fresh.messageDocs, hasLength(2));
+        // The server held only ciphertext in either conversation.
+        for (final doc in [
+          ...server.messageDocs.values,
+          ...fresh.messageDocs.values,
+        ]) {
+          for (final word in ['before', 'after', 'reply', 'queued']) {
+            expect(String.fromCharCodes(doc.ciphertext), isNot(contains(word)));
+          }
+        }
+      },
+    );
+
+    test('recovery is device-bound: another device key, another purpose, a '
+        'revoked device and another account are refused', () async {
+      final trustB = registries[accountB.value]!.trustEpoch;
+      Future<CommitChallenge> challenge() => server.requestRecoveryChallenge(
+        cid,
+        deviceIdHex: hex('b1'),
+        epoch: server.epoch,
+        trustEpoch: trustB,
+      );
+      Future<ConversationId> submit(CommitAuthorization a) =>
+          server.recoverConversation(
+            cid,
+            deviceIdHex: hex('b1'),
+            epoch: server.epoch,
+            trustEpoch: trustB,
+            authorization: a,
+          );
+      // Signed by B2's key, claimed as B1 (a session plus a stolen nonce).
+      final c1 = await challenge();
+      await expectLater(
+        submit(recoverySigned('b2', accountB, c1, server.epoch, trustB)),
+        throwsA(isA<TransportException>()),
+      );
+      // A commit-purpose proof over the right bytes is not a recovery.
+      final c2 = await challenge();
+      await expectLater(
+        submit(
+          recoverySigned(
+            'b1',
+            accountB,
+            c2,
+            server.epoch,
+            trustB,
+            purpose: DeviceProofPurpose.commit,
+          ),
+        ),
+        throwsA(isA<TransportException>()),
+      );
+      expect(server.refusedRecoveries, 2);
+
+      await DeviceTrustService(registries[accountA.value]!).revoke(
+        core: cores['a1']!,
+        account: accountA,
+        deviceIdHex: hex('a2'),
+        reason: RevocationReason.lost,
+      );
+      await expectLater(
+        services['a2']!.recover(),
+        matcher(MessagingFailure.deviceNotTrusted),
+      );
+      // Account switch: A1's core under B's account never signs.
+      final switched = MessagingService(
+        core: cores['a1']!,
+        account: accountB,
+        conversation: cid,
+        transport: server,
+        registry: registry,
+      );
+      await expectLater(switched.recover(), throwsA(isA<CryptoException>()));
+      expect(server.retired, isFalse);
+      expect(server.successorIdHex, isNull);
+    });
+
+    test('recovery is state-bound: a moved trust epoch or conversation '
+        'epoch, and a replayed authorization, are refused', () async {
+      final trustB = registries[accountB.value]!.trustEpoch;
+      final stalled = server.epoch;
+      final c1 = await server.requestRecoveryChallenge(
+        cid,
+        deviceIdHex: hex('b1'),
+        epoch: stalled,
+        trustEpoch: trustB,
+      );
+      final signedEarlier = recoverySigned('b1', accountB, c1, stalled, trustB);
+      // B's trust moved (an approval, a revocation) since signing.
+      registries[accountB.value]!.trustEpoch++;
+      final trustNow = registries[accountB.value]!.trustEpoch;
+      await expectLater(
+        server.recoverConversation(
+          cid,
+          deviceIdHex: hex('b1'),
+          epoch: stalled,
+          trustEpoch: trustB,
+          authorization: signedEarlier,
+        ),
+        throwsA(isA<TransportException>()),
+      );
+      // A commit moved the conversation since signing.
+      final c2 = await server.requestRecoveryChallenge(
+        cid,
+        deviceIdHex: hex('b1'),
+        epoch: stalled,
+        trustEpoch: trustNow,
+      );
+      final staged = cores['b1']!.stageSelfUpdate(cid);
+      expect(
+        (await submitAs('b1', accountB, staged)).outcome,
+        WriteOutcome.accepted,
+      );
+      await services['b1']!.sync();
+      expect(server.epoch, stalled + 1);
+      await expectLater(
+        server.recoverConversation(
+          cid,
+          deviceIdHex: hex('b1'),
+          epoch: stalled,
+          trustEpoch: trustNow,
+          authorization: recoverySigned('b1', accountB, c2, stalled, trustNow),
+        ),
+        throwsA(isA<TransportException>()),
+      );
+      expect(server.retired, isFalse);
+      // A valid one succeeds once; its replay is refused.
+      final epochNow = server.epoch;
+      final c3 = await server.requestRecoveryChallenge(
+        cid,
+        deviceIdHex: hex('b1'),
+        epoch: epochNow,
+        trustEpoch: trustNow,
+      );
+      final good = recoverySigned('b1', accountB, c3, epochNow, trustNow);
+      await server.recoverConversation(
+        cid,
+        deviceIdHex: hex('b1'),
+        epoch: epochNow,
+        trustEpoch: trustNow,
+        authorization: good,
+      );
+      final first = server.successorIdHex;
+      await expectLater(
+        server.recoverConversation(
+          cid,
+          deviceIdHex: hex('b1'),
+          epoch: epochNow,
+          trustEpoch: trustNow,
+          authorization: good,
+        ),
+        throwsA(isA<TransportException>()),
+      );
+      expect(server.successorIdHex, first);
+    });
+
+    test('a successor is followed only if it names this conversation and '
+        'has the same members', () async {
+      expect(await services['a1']!.successor(), isNull);
+      final target = 'ab' * 16;
+      server
+        ..retired = true
+        ..successorIdHex = target;
+      final cidHex = EncryptedMessageEnvelope.hexOf(cid.bytes);
+      for (final bad in [
+        ConversationRecord(
+          members: [accountA.value, 'accountMallory'],
+          epoch: 0,
+          active: true,
+          predecessorIdHex: cidHex,
+        ),
+        ConversationRecord(
+          members: [accountA.value, accountB.value],
+          epoch: 0,
+          active: true,
+          predecessorIdHex: 'cd' * 16,
+        ),
+        ConversationRecord(
+          members: [accountA.value, accountB.value],
+          epoch: 0,
+          active: true,
+        ),
+      ]) {
+        server.others[target] = bad;
+        await expectLater(
+          services['a1']!.successor(),
+          matcher(MessagingFailure.rejected),
+        );
+      }
+      server.successorIdHex = 'not-hex';
+      await expectLater(
+        services['a1']!.successor(),
+        matcher(MessagingFailure.rejected),
       );
     });
 

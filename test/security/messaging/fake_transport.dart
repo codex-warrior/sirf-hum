@@ -11,6 +11,7 @@ import 'dart:typed_data';
 import 'package:sirf_hum/security/device/device_status.dart';
 import 'package:sirf_hum/security/messaging/commit_authorization.dart';
 import 'package:sirf_hum/security/messaging/conversation_transport.dart';
+import 'package:sirf_hum/security/messaging/lifecycle_authorization.dart';
 import 'package:sirf_hum/security/messaging/message_envelope.dart';
 import 'package:sirf_hum_crypto/sirf_hum_crypto.dart';
 
@@ -46,6 +47,34 @@ class FakeTransport implements ConversationTransport {
   int epoch = 0;
   bool active = true;
 
+  /// Recovery (D-135): this conversation was retired for [successorIdHex].
+  bool retired = false;
+  String? successorIdHex;
+
+  /// Other conversations the server knows (successors), by hex ID.
+  final others = <String, ConversationRecord>{};
+
+  /// The account's trust epoch on the server (recovery binds it).
+  int Function(String account) trustEpochOf = (_) => 0;
+
+  /// Verifies a device proof (purpose `conversationRecovery`), as
+  /// [verifyCommitProof] does for commits.
+  bool Function(String deviceHex, Uint8List signed, Uint8List proof)?
+  verifyRecoveryProof;
+
+  final _recoveryChallenges =
+      <
+        String,
+        ({
+          String account,
+          String device,
+          int epoch,
+          int trustEpoch,
+          Uint8List nonce,
+        })
+      >{};
+  int refusedRecoveries = 0;
+
   /// Every call fails as if the network were down.
   bool offline = false;
 
@@ -68,13 +97,105 @@ class FakeTransport implements ConversationTransport {
 
   bool _activeMember(String account, String deviceHex) =>
       active &&
+      !retired &&
       members.contains(account) &&
       statusOf(account, deviceHex) == DeviceStatus.active;
 
   @override
   Future<ConversationRecord> conversation(ConversationId id) async {
     _online();
-    return ConversationRecord(members: members, epoch: epoch, active: active);
+    final other = others[EncryptedMessageEnvelope.hexOf(id.bytes)];
+    if (other != null) return other;
+    return ConversationRecord(
+      members: members,
+      epoch: epoch,
+      active: active && !retired,
+      retired: retired,
+      successorIdHex: successorIdHex,
+    );
+  }
+
+  String _randomHex(int bytes) => [
+    for (var i = 0; i < bytes; i++) _random.nextInt(256),
+  ].map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
+  @override
+  Future<CommitChallenge> requestRecoveryChallenge(
+    ConversationId id, {
+    required String deviceIdHex,
+    required int epoch,
+    required int trustEpoch,
+  }) async {
+    _online();
+    final account = _accountOf(deviceIdHex);
+    if (account == null ||
+        retired ||
+        epoch != this.epoch ||
+        trustEpoch != trustEpochOf(account)) {
+      throw const TransportException(TransportFailure.denied);
+    }
+    final challengeId = _randomHex(16);
+    final nonce = Uint8List.fromList([
+      for (var i = 0; i < 32; i++) _random.nextInt(256),
+    ]);
+    _recoveryChallenges[challengeId] = (
+      account: account,
+      device: deviceIdHex,
+      epoch: epoch,
+      trustEpoch: trustEpoch,
+      nonce: nonce,
+    );
+    return CommitChallenge(challengeId: challengeId, nonce: nonce);
+  }
+
+  @override
+  Future<ConversationId> recoverConversation(
+    ConversationId id, {
+    required String deviceIdHex,
+    required int epoch,
+    required int trustEpoch,
+    required CommitAuthorization authorization,
+  }) async {
+    _online();
+    // Single use whatever the outcome, as on the server (recovery.ts).
+    final c = _recoveryChallenges.remove(authorization.challengeId);
+    final verify = verifyRecoveryProof;
+    final ok =
+        c != null &&
+        c.device == deviceIdHex &&
+        c.epoch == epoch &&
+        c.trustEpoch == trustEpoch &&
+        _activeMember(c.account, deviceIdHex) &&
+        !retired &&
+        epoch == this.epoch &&
+        trustEpoch == trustEpochOf(c.account) &&
+        (verify == null ||
+            verify(
+              deviceIdHex,
+              recoveryAuthorizationChallenge(
+                nonce: c.nonce,
+                accountId: c.account,
+                deviceId: EncryptedMessageEnvelope.bytesOfHex(deviceIdHex),
+                conversationId: id.bytes,
+                epoch: epoch,
+                trustEpoch: trustEpoch,
+              ),
+              authorization.proof,
+            ));
+    if (!ok) {
+      refusedRecoveries++;
+      throw const TransportException(TransportFailure.denied);
+    }
+    final next = _randomHex(16);
+    retired = true;
+    successorIdHex = next;
+    others[next] = ConversationRecord(
+      members: members,
+      epoch: 0,
+      active: true,
+      predecessorIdHex: EncryptedMessageEnvelope.hexOf(id.bytes),
+    );
+    return ConversationId(EncryptedMessageEnvelope.bytesOfHex(next));
   }
 
   @override

@@ -1,6 +1,6 @@
 # Security Test Matrix
 
-Status: **Prompt 17, 2026-10-20.** Adversarial properties → the tests that
+Status: **Prompt 17, 2026-10-20; Prompt 17B; Prompt 17C (2026-10-21).** Adversarial properties → the tests that
 exercise them. **New** marks tests added in Prompt 17; each was shown to fail
 on the pre-Prompt-17 code. Full per-phase lists:
 [E2EE-TEST-PLAN](../../testing/E2EE-TEST-PLAN.md).
@@ -79,3 +79,17 @@ unit (`functions/test`), **S** = Security Rules (`firebase/tests`),
   built.
 - The native Dart verification and messaging tests run only in CI (Linux
   host); this Windows machine has no host build of the core.
+
+## Conversation recovery and unpairing (Prompt 17C)
+
+| Property | Tests |
+| --- | --- |
+| Recovery is device-bound (D-135) | **17C** F `a password-only session, a forged or modified proof, or another purpose cannot recover`, `wrong, revoked, pending and unknown devices cannot recover; nor one revoked after its challenge`, `wrong conversation, wrong account and account switch are refused`; D native (CI) `recovery is device-bound: …` |
+| Recovery is state-bound, single-use, one winner | **17C** F `a stale view (epoch or trust epoch) is refused…`, `replay: an authorization works once; a retired conversation is never recovered again`, `both partners recovering at once: exactly one successor, both records agree`, `a dissolved couple cannot be recovered`; D native `recovery is state-bound: …` |
+| Recovered conversation works; old history stays; old commit cannot replay; no server plaintext | **17C** R `recovery_reprovisions_a_new_group_old_history_stays_and_old_commit_cannot_replay`; F `a trusted device recovers: old retired, a new group for the same couple, and it works`, `the recovery module never reads, rebuilds or decrypts messages`; D native `recovery: a new group for the couple; old history stays, …, pending messages are not re-sent` |
+| Successor redirection by the server | **17C** D native `a successor is followed only if it names this conversation and has the same members` |
+| Retired / closed conversations (rules) | **17C** S retired readable not writable; closed contents and media unreadable, no writes (`messaging.test.js`, `media_storage.test.js`) |
+| Unpair is device-bound (D-136) | **17C** F `a password-only session, a forged or modified proof, or another purpose cannot unpair`, `revoked, pending, unknown and the partner's devices cannot unpair for an account`, `wrong account, wrong couple, account switch, replay and a stale request are refused`; D `unpair: an unpair-purpose proof over the couple-bound challenge`, `unpair: another account, or a malformed couple ID, never reaches the server` |
+| Unpair effects and races | **17C** F `either partner leaves from an active device: …`, `both partners leaving at once: …`, `unpair racing recovery: …`, `unpair racing pairing: …`, `unpair racing device approval: …` |
+| Removed partner | **17C** F `the removed partner can neither send, approve for the other, nor re-pair without fresh consent` |
+| Derivations agree across TS and Dart | **17C** Fu `lifecycle.test.mjs`; D `lifecycle_authorization_test.dart`; D drift guard `server failure categories cover every server category` |

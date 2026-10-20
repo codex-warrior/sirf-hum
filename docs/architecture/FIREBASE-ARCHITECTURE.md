@@ -95,6 +95,7 @@ D-070).
 | `rateLimits/{uid}__{op}` | None | Per-account rate limits (D-077) |
 | `deviceIdIndex/{deviceId}`, `deviceKeyIndex/{sha256}`, `personKeyIndex/{sha256}` | None | Global uniqueness of activated device IDs, device keys and person keys (D-122), kept forever |
 | `conversations/{c}`, `…/commits/*`, `…/welcomes/*` | Members read; **nobody writes** (Prompt 17B) | Written only by `submitMlsCommit` after a device-key proof (D-127) |
+| `conversations/{c}` state `retired` / `closed` (Prompt 17C) | `retired`: members read, no writes; `closed`: no reads of contents or media, no writes | `recoverConversation` (purpose 7, D-135) retires and creates the successor; `unpairCouple` (purpose 8, D-136) dissolves the couple, closes its conversations and deletes `accountPartners`; `notifyOnCoupleChange` sends silent syncs |
 
 Callables:
 

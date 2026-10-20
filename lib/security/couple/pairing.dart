@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:sirf_hum/core/logging/app_logger.dart';
 import 'package:sirf_hum/core/logging/log_value.dart';
 import 'package:sirf_hum/security/device/device_registration.dart';
+import 'package:sirf_hum/security/messaging/lifecycle_authorization.dart';
 import 'package:sirf_hum_crypto/sirf_hum_crypto.dart';
 
 /// One signed pairing step (D-101). Each is authorized by this device's key
@@ -38,6 +39,9 @@ enum PairingFailure {
   /// An identity reset is pending on this account (D-082).
   identityResetPending,
 
+  /// Unpairing (D-136): unknown couple, not a member, or already dissolved.
+  coupleUnavailable,
+
   /// This device is not active, or its proof or challenge was refused.
   deviceNotTrusted,
   challengeRefused,
@@ -59,6 +63,7 @@ enum PairingFailure {
     'confirmation_code_invalid' => confirmationCodeInvalid,
     'already_paired' => alreadyPaired,
     'identity_reset_pending' => identityResetPending,
+    'couple_unavailable' => coupleUnavailable,
     'device_not_active' ||
     'device_not_found' ||
     'proof_invalid' ||
@@ -267,6 +272,16 @@ abstract interface class PairingBackend {
   Future<void> cancel(SignedPairingStep step, String pairingId);
 
   Future<PairingState> state();
+
+  /// A single-use challenge for this device to end [coupleId] (D-136).
+  Future<PairingChallenge> requestUnpairChallenge({
+    required String deviceIdHex,
+    required String coupleId,
+  });
+
+  /// Ends the couple. [step]'s proof is purpose `unpair` over
+  /// `unpairAuthorizationChallenge`, not over the raw challenge.
+  Future<void> unpair(SignedPairingStep step, String coupleId);
 }
 
 /// A challenge answered with this device's key (64-byte proof).
@@ -347,6 +362,63 @@ class PairingService {
   );
 
   Future<PairingState> state() => _backend.state();
+
+  /// Ends the couple [coupleId], unilaterally, from this device (Prompt 17C,
+  /// D-136). The device key signs a proof (purpose `unpair`) over a
+  /// single-use challenge bound to [account], this device and the couple, so
+  /// a Firebase session or password alone can never unpair. Irreversible:
+  /// the couple is dissolved, its conversations closed, partner access ends
+  /// for both accounts. What each phone already decrypted stays on it.
+  Future<void> unpair({
+    required AccountId account,
+    required String coupleId,
+  }) async {
+    if (!RegExp(r'^[0-9a-f]{32}$').hasMatch(coupleId)) {
+      throw const PairingException(PairingFailure.invalidRequest);
+    }
+    try {
+      core.checkAccount(account);
+      final identity = core.publicIdentity();
+      final device = _deviceHex;
+      final c = await _backend.requestUnpairChallenge(
+        deviceIdHex: device,
+        coupleId: coupleId,
+      );
+      await _backend.unpair(
+        SignedPairingStep(
+          deviceIdHex: device,
+          challengeId: c.challengeId,
+          proof: core.deviceProof(
+            DeviceProofPurpose.unpair,
+            unpairAuthorizationChallenge(
+              nonce: c.challenge,
+              accountId: account.value,
+              deviceId: identity.deviceId.bytes,
+              coupleId: _bytesOfHex(coupleId),
+            ),
+          ),
+        ),
+        coupleId,
+      );
+      _logUnpair('ok');
+    } on PairingException catch (e) {
+      _logUnpair(e.failure.name);
+      rethrow;
+    } on ArgumentError {
+      _logUnpair(PairingFailure.invalidRequest.name);
+      throw const PairingException(PairingFailure.invalidRequest);
+    }
+  }
+
+  static Uint8List _bytesOfHex(String hex) => Uint8List.fromList([
+    for (var i = 0; i < hex.length; i += 2)
+      int.parse(hex.substring(i, i + 2), radix: 16),
+  ]);
+
+  static void _logUnpair(String outcome) => AppLogger.info(
+    'couple_unpair',
+    fields: {'outcome': SafeLogString(outcome)},
+  );
 
   Future<T> _run<T>(
     PairingStep step,

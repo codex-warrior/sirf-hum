@@ -123,7 +123,9 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-131 | Forced pairing-code comparison: only the invitee sees the code, the inviter enters it, 3 wrong codes end the pairing (amends D-101) | Accepted (development) | 2026-10-20 |
 | D-132 | Content-free identity-reset alerts (kind `a`) to the account and, on completion, the partner | Accepted (development) | 2026-10-20 |
 | D-133 | OSV-Scanner for Dart lockfiles in CI; GitHub secret scanning, push protection, Dependabot alerts and a `main` ruleset | Accepted | 2026-10-20 |
-| D-134 | Unpairing needs its own security decision; not implemented | **Open** | 2026-10-20 |
+| D-134 | Unpairing needs its own security decision; not implemented | **Superseded by D-136** | 2026-10-20 |
+| D-135 | Conversation recovery: an active device (proof purpose 7) retires a stalled conversation and re-provisions a new MLS group for the same couple; history kept, nothing re-sent | Accepted (development); needs independent review | 2026-10-21 |
+| D-136 | Secure unpairing: either partner unilaterally, from an active device (proof purpose 8); couple dissolved, conversations closed, partner access ended | Accepted (development); needs independent review | 2026-10-21 |
 
 ---
 
@@ -1304,4 +1306,42 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 ### D-134 — Unpairing needs its own security decision (Prompt 17B)
 - **Decision:** unpairing is **not implemented** in Prompt 17B. It must be unilateral and instant (T10), and that touches decisions not yet made: what happens to shared history (open decision 6), MLS removal of the other person's devices versus retiring the conversation, rules for a dissolved couple, re-pairing (a new group, never reused, D-044), content-free notification to the other person, and the account-deletion flow (D-105). A rushed version would risk an account-takeover path (a password alone dissolving a couple) or silent retention.
 - **Required properties for the future decision:** device-key authorization (as D-127), no password-only path, server-side end of access for the other account, MLS removal or retirement, honest copy about what the partner keeps.
-- **Status:** **Open** · 2026-10-20. Production blocker P1-5.
+- **Status:** **Superseded by D-136** (2026-10-21). Was Open · 2026-10-20.
+
+### D-135 — Conversation recovery: retire and re-provision (Prompt 17C)
+- **Why:** since D-127 only an active device's key can move a conversation's epoch, but a *trusted* device (a bug, a modified partner client, a compromised phone) can still win `commits/{e}` with a commit the other devices cannot process. Every device then fails closed (`stateDiverged`) and the conversation stalls with no way forward. MLS has no "undo" for an accepted epoch, and the server never parses MLS, so the only sound recovery is a **new MLS group** for the same couple.
+- **Authorization:** callables `requestRecoveryChallenge` and `recoverConversation`. The device signs, with its **device key** and the D-070 proof format under the new purpose **`conversation_recovery` = 7**, the derived challenge
+  `SHA-256("SirfHum-ConversationRecovery-v1" | u8 1 | nonce[32] | u32 len | account | device id[16] | conversation id[16] | stalled epoch u64 BE | account trust epoch u64 BE)`.
+  The nonce is single-use, 5 minutes, bound server-side to (account, device, purpose, conversation, epoch, trust epoch). Rate limit `conversationRecovery` 3 per 24 h per account. A Firebase session alone, a revoked, pending or unknown device, or another account cannot recover.
+- **State transition (one transaction):** the server checks the challenge (consumed whatever the outcome), the device (`active`, caller's account), the caller's account trust epoch **equals** the signed one (a trust change in between refuses: recovery never acts on a stale trust view), the conversation (`active`, caller a member, epoch **equals** the signed one, and it is the couple's **current** conversation per both `accountPartners` records), the couple (`active`) and the proof. Then:
+  - old conversation → `state: 'retired'`, `successorId`, `retiredAt`, `retiredByDeviceId`; it accepts no more writes (no messages, commits, key packages, media);
+  - new conversation: new random ID (= new MLS group ID), same members, couple and pairing, `epoch: 0`, `generation` = old + 1, `predecessorId` = old;
+  - both `accountPartners` records point at the new conversation.
+- **Each device:** sees the old conversation `retired` (sync/send fail with `retired`), follows `successorId` only if the successor names it as `predecessorId` (no jumping to an unrelated or older conversation), publishes a fresh KeyPackage there and joins or creates the new group exactly as for a new couple: membership from verified lineage only (D-085), so revoked or unverified devices are never added. Trust state is unchanged (recovery is not a trust event).
+- **Existing encrypted history:** untouched. Each phone keeps the old conversation's sealed history and can still show it; server ciphertext of the retired conversation stays readable by the members (it was always theirs) and is never decrypted or rebuilt by the server.
+- **Pending messages:** messages queued in the old conversation stay sealed on the phone, marked not sent; they are **never** silently re-sent into the new group (that would be a new send the person did not make). The app can offer to send them again.
+- **Offline devices:** on reconnect they find `retired` and the successor; their old MLS state is untouched.
+- **Replay and cross-conversation use:** challenges are single-use and bound to one conversation, epoch and trust epoch; a retired conversation and its epoch never qualify again; the new conversation has a new group ID, so an old (broken) commit cannot be replayed into it (different group, and the commit path is server-only).
+- **States the app distinguishes:** normal commit (accepted); rejected commit (`WriteOutcome.refused`); stalled conversation (`MessagingFailure.stateDiverged`); recovery requested (`MessagingService.recover()`); recovery completed (successor `ConversationId` returned, log `messaging_conversation_recovered`, server audit `conversation_recovered`; old conversation `retired` → `MessagingFailure.retired`, `MessagingService.successor()`); recovery failed (`TransportException` / `MessagingException` category; nothing changed).
+- **Failure behaviour:** any check fails → nothing changes and a category is returned (`conversation_changed` when the epoch or trust epoch moved or the conversation is no longer current, `conversation_unavailable`, device and proof categories).
+- **Abuse bound:** a trusted partner device can retire the conversation; that is a denial of service it could cause anyway (it can stall), bounded by the rate limit and resolved by unpairing (D-136).
+- **Status:** Accepted for development · 2026-10-21. Needs independent review. Deployment needs Blaze.
+
+### D-136 — Secure unpairing (Prompt 17C; supersedes D-134)
+- **Who:** **either partner, unilaterally**, from one of their own **active** devices. Requiring the other's consent would let an abusive partner hold someone in the relationship (T10); so leaving needs no consent, only proof that it is really that person's trusted phone.
+- **Authorization:** `requestUnpairChallenge` + `unpairCouple`; device proof purpose **`unpair` = 8** over `SHA-256("SirfHum-Unpair-v1" | u8 1 | nonce[32] | u32 len | account | device id[16] | couple id[16])`. A password or Firebase session alone **cannot** unpair (no stolen-password path to destroy the relationship); a revoked, pending or unknown device cannot; a challenge for one couple cannot end another. Rate limit `unpair` 5 per 24 h.
+- **What happens (one transaction):** the couple → `status: 'dissolved'` (`dissolvedAt`, `dissolvedByDeviceId`; the ID is never reused); every conversation of the couple (active or retired) → `state: 'closed'`; both `accountPartners` records are deleted.
+- **Consequences:**
+  - *Removed partner's devices:* stay trusted **on their own account** (device trust is per account); they lose all access to the couple: the rules deny reads of a closed conversation's documents and media, and partner reads (profile, device directory) end with `accountPartners`.
+  - *Shared history:* each phone keeps what it already decrypted, sealed in its own history; it cannot be recalled from the other phone (stated plainly in the product). Server ciphertext is retained, unreadable by clients, until a retention decision (P2-8).
+  - *Future messages:* none: a closed conversation accepts no writes, and its MLS group never gets another epoch.
+  - *Moments, Future + Us:* they live in the conversation, so the same as history.
+  - *Pending invitations:* none can exist while paired (one couple per account); after unpairing either account may invite anyone.
+  - *Recovery keys and devices:* unaffected (account-level).
+  - *Reinstall:* a new device of the same account; no couple.
+  - *Re-pairing:* only through the full two-consent flow (D-101, D-131) with a new couple, conversation and MLS group (D-044). The old couple never comes back.
+  - *Reversible:* no.
+  - *Notifications:* silent content-free sync wake-ups to the active devices of both accounts, so both apps update; no visible alert naming the event (safety: the leaving person decides what to tell the other).
+- **Concurrency:** one transaction over the couple, both partner records and every conversation of the couple. The conversation IDs are listed outside the transaction (a collection query inside it would lock the whole range) and each conversation is then read **in** the transaction; completeness comes from following the partners' current conversation back through `predecessorId`, since any conversation created after the listing is a recovery successor that the partner records point to. A racing recovery writes those partner records and so forces a retry; a racing commit, recovery or pairing step that commits later sees the dissolved couple, the closed conversation or the missing partner record and fails closed (emulator tests: concurrent unpair, unpair vs recovery, vs pairing, vs device approval).
+- **Client:** `PairingService.unpair(account, coupleId)`: the device key signs inside the Rust core; a malformed couple ID or another account never reaches the server.
+- **Status:** Accepted for development · 2026-10-21. Needs independent review (abusive-partner review in particular). D-134 is superseded.

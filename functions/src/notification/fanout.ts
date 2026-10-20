@@ -135,6 +135,29 @@ export async function onCommitCreated(
   return deliver(db, send, collected, 'sync');
 }
 
+/**
+ * A couple was dissolved (unpairing, D-136): every active device of both
+ * members syncs silently, so both apps learn the couple ended. No visible
+ * notification: the person who left decides what to tell the other.
+ */
+export async function onCoupleChanged(
+  db: Firestore,
+  send: PushSender,
+  before: unknown,
+  after: unknown,
+  members: unknown,
+  now: Date,
+): Promise<FanoutResult> {
+  if (before !== 'active' || after !== 'dissolved' || !Array.isArray(members)) {
+    return { kind: 'none', sent: 0, failed: 0, removed: 0 };
+  }
+  const collected: Collected = { targets: [], stale: [] };
+  for (const account of members.filter((m): m is string => typeof m === 'string')) {
+    await collect(db, account, 'sync', null, now, collected);
+  }
+  return deliver(db, send, collected, 'sync');
+}
+
 const resetStatus = (reset: unknown): unknown =>
   reset !== null && typeof reset === 'object' ? (reset as { status?: unknown }).status : undefined;
 

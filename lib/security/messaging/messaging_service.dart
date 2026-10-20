@@ -7,6 +7,7 @@ import 'package:sirf_hum/security/device/device_status.dart';
 import 'package:sirf_hum/security/media/media_storage.dart';
 import 'package:sirf_hum/security/messaging/commit_authorization.dart';
 import 'package:sirf_hum/security/messaging/conversation_transport.dart';
+import 'package:sirf_hum/security/messaging/lifecycle_authorization.dart';
 import 'package:sirf_hum/security/messaging/message_envelope.dart';
 import 'package:sirf_hum/security/messaging/text_payload.dart';
 import 'package:sirf_hum_crypto/sirf_hum_crypto.dart';
@@ -41,6 +42,10 @@ enum MessagingFailure {
   /// The roster holds a device this device no longer trusts:
   /// [MessagingService.reconcileMembership] removes it first.
   untrustedMember,
+
+  /// The conversation was retired by recovery (D-135): read-only now; the
+  /// couple continues in [MessagingService.successor].
+  retired,
 }
 
 class MessagingException implements Exception {
@@ -997,10 +1002,96 @@ class MessagingService {
 
   Future<ConversationRecord> _conversation() async {
     final conv = await _transport.conversation(conversation);
-    if (!conv.active || !conv.members.contains(account.value)) {
+    if (!conv.members.contains(account.value)) {
+      throw const MessagingException(MessagingFailure.notMember);
+    }
+    if (conv.retired) {
+      throw const MessagingException(MessagingFailure.retired);
+    }
+    if (!conv.active) {
       throw const MessagingException(MessagingFailure.notMember);
     }
     return conv;
+  }
+
+  // --------------------------------------------------------------- recovery
+
+  /// Retires this conversation and has the server re-provision a new MLS
+  /// group for the couple (Prompt 17C, D-135), for when local MLS state can
+  /// no longer follow the accepted commits ([MessagingFailure.stateDiverged],
+  /// e.g. a trusted device won an epoch with a commit nobody can process).
+  ///
+  /// The device key signs a proof (purpose `conversationRecovery`) over a
+  /// single-use challenge bound to this account, device, conversation, the
+  /// stalled epoch and the account's trust epoch: a session alone can never
+  /// recover, and a recovery signed against one state is refused once the
+  /// conversation or trust moved. Old history stays where it is (local and
+  /// server ciphertext, retired read-only); messages still in the outbox
+  /// are NOT re-sent into the new group — the person decides. Returns the
+  /// successor; open a new [MessagingService] for it.
+  Future<ConversationId> recover() async {
+    final conv = await _conversation();
+    await _requireActive();
+    final trust = await _registry.trustState(account);
+    final challenge = await _transport.requestRecoveryChallenge(
+      conversation,
+      deviceIdHex: _ownHex,
+      epoch: conv.epoch,
+      trustEpoch: trust.trustEpoch,
+    );
+    final proof = core.deviceProof(
+      DeviceProofPurpose.conversationRecovery,
+      recoveryAuthorizationChallenge(
+        nonce: challenge.nonce,
+        accountId: account.value,
+        deviceId: _ownId.bytes,
+        conversationId: conversation.bytes,
+        epoch: conv.epoch,
+        trustEpoch: trust.trustEpoch,
+      ),
+    );
+    final successor = await _transport.recoverConversation(
+      conversation,
+      deviceIdHex: _ownHex,
+      epoch: conv.epoch,
+      trustEpoch: trust.trustEpoch,
+      authorization: CommitAuthorization(
+        challengeId: challenge.challengeId,
+        proof: proof,
+      ),
+    );
+    _log('messaging_conversation_recovered', 'ok');
+    return successor;
+  }
+
+  /// The conversation that replaced this one after a recovery (D-135), or
+  /// null while this one is still current. Followed only when the
+  /// successor names this conversation as its predecessor and has exactly
+  /// the same members: a server cannot redirect the couple elsewhere
+  /// unnoticed (the new group itself is still built only from verified
+  /// lineage, D-085).
+  Future<ConversationId?> successor() async {
+    final conv = await _transport.conversation(conversation);
+    if (!conv.members.contains(account.value)) {
+      throw const MessagingException(MessagingFailure.notMember);
+    }
+    final next = conv.successorIdHex;
+    if (!conv.retired || next == null) return null;
+    if (!RegExp(r'^[0-9a-f]{32}$').hasMatch(next)) {
+      throw const MessagingException(MessagingFailure.rejected);
+    }
+    final id = ConversationId(EncryptedMessageEnvelope.bytesOfHex(next));
+    final successor = await _transport.conversation(id);
+    final sameMembers =
+        successor.members.length == conv.members.length &&
+        successor.members.toSet().containsAll(conv.members);
+    if (successor.predecessorIdHex !=
+            EncryptedMessageEnvelope.hexOf(conversation.bytes) ||
+        !sameMembers) {
+      _log('messaging_successor_refused', 'mismatch');
+      throw const MessagingException(MessagingFailure.rejected);
+    }
+    return id;
   }
 
   /// Firebase status gates sending (rules refuse non-active devices

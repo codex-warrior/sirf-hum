@@ -106,6 +106,16 @@ class FakePairingBackend implements PairingBackend {
   @override
   Future<void> cancel(SignedPairingStep step, String id) =>
       throw StateError('no signed pairing step from the UI');
+
+  @override
+  Future<PairingChallenge> requestUnpairChallenge({
+    required String deviceIdHex,
+    required String coupleId,
+  }) => throw StateError('no signed pairing step from the UI');
+
+  @override
+  Future<void> unpair(SignedPairingStep step, String coupleId) =>
+      throw StateError('no signed pairing step from the UI');
 }
 
 class FakeCoupleProfiles implements CoupleProfiles {

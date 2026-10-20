@@ -1,7 +1,11 @@
 # Sirf Hum — Independent Security Review Package
 
 Prepared in Prompt 17 (2026-10-20, D-125) for an external security and
-cryptography reviewer. Baseline: branch `main` after Prompt 17.
+cryptography reviewer; updated in Prompt 17B and Prompt 17C (2026-10-21).
+Baseline: branch `security/prompt-17-hardening-audit` (PR #16).
+
+> **SIRF HUM IS NOT YET PRODUCTION E2EE.**
+> **INDEPENDENT SECURITY/CRYPTOGRAPHIC REVIEW IS STILL REQUIRED.**
 
 **Status, stated plainly:**
 - Sirf Hum is **not** production end-to-end encrypted. Nothing is deployed;
@@ -68,16 +72,16 @@ rollback by someone controlling the phone's storage (D-079); web clients
 | # | Area | Read |
 | --- | --- | --- |
 | 1 | System architecture | [ARCHITECTURE](../../architecture/ARCHITECTURE.md), [FIREBASE-ARCHITECTURE](../../architecture/FIREBASE-ARCHITECTURE.md), [CRYPTOGRAPHIC-BOUNDARIES](../../architecture/CRYPTOGRAPHIC-BOUNDARIES.md) |
-| 2 | Threat model | [THREAT-MODEL](../THREAT-MODEL.md) (IDs T1–T12, E1–E83; "Prompt 17 status review") |
+| 2 | Threat model | [THREAT-MODEL](../THREAT-MODEL.md) (IDs T1–T12, E1–E90; "Prompt 17 status review", "New in Prompt 17B/17C") |
 | 3 | Trust model | §1–2 above; [MULTI-DEVICE-TRUST](../MULTI-DEVICE-TRUST.md) §1, §11 |
 | 4 | E2EE architecture | [E2EE-ARCHITECTURE](../E2EE-ARCHITECTURE.md), [E2EE-REQUIREMENTS](../E2EE-REQUIREMENTS.md), [MLS-DECISION](../MLS-DECISION.md) |
 | 5 | MLS integration | [CRYPTO-CORE-ARCHITECTURE](../CRYPTO-CORE-ARCHITECTURE.md); review §4.4 |
 | 6 | Device identity | [DEVICE-IDENTITY](../DEVICE-IDENTITY.md) |
 | 7 | Multi-device trust | [MULTI-DEVICE-TRUST](../MULTI-DEVICE-TRUST.md) |
-| 8 | Recovery / revocation | [RECOVERY-AND-REVOCATION](../RECOVERY-AND-REVOCATION.md), MULTI-DEVICE-TRUST §6–§9 |
+| 8 | Recovery / revocation | [RECOVERY-AND-REVOCATION](../RECOVERY-AND-REVOCATION.md), MULTI-DEVICE-TRUST §6–§9; conversation recovery D-135 ([PROMPT-17C-CLOSURE](PROMPT-17C-CLOSURE.md) §1) |
 | 9 | Message protocol | [E2EE-MESSAGING-DESIGN](../E2EE-MESSAGING-DESIGN.md) |
 | 10 | Media protocol | [E2EE-MEDIA-AND-NOTIFICATIONS](../E2EE-MEDIA-AND-NOTIFICATIONS.md) §2; [D-093-SECURITY-REVIEW](../D-093-SECURITY-REVIEW.md) |
-| 11 | Pairing protocol | [COUPLE-AND-PAIRING](../COUPLE-AND-PAIRING.md) |
+| 11 | Pairing protocol | [COUPLE-AND-PAIRING](../COUPLE-AND-PAIRING.md); unpairing D-136 ([PROMPT-17C-CLOSURE](PROMPT-17C-CLOSURE.md) §2) |
 | 12 | Moments | [MOMENTS-ARCHITECTURE](../../architecture/MOMENTS-ARCHITECTURE.md) |
 | 13 | Future + Us | [FUTURE-AND-US-ARCHITECTURE](../../architecture/FUTURE-AND-US-ARCHITECTURE.md) |
 | 14 | Web boundary | [WEB-SECURITY](../WEB-SECURITY.md); review §4.13 |
@@ -85,14 +89,16 @@ rollback by someone controlling the phone's storage (D-079); web clients
 | 16 | Firebase security | `firebase/firestore.rules`, `firebase/storage.rules`, `functions/src/`; review §4.14 |
 | 17 | CI/CD security | [ENVIRONMENTS](../../architecture/ENVIRONMENTS.md), [ACCOUNT-OWNERSHIP](../../architecture/ACCOUNT-OWNERSHIP.md), `.github/workflows/`; review §4.16 |
 | 18 | Known limitations | [PRODUCTION-BLOCKERS](PRODUCTION-BLOCKERS.md); THREAT-MODEL residual risks |
-| 19 | Security decisions | [DECISION-LOG](../../decisions/DECISION-LOG.md) D-042–D-134 |
+| 19 | Security decisions | [DECISION-LOG](../../decisions/DECISION-LOG.md) D-042–D-136 |
 | 20 | Test matrix | [TEST-MATRIX](TEST-MATRIX.md); [E2EE-TEST-PLAN](../../testing/E2EE-TEST-PLAN.md) |
 | 21 | Dependency / audit status | Review §4.15; `tool/crypto_audit.sh`, `tool/check_crypto_core.sh` |
 | 22 | Open production blockers | [PRODUCTION-BLOCKERS](PRODUCTION-BLOCKERS.md) |
 
 Findings of the internal review: [PROMPT-17-SECURITY-REVIEW](PROMPT-17-SECURITY-REVIEW.md);
 what Prompt 17B fixed, deferred and still needs external review:
-[PROMPT-17B-REMEDIATION](PROMPT-17B-REMEDIATION.md).
+[PROMPT-17B-REMEDIATION](PROMPT-17B-REMEDIATION.md); conversation recovery,
+unpairing, the final classification and the prohibited claims:
+[PROMPT-17C-CLOSURE](PROMPT-17C-CLOSURE.md).
 
 ## 4. Where we most want scrutiny
 
@@ -108,7 +114,10 @@ what Prompt 17B fixed, deferred and still needs external review:
    (D-093; `aead::stream` itself has no known audit).
 4. The pairing protocol's code entry (D-101, D-131) and the partner
    verification / safety-number construction (D-128).
-5. The Android Keystore adapter and sealed local store (D-065, D-066) and
+5. Conversation recovery (D-135) and unpairing (D-136): device-proof
+   purposes 7 and 8, their transactions and races, successor following, and
+   the abusive-partner model.
+6. The Android Keystore adapter and sealed local store (D-065, D-066) and
    the local rollback analysis (review §4.3).
 
 ## 5. Reproducing the evidence

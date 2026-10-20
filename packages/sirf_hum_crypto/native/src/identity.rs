@@ -241,6 +241,14 @@ pub enum ProofPurpose {
     /// An active device rejecting a pending device's approval request
     /// (Prompt 17B, D-129). The server binds the challenge to the request.
     ApprovalRejection = 6,
+    /// An active device retiring a stalled conversation and re-provisioning
+    /// a new MLS group for the same couple (Prompt 17C, D-135). The signed
+    /// challenge binds the conversation, its epoch and the account's trust
+    /// epoch.
+    ConversationRecovery = 7,
+    /// An active device ending its account's couple (Prompt 17C, D-136). The
+    /// signed challenge binds the couple.
+    Unpair = 8,
 }
 
 impl ProofPurpose {
@@ -252,6 +260,8 @@ impl ProofPurpose {
             4 => Ok(ProofPurpose::Pairing),
             5 => Ok(ProofPurpose::Commit),
             6 => Ok(ProofPurpose::ApprovalRejection),
+            7 => Ok(ProofPurpose::ConversationRecovery),
+            8 => Ok(ProofPurpose::Unpair),
             _ => Err(CoreError::InvalidInput),
         }
     }

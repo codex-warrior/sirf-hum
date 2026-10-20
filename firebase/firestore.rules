@@ -108,7 +108,10 @@ service cloud.firestore {
     //
     //   pairings/*          server-only (Prompt 12 pairing callables, above)
     //   accountPartners/*   server-only; owner read (D-086)
-    //   conversations/*     server-created; members read; nobody writes
+    //   conversations/*     server-created; members read; nobody writes.
+    //                       `active`, `retired` (recovery, D-135: no more
+    //                       writes) or `closed` (unpairing, D-136: no more
+    //                       writes AND no more reads of its contents)
     //   .../keyPackages/*   a member publishes for one of its active devices
     //   .../commits/{e}     SERVER-ONLY since Prompt 17B (D-127): written by
     //                       submitConversationCommit after a device-key
@@ -131,7 +134,7 @@ service cloud.firestore {
       allow write: if false;
 
       match /keyPackages/{deviceId} {
-        allow read: if isMember(conversationId);
+        allow read: if canReadContents(conversationId);
         allow create: if validKeyPackage(conversationId, deviceId);
         allow update: if validKeyPackage(conversationId, deviceId)
           && resource.data.accountId == request.auth.uid;
@@ -140,17 +143,17 @@ service cloud.firestore {
       }
 
       match /commits/{epoch} {
-        allow read: if isMember(conversationId);
+        allow read: if canReadContents(conversationId);
         allow write: if false;
       }
 
       match /welcomes/{welcomeId} {
-        allow read: if isMember(conversationId);
+        allow read: if canReadContents(conversationId);
         allow write: if false;
       }
 
       match /messages/{messageId} {
-        allow read: if isMember(conversationId);
+        allow read: if canReadContents(conversationId);
         allow create: if validMessage(conversationId, messageId);
         allow update, delete: if false;
       }
@@ -178,6 +181,16 @@ service cloud.firestore {
 
     function conversation(conversationId) {
       return get(/databases/$(database)/documents/conversations/$(conversationId)).data;
+    }
+
+    // A closed conversation (the couple was dissolved, D-136) stays a
+    // member-readable document, so devices learn that it closed, but its
+    // contents (messages, commits, Welcomes, key packages) are no longer
+    // readable by anyone. A retired one (recovered, D-135) stays readable:
+    // the same couple, its own history.
+    function canReadContents(conversationId) {
+      return isMember(conversationId)
+        && conversation(conversationId).state != 'closed';
     }
 
     function isMember(conversationId) {
