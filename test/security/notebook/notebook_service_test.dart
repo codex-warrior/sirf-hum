@@ -632,9 +632,17 @@ void main() {
       await notebooks['a1']!.retryPending();
       await notebooks['b1']!.refresh();
       await notebooks['b1']!.remove(shown('b1').single.handle);
+      // A failure the service decides (fields are valid; the day is not):
+      // a blank title would already throw while building the fields.
       await expectLater(
-        notebooks['a1']!.create(_plan('   ')),
-        fails(NotebookFailure.missingTitle),
+        notebooks['a1']!.create(
+          NotebookFields(
+            section: NotebookSection.story,
+            title: _secret,
+            date: MomentDate(2026, 10, 21),
+          ),
+        ),
+        fails(NotebookFailure.invalidDate),
       );
       final all = sink.lines.join('\n');
       for (final e in [
