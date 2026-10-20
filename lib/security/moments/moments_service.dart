@@ -140,7 +140,6 @@ class MomentsService implements MomentsBackend {
   final MessagingService messaging;
   final DateTime Function() _now;
 
-  Future<void> _tail = Future.value();
   Future<void> _openTail = Future.value();
 
   @override
@@ -347,11 +346,10 @@ class MomentsService implements MomentsBackend {
     }
   }
 
-  Future<T> _serial<T>(Future<T> Function() action) {
-    final result = _tail.then((_) => action());
-    _tail = result.then<void>((_) {}, onError: (Object _) {});
-    return result;
-  }
+  // Shared with every feature on this conversation (D-118), not per
+  // service: the notebook must not sync while a moment is being sealed.
+  Future<T> _serial<T>(Future<T> Function() action) =>
+      messaging.exclusive(action);
 
   static String _probeId(int i) => i.toRadixString(16).padLeft(32, '0');
 
