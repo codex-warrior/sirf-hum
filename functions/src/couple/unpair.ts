@@ -95,15 +95,23 @@ const MAX_LINEAGE_STEPS = 64;
  * between. A recovery committing concurrently writes the partner records
  * this transaction read, so it forces a retry, which lists again.
  */
+/** The couple's conversation IDs, read outside the transaction. */
+export type ConversationLister = (db: Firestore, coupleId: string) => Promise<string[]>;
+
+const listCoupleConversations: ConversationLister = async (db, coupleId) =>
+  (await db.collection(ConversationCollections.conversations).where('coupleId', '==', coupleId).select().get()).docs.map(
+    (d) => d.id,
+  );
+
 async function coupleConversations(
   db: Firestore,
   tx: FirebaseFirestore.Transaction,
   coupleId: string,
   partners: FirebaseFirestore.DocumentSnapshot[],
+  list: ConversationLister,
 ): Promise<FirebaseFirestore.DocumentSnapshot[]> {
   const conversations = db.collection(ConversationCollections.conversations);
-  const listed = await conversations.where('coupleId', '==', coupleId).select().get();
-  const ids = new Set(listed.docs.map((d) => d.id));
+  const ids = new Set(await list(db, coupleId));
   const found = new Map<string, FirebaseFirestore.DocumentSnapshot>();
   const pending = new Set<string>(ids);
   for (const p of partners) {
@@ -120,6 +128,9 @@ async function coupleConversations(
     const predecessor = doc.get('predecessorId') as unknown;
     if (typeof predecessor === 'string' && !found.has(predecessor)) pending.add(predecessor);
   }
+  // Fail closed: never dissolve with a conversation of the couple unread
+  // (the transaction aborts and nothing is written).
+  if (pending.size > 0) throw new Error('conversation lineage exceeds the walk bound');
   return [...found.values()];
 }
 
@@ -156,7 +167,13 @@ export async function requestUnpairChallenge(
   return { challengeId, challenge: challenge.toString('base64'), expiresAtMillis: expiresAtUnix * 1000, expiresAtUnix };
 }
 
-export async function unpairCouple(db: Firestore, uid: string | undefined, data: unknown, now: Date): Promise<void> {
+export async function unpairCouple(
+  db: Firestore,
+  uid: string | undefined,
+  data: unknown,
+  now: Date,
+  list: ConversationLister = listCoupleConversations,
+): Promise<void> {
   const accountId = requireAccount(uid);
   const args = input(data);
   const deviceId = requirePattern(args.deviceId, DEVICE_ID_PATTERN);
@@ -176,7 +193,7 @@ export async function unpairCouple(db: Firestore, uid: string | undefined, data:
     const memberList = Array.isArray(members) ? members.filter((m): m is string => typeof m === 'string') : [];
     // Every read before the first write (Firestore transactions).
     const partners = memberList.length === 2 ? await Promise.all(memberList.map((m) => tx.get(partnerRef(db, m)))) : [];
-    const conversations = couple.exists ? await coupleConversations(db, tx, coupleId, partners) : [];
+    const conversations = couple.exists ? await coupleConversations(db, tx, coupleId, partners, list) : [];
 
     if (!challenge.exists) return 'challenge_invalid';
     tx.delete(challengeRef); // single-use whatever the outcome

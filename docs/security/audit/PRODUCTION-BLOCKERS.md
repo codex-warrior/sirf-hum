@@ -87,6 +87,8 @@ Finding IDs P17-xx: [PROMPT-17-SECURITY-REVIEW](PROMPT-17-SECURITY-REVIEW.md),
 | P3-10 | Server controls lineage ordering/completeness | E28, D-084 |
 | P3-11 | A stolen unlocked active device can approve/reject/revoke/cancel a reset; only-device-stolen-without-recovery-key case | E25, D-081 |
 | P3-12 | Notebook edits unbounded within the shared history | E74 |
+| P3-13 | A device keeps its local partner-root anchor (D-128) after unpairing; authorizes nothing server-side | D-136, PROMPT-17C-CLOSURE §8.2 |
+| P3-14 | Firestore emulator rejects some contended transactions (`INVALID_ARGUMENT`) under the parallel suite: test-infrastructure flake, never a partial state | PROMPT-17C-CLOSURE §8.3–8.4 |
 
 ## Closed in Prompt 17
 

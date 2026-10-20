@@ -87,7 +87,25 @@ async function authorize(account, d, coupleId, { signer = d.device, purpose = UN
   return { deviceId: d.hex, coupleId, challengeId: c.challengeId, proof: b64(signature) };
 }
 
-const unpair = (account, request, at = now()) => unpairCouple(db, account, request, at);
+const unpair = (account, request, at = now(), list = undefined) => unpairCouple(db, account, request, at, list);
+
+/** Seeds a recovery successor of `from` (as recoverConversation writes it) and points both partners at it. */
+async function seedSuccessor(c, from) {
+  const next = hex16();
+  await db.doc(`conversations/${next}`).set({
+    members: [c.A, c.B].sort(), coupleId: c.coupleId, state: 'active', epoch: 0, predecessorId: from,
+  });
+  await db.doc(`conversations/${from}`).update({ state: 'retired', successorId: next });
+  for (const acct of [c.A, c.B]) await db.doc(`accountPartners/${acct}`).update({ conversationId: next });
+  return next;
+}
+
+async function recoveryRequest(c) {
+  const rc = await requestRecoveryChallenge(db, c.A, { deviceId: c.A1.hex, conversationId: c.conversationId, epoch: 2, trustEpoch: 1 }, now());
+  const signed = recoveryAuthorizationChallenge({ nonce: Buffer.from(rc.challenge, 'base64'), accountId: c.A, deviceId: c.A1.deviceId, conversationId: Buffer.from(c.conversationId, 'hex'), epoch: 2, trustEpoch: 1 });
+  const { signature } = makeProof({ device: c.A1.device, accountId: c.A, deviceId: c.A1.deviceId, certificate: c.A1.certificate, challenge: signed, purpose: 7 });
+  return { deviceId: c.A1.hex, conversationId: c.conversationId, epoch: 2, trustEpoch: 1, challengeId: rc.challengeId, proof: b64(signature) };
+}
 
 async function rejectsWith(promise, failure) {
   await assert.rejects(promise, (e) => {
@@ -203,6 +221,69 @@ describe('secure unpairing (D-136)', () => {
     assert.ok(all.size >= 1);
     for (const doc of all.docs) assert.equal(doc.get('state'), 'closed');
     await dissolved(c);
+  });
+
+  // E90 (D-136 concurrency): the ID listing runs outside the transaction,
+  // so a conversation created after it (a recovery successor) must still be
+  // found through the partner records and the predecessor chain.
+  test('E90: a successor created after the listing is still closed', async () => {
+    const c = await couple();
+    const s1 = await seedSuccessor(c, c.conversationId);
+    // A stale listing that only saw the original conversation.
+    await unpair(c.A, await authorize(c.A, c.A1, c.coupleId), now(), async () => [c.conversationId]);
+    assert.equal(await convState(c.conversationId), 'closed');
+    assert.equal(await convState(s1), 'closed');
+    await dissolved(c);
+  });
+
+  test('E90: conversations missing from the listing are found through the predecessor chain', async () => {
+    const c = await couple();
+    const s1 = await seedSuccessor(c, c.conversationId);
+    const s2 = await seedSuccessor(c, s1);
+    // The listing saw nothing at all (worst case): s2 via the partner
+    // records, s1 and the original via predecessorId.
+    await unpair(c.B, await authorize(c.B, c.B1, c.coupleId), now(), async () => []);
+    for (const id of [c.conversationId, s1, s2]) assert.equal(await convState(id), 'closed', id);
+    await dissolved(c);
+  });
+
+  test('E90: a lineage beyond the walk bound fails closed; nothing changes', async () => {
+    const c = await couple();
+    let last = c.conversationId;
+    for (let i = 0; i < 70; i += 1) last = await seedSuccessor(c, last);
+    const request = await authorize(c.A, c.A1, c.coupleId);
+    await assert.rejects(unpair(c.A, request, now(), async () => []), /walk bound/);
+    assert.equal(await coupleStatus(c.coupleId), 'active');
+    assert.equal(await convState(last), 'active');
+    assert.ok(await exists(`accountPartners/${c.A}`));
+    // With the real listing every conversation is found and closed.
+    await unpair(c.A, await authorize(c.A, c.A1, c.coupleId));
+    const all = await db.collection('conversations').where('coupleId', '==', c.coupleId).get();
+    assert.equal(all.size, 71);
+    for (const doc of all.docs) assert.equal(doc.get('state'), 'closed');
+  });
+
+  test('E90: repeated unpair/recovery races never leave an open conversation', async () => {
+    for (let round = 0; round < 4; round += 1) {
+      const c = await couple();
+      const recovery = await recoveryRequest(c);
+      const u = await authorize(c.B, c.B1, c.coupleId);
+      const racers = [() => recoverConversation(db, c.A, recovery, now()), () => unpair(c.B, u)];
+      if (round % 2 === 1) racers.reverse();
+      const results = await Promise.allSettled(racers.map((run) => run()));
+      // Unpairing always succeeds (a racing recovery only forces a retry);
+      // a losing recovery fails with a category, never a partial state.
+      const unpairResult = results[round % 2 === 1 ? 0 : 1];
+      assert.equal(unpairResult.status, 'fulfilled', String(unpairResult.reason));
+      const recoveryResult = results[round % 2 === 1 ? 1 : 0];
+      if (recoveryResult.status === 'rejected') {
+        assert.ok(['conversation_changed', 'conversation_unavailable'].includes(recoveryResult.reason.failure), String(recoveryResult.reason));
+      }
+      const all = await db.collection('conversations').where('coupleId', '==', c.coupleId).get();
+      assert.ok(all.size === 1 || all.size === 2);
+      for (const doc of all.docs) assert.equal(doc.get('state'), 'closed', `round ${round}`);
+      await dissolved(c);
+    }
   });
 
   test('unpair racing pairing: never a second couple while the first is active', async () => {
