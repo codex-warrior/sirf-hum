@@ -51,15 +51,25 @@ class _Registries implements DeviceRegistry {
 /// fake backend (no production backend exists yet, D-116); the second test
 /// runs the real MomentsService over the REAL platform key store, with the
 /// in-memory server stand-ins. Throwaway accounts; slots removed.
+/// Home's Moments entry sits below the fold on small screens.
+Future<void> openMoments(WidgetTester tester) async {
+  final go = find.widgetWithText(TextButton, 'Go to Moments');
+  await tester.ensureVisible(go);
+  await tester.pumpAndSettle();
+  await tester.tap(go);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  // A tap that misses its target must fail here, not warn.
+  WidgetController.hitTestWarningShouldBeFatal = true;
 
   testWidgets('Moments: honest without a backend; add and open with one', (
     tester,
   ) async {
     await pumpSirfHum(tester);
-    await tester.tap(find.widgetWithText(TextButton, 'Go to Moments'));
-    await tester.pumpAndSettle();
+    await openMoments(tester);
     expect(find.text('Your first memory is waiting.'), findsOneWidget);
     expect(find.text('Add a memory'), findsNothing);
 
@@ -74,12 +84,14 @@ void main() {
         momentPhotoPickerProvider.overrideWithValue(picker),
       ],
     );
-    await tester.tap(find.widgetWithText(TextButton, 'Go to Moments'));
-    await tester.pumpAndSettle();
+    await openMoments(tester);
     await tester.tap(find.widgetWithText(FilledButton, 'Add a memory'));
     await tester.pumpAndSettle();
     picker.next = [picker.photo()];
-    await tester.tap(find.widgetWithText(FilledButton, 'Choose photos'));
+    final choose = find.widgetWithText(FilledButton, 'Choose photos');
+    await tester.ensureVisible(choose);
+    await tester.pumpAndSettle();
+    await tester.tap(choose);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'On the device');
     final save = find.widgetWithText(FilledButton, 'Save memory');
