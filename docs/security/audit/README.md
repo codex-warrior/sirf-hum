@@ -99,7 +99,8 @@ Findings of the internal review: [PROMPT-17-SECURITY-REVIEW](PROMPT-17-SECURITY-
    first-commit-wins ordering (D-087, D-088); message AAD (D-089).
 2. The device-trust statements and lineage verification (D-070, D-075,
    D-081–D-084), including the documented server-ordering limit and the
-   account-level authorization limit (E77, P17-05).
+   account-level authorization limit: any session of either account can
+   stall the conversation with an unverifiable commit (E77, P17-05).
 3. The media format: STREAM over XChaCha20-Poly1305 with our AAD and digest
    (D-093; `aead::stream` itself has no known audit).
 4. The pairing protocol's human verification step (D-101, P17-08) and the

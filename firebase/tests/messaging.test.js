@@ -236,12 +236,16 @@ describe('messages (D-089)', () => {
   // write as active A1. MLS is what refuses it (receivers compare the
   // envelope's device with the authenticated MLS sender, D-089, and reject
   // a revoked credential), so this is availability, not confidentiality.
+  // Commits are the sharp edge: rules never parse MLS, so filler bytes win
+  // the epoch, every device then refuses that commit and the conversation
+  // stalls (P17-05, blocker P1-3). No device key is needed for any of it.
   // If device-bound authorization arrives, this test must flip.
   test('documented limit: rules authorize accounts, not devices', async () => {
     await provision();
     // Indistinguishable from A1's own session: both are just "accountA".
     await assertSucceeds(sendAs(A, { senderDeviceId: A1 }), 'any session of A may claim A1');
-    await assertSucceeds(commitBatch(A, { commit: { senderDeviceId: A1 } }), 'including an epoch commit');
+    // commitDoc's `commit` is bytes(500): filler, not an MLS commit.
+    await assertSucceeds(commitBatch(A, { commit: { senderDeviceId: A1 } }), 'an unparseable commit wins the epoch');
   });
 
   test('6. a closed conversation accepts nothing', async () => {

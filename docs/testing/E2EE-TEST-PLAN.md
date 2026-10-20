@@ -209,6 +209,9 @@ noticed). Full mapping of adversarial properties to tests:
   the old root PIK after an identity reset.
 - **Rules** `documented limit: rules authorize accounts, not devices` (E77);
   `personKeyIndex` is client-unreachable.
+- **Dart (native, CI)** `a commit nobody can validate wins the epoch: every
+  device fails closed, none resets or skips it` (P17-05): pins fail-closed
+  behaviour; the stall itself is blocker P1-3.
 
 **Not covered:** an on-device backup/restore test of D-123; recovery from a
 stalled conversation (P17-05: the mechanism does not exist yet).

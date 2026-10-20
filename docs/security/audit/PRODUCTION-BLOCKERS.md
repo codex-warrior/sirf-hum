@@ -30,7 +30,7 @@ threat IDs in [THREAT-MODEL](../THREAT-MODEL.md).
 | --- | --- | --- | --- |
 | P1-1 | Partner PIK verification (safety numbers / QR) and own-account root anchoring for non-root devices; no silent trust-on-first-use | P17-09, E1, E5, D-085 | UX built; anchoring only after verification or an explicit, recorded TOFU decision with warnings |
 | P1-2 | Pairing confirmation must force the code comparison (inviter enters what the invitee reads out; server-checked, attempt-limited) | P17-08, E48 | D-101 amended by the owner; tests |
-| P1-3 | Device-bound authorization for MLS commits (and ideally messages) plus conversation recovery / re-provisioning after a stall | P17-05, E77, E32 | A revoked device holding a session cannot stall the conversation; tested |
+| P1-3 | Device-bound authorization for MLS commits (and ideally messages) plus conversation recovery / re-provisioning after a stall | P17-05, E77, E32 | A Firebase session without an active device's key (password thief, leftover session on a revoked phone) cannot win `commits/{epoch}`; a stalled conversation can be recovered; tested |
 | P1-4 | Identity-reset and new-device notifications to the account and the partner (content-free) | D-082 OPEN, E24, E27 | Deployed push for reset request and device changes |
 | P1-5 | Unpairing (unilateral, instant) | D-105, T10, E19 | Built with MLS removal and rules for dissolved conversations |
 | P1-6 | Deployment prerequisites for the trust model to exist at all: Blaze, Functions, Storage bucket + agent permission, Eventarc triggers, Cloud Scheduler | D-025, D-078, D-095, D-097 | Deployed to staging, then production via the Deploy workflow |

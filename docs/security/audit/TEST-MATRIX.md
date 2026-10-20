@@ -36,6 +36,7 @@ unit (`functions/test`), **S** = Security Rules (`firebase/tests`),
 | Stale offline message | R `offline_send_is_queued_sealed_and_reencrypted_after_a_stale_refusal`; D `messaging_service_test.dart` |
 | Message length hidden within a block | **New** R `ciphertext_length_hides_the_message_length_within_a_block` |
 | Rules: sender device / account-level authorization | S `2–5. wrong account, revoked, pending or fake sender devices are refused`; **New** S `documented limit: rules authorize accounts, not devices` (E77) |
+| An unverifiable commit wins the epoch | **New** D (native, CI) `a commit nobody can validate wins the epoch: every device fails closed, none resets or skips it` (P17-05: fail-closed holds; the stall itself is open) |
 
 ## Media
 

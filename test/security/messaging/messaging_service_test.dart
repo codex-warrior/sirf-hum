@@ -411,6 +411,43 @@ void main() {
       expect(texts('b1'), ['genuine']);
     });
 
+    // Prompt 17, P17-05 (E77): rules authorize accounts and never parse MLS,
+    // so any session of either account can win commits/{epoch} with filler
+    // bytes named as one of its active devices (firebase/tests, "documented
+    // limit"). What must hold on the devices: nobody accepts it, nobody
+    // silently resets or skips it, and nothing is sent past it. The stall
+    // itself is the open availability problem (blocker P1-3).
+    test('a commit nobody can validate wins the epoch: every device fails '
+        'closed, none resets or skips it', () async {
+      final written = await server.submitCommit(
+        cid,
+        CommitRecord(
+          epoch: 1,
+          senderAccountId: accountA.value,
+          senderDeviceIdHex: hex('a1'),
+          commit: Uint8List.fromList(List.filled(500, 1)),
+        ),
+        const [],
+      );
+      expect(written.outcome, WriteOutcome.accepted);
+      expect(server.epoch, 2);
+      for (final n in ['a1', 'a2', 'b1', 'b2']) {
+        // a1 finds "its" commit was never staged; the others cannot
+        // process it.
+        await expectLater(
+          services[n]!.sync(),
+          matcher(MessagingFailure.stateDiverged),
+          reason: n,
+        );
+        expect(cores[n]!.epoch(GroupId(cid.bytes)), 1, reason: n);
+      }
+      await expectLater(
+        services['b1']!.sendText('after the stall'),
+        matcher(MessagingFailure.stateDiverged),
+      );
+      expect(server.messageDocs, isEmpty);
+    });
+
     test('a conversation the account is not a member of is unusable', () async {
       final outsider = MessagingService(
         core: cores['a1']!,
