@@ -179,7 +179,7 @@ void main() {
       );
 
       ctl(c).dismiss();
-      expect(c.read(togetherProvider), isA<TogetherIdle>());
+      expect(await settle(c), isA<TogetherIdle>());
     });
 
     test('cancelling while waiting returns to the choices', () async {
@@ -245,6 +245,39 @@ void main() {
           TogetherEndReason.expired,
         ),
       );
+    });
+
+    test('a later event cannot resurrect an ended session', () async {
+      final together = FakeTogetherBackend();
+      final c = container(together: together);
+      await settle(c);
+      await ctl(c).start(TogetherActivity.timeTogether);
+      together.partnerJoins();
+      await settle(c);
+      together.partnerLeaves();
+      expect(await settle(c), isA<TogetherEnded>());
+
+      // A late "active" for the session that just ended.
+      together.partnerJoins();
+      expect(await settle(c), isA<TogetherEnded>());
+      together.partnerStarts();
+      expect(await settle(c), isA<TogetherEnded>());
+    });
+
+    test('dismissing an end shows what the server says now', () async {
+      final together = FakeTogetherBackend();
+      final c = container(together: together);
+      await settle(c);
+      await ctl(c).start(TogetherActivity.timeTogether);
+      together.partnerJoins();
+      await settle(c);
+      together.partnerLeaves();
+      await settle(c);
+      // Meanwhile the partner starts a new one; the end stays on screen.
+      together.partnerStarts();
+      await settle(c);
+      ctl(c).dismiss();
+      expect(await settle(c), isA<TogetherInvited>());
     });
 
     test(
@@ -468,6 +501,8 @@ void main() {
     together.partnerJoins(at: DateTime.utc(2026));
     await settle(c);
     await ctl(c).leave();
+    await settle(c);
+    ctl(c).dismiss();
     await settle(c);
     together.partnerStarts();
     await settle(c);

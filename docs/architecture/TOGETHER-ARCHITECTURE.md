@@ -54,6 +54,9 @@ Rules (enforced in `TogetherController`; tested in
     on.
   - A snapshot naming an activity this client cannot run is
     `failed(unexpected)`.
+  - `failed` and `ended` hold: no later event on the stream changes them.
+    "Try again" or "Back to Together" starts a fresh subscription and shows
+    what the server says then.
 - **No identifiers.** No state carries an account, couple, partner, device
   or session ID. The partner's name comes from the session's display names.
 - **Logs:** `together_state_changed {state}`, `activity_start_failed`,

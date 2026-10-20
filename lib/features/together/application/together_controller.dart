@@ -144,9 +144,10 @@ class TogetherController extends Notifier<TogetherState> {
     );
   }
 
-  /// "Back to Together" after an ended session.
+  /// "Back to Together" after an ended session: shows what the server says
+  /// now (a new invitation may have arrived while the end was on screen).
   void dismiss() {
-    if (state is TogetherEnded) _set(_idle());
+    if (state is TogetherEnded) ref.invalidateSelf();
   }
 
   /// Starts over from the backend's current state.
@@ -156,9 +157,10 @@ class TogetherController extends Notifier<TogetherState> {
 
   void _onSnapshot(TogetherSnapshot snapshot, TogetherBackend backend) {
     final current = state;
-    // A failure holds until the user retries (a new subscription): nothing
-    // more on this stream can make a refused or revoked device "together".
-    if (current is TogetherFailed) return;
+    // A failure or an end holds until the user retries or dismisses it,
+    // which starts a new subscription: nothing more on this stream can make a
+    // refused or revoked device, or a finished session, "together" again.
+    if (current is TogetherFailed || current is TogetherEnded) return;
     _presence = snapshot.presence;
     final supported = backend.supportedActivities;
 
@@ -180,8 +182,6 @@ class TogetherController extends Notifier<TogetherState> {
             activity: activity,
             reason: TogetherEndReason.expired,
           ),
-          // An end already shown stays until dismissed.
-          TogetherEnded() => current,
           _ => _idle(),
         };
       case TogetherInSession(:final activity, :final phase, :final activeSince):
