@@ -1,23 +1,37 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:sirf_hum/infrastructure/firebase/firestore_device_registry.dart';
 import 'package:sirf_hum/security/messaging/conversation_transport.dart';
 import 'package:sirf_hum/security/messaging/message_envelope.dart';
 import 'package:sirf_hum_crypto/sirf_hum_crypto.dart';
 
 /// Firestore implementation of [ConversationTransport] (Prompt 10,
 /// docs/security/E2EE-MESSAGING-DESIGN.md §5–§6; rules in
-/// firebase/firestore.rules). Works on the Spark plan: no Cloud Function is
-/// involved in sending or receiving.
+/// firebase/firestore.rules).
 ///
-/// Commits and messages are written in **transactions**, never plain
-/// writes: a transaction either reaches the server or fails, whereas the
-/// SDK's offline queue could land a write after the caller already treated
-/// it as refused (and discarded a staged commit). Only ciphertext, MLS
-/// handshake bytes and public metadata cross this boundary.
+/// Messages are written in **transactions**, never plain writes: a
+/// transaction either reaches the server or fails, whereas the SDK's
+/// offline queue could land a write after the caller already treated it as
+/// refused. Commits, their Welcomes and the epoch move go through the
+/// `requestCommitChallenge` / `submitMlsCommit` callables with this
+/// device's signed authorization (Prompt 17B, D-127): the rules refuse
+/// those writes from clients. Only ciphertext, MLS handshake bytes and
+/// public metadata cross this boundary.
 class FirestoreConversationTransport implements ConversationTransport {
-  FirestoreConversationTransport({FirebaseFirestore? firestore})
-    : _db = firestore ?? FirebaseFirestore.instance;
+  FirestoreConversationTransport({
+    FirebaseFirestore? firestore,
+    FirebaseFunctions? functions,
+  }) : _db = firestore ?? FirebaseFirestore.instance,
+       _functions =
+           functions ??
+           FirebaseFunctions.instanceFor(
+             region: FirestoreDeviceRegistry.functionsRegion,
+           );
 
   final FirebaseFirestore _db;
+  final FirebaseFunctions _functions;
 
   static String _hex(ConversationId id) =>
       EncryptedMessageEnvelope.hexOf(id.bytes);
@@ -30,24 +44,28 @@ class FirestoreConversationTransport implements ConversationTransport {
     String name,
   ) => _conv(id).collection(name);
 
-  /// The commit document (fields exactly as the rules require).
-  static Map<String, Object> commitFields(CommitRecord c) => {
-    'schemaVersion': 1,
-    'epoch': c.epoch,
-    'senderAccountId': c.senderAccountId,
-    'senderDeviceId': c.senderDeviceIdHex,
-    'commit': Blob(c.commit),
-    'createdAt': FieldValue.serverTimestamp(),
-  };
-
-  static Map<String, Object> welcomeFields(CommitRecord c, WelcomeRecord w) => {
-    'schemaVersion': 1,
-    'epoch': w.epoch,
-    'targetDeviceId': w.targetDeviceIdHex,
-    'senderAccountId': c.senderAccountId,
-    'senderDeviceId': c.senderDeviceIdHex,
-    'welcome': Blob(w.welcome),
-    'createdAt': FieldValue.serverTimestamp(),
+  /// The `submitMlsCommit` request (D-127): exactly these fields; the
+  /// server derives the sender account from the session and the sender
+  /// device from the verified proof's certificate.
+  static Map<String, Object> commitRequest(
+    ConversationId id,
+    CommitRecord c,
+    List<WelcomeRecord> welcomes,
+    CommitAuthorization a,
+  ) => {
+    'deviceId': c.senderDeviceIdHex,
+    'conversationId': _hex(id),
+    'fromEpoch': c.epoch,
+    'challengeId': a.challengeId,
+    'proof': base64.encode(a.proof),
+    'commit': base64.encode(c.commit),
+    'welcomes': [
+      for (final w in welcomes)
+        {
+          'targetDeviceId': w.targetDeviceIdHex,
+          'welcome': base64.encode(w.welcome),
+        },
+    ],
   };
 
   static Map<String, Object> messageFields(EncryptedMessageEnvelope e) => {
@@ -105,31 +123,64 @@ class FirestoreConversationTransport implements ConversationTransport {
   );
 
   @override
+  Future<CommitChallenge> requestCommitChallenge(
+    ConversationId id, {
+    required String deviceIdHex,
+    required int fromEpoch,
+  }) async {
+    try {
+      final result = await _functions
+          .httpsCallable('requestCommitChallenge')
+          .call<Map<String, dynamic>>({
+            'deviceId': deviceIdHex,
+            'conversationId': _hex(id),
+            'fromEpoch': fromEpoch,
+          });
+      final challengeId = result.data['challengeId'];
+      final nonce = result.data['challenge'];
+      if (challengeId is! String || nonce is! String) {
+        throw const TransportException(TransportFailure.malformed);
+      }
+      return CommitChallenge(
+        challengeId: challengeId,
+        nonce: base64.decode(nonce),
+      );
+    } on FirebaseFunctionsException catch (e) {
+      throw TransportException(
+        _unreachable(e.code)
+            ? TransportFailure.unavailable
+            : TransportFailure.denied,
+      );
+    } on FormatException {
+      throw const TransportException(TransportFailure.malformed);
+    }
+  }
+
+  @override
   Future<WriteResult> submitCommit(
     ConversationId id,
     CommitRecord commit,
     List<WelcomeRecord> welcomes,
-  ) => _write(() async {
-    final convRef = _conv(id);
-    final commitRef = _sub(id, 'commits').doc('${commit.epoch}');
-    return _db.runTransaction((tx) async {
-      final existing = await tx.get(commitRef);
-      final conv = await tx.get(convRef);
-      if (existing.exists || conv.data()?['epoch'] != commit.epoch) {
-        return const WriteResult(WriteOutcome.refused);
-      }
-      tx
-        ..set(commitRef, commitFields(commit))
-        ..update(convRef, {'epoch': commit.epoch + 1});
-      for (final w in welcomes) {
-        tx.set(
-          _sub(id, 'welcomes').doc('${w.targetDeviceIdHex}_${w.epoch}'),
-          welcomeFields(commit, w),
-        );
-      }
+    CommitAuthorization authorization,
+  ) async {
+    try {
+      await _functions
+          .httpsCallable('submitMlsCommit')
+          .call<Map<String, dynamic>>(
+            commitRequest(id, commit, welcomes, authorization),
+          );
       return const WriteResult(WriteOutcome.accepted);
-    });
-  });
+    } on FirebaseFunctionsException catch (e) {
+      // Refused (conflict, unauthorized, expired) or unreachable: either
+      // way the caller re-reads commits/{epoch} to learn what happened.
+      return WriteResult(
+        _unreachable(e.code) ? WriteOutcome.unavailable : WriteOutcome.refused,
+      );
+    }
+  }
+
+  static bool _unreachable(String code) =>
+      code == 'unavailable' || code == 'internal' || code == 'unknown';
 
   @override
   Future<CommitRecord?> commit(ConversationId id, int epoch) =>

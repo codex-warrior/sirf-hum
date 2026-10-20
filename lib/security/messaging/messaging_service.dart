@@ -5,6 +5,7 @@ import 'package:sirf_hum/core/logging/log_value.dart';
 import 'package:sirf_hum/security/device/device_registration.dart';
 import 'package:sirf_hum/security/device/device_status.dart';
 import 'package:sirf_hum/security/media/media_storage.dart';
+import 'package:sirf_hum/security/messaging/commit_authorization.dart';
 import 'package:sirf_hum/security/messaging/conversation_transport.dart';
 import 'package:sirf_hum/security/messaging/message_envelope.dart';
 import 'package:sirf_hum/security/messaging/text_payload.dart';
@@ -206,10 +207,24 @@ class MessagingService {
       } on CryptoException catch (e) {
         if (_isLocalStateFailure(e)) rethrow;
         failed.add(e.code.name);
+        // The lineage could not be applied (e.g. the partner reset to a new,
+        // not yet verified identity, D-128): still drop every device the
+        // server reports revoked. Revocation only removes trust.
+        if (member != account.value) await _revokeReported(memberAccount);
       }
     }
     _log('messaging_trust_refreshed', failed.isEmpty ? 'ok' : 'partial');
     return failed;
+  }
+
+  Future<void> _revokeReported(AccountId member) async {
+    for (final d in await _registry.listDevices(member)) {
+      if (d.status == DeviceStatus.revoked) {
+        core.revokeDevice(
+          DeviceId(EncryptedMessageEnvelope.bytesOfHex(d.deviceIdHex)),
+        );
+      }
+    }
   }
 
   /// Publishes a fresh KeyPackage so a member device can add this one.
@@ -587,9 +602,47 @@ class MessagingService {
     }
   }
 
+  /// Submits a staged commit with this device's signed authorization
+  /// (D-127): a single-use server challenge, bound with the commit's exact
+  /// bytes, epochs and Welcomes, signed by the device key inside the core.
   Future<void> _submit(StagedCommit staged, List<String> welcomeTargets) async {
     final welcome = staged.welcome;
+    final welcomes = [
+      if (welcome != null)
+        for (final t in welcomeTargets)
+          WelcomeRecord(
+            epoch: staged.fromEpoch,
+            targetDeviceIdHex: t,
+            welcome: welcome,
+          ),
+    ];
     try {
+      final challenge = await _transport.requestCommitChallenge(
+        conversation,
+        deviceIdHex: _ownHex,
+        fromEpoch: staged.fromEpoch,
+      );
+      final proof = core.deviceProof(
+        DeviceProofPurpose.commit,
+        commitAuthorizationChallenge(
+          nonce: challenge.nonce,
+          accountId: account.value,
+          deviceId: _ownId.bytes,
+          conversationId: conversation.bytes,
+          fromEpoch: staged.fromEpoch,
+          protocolVersion: MessageVersions.protocol,
+          commit: staged.commit,
+          welcomes: [
+            for (final w in welcomes)
+              AuthorizedWelcome(
+                targetDeviceId: EncryptedMessageEnvelope.bytesOfHex(
+                  w.targetDeviceIdHex,
+                ),
+                welcome: w.welcome,
+              ),
+          ],
+        ),
+      );
       await _transport.submitCommit(
         conversation,
         CommitRecord(
@@ -598,18 +651,12 @@ class MessagingService {
           senderDeviceIdHex: _ownHex,
           commit: staged.commit,
         ),
-        [
-          if (welcome != null)
-            for (final t in welcomeTargets)
-              WelcomeRecord(
-                epoch: staged.fromEpoch,
-                targetDeviceIdHex: t,
-                welcome: welcome,
-              ),
-        ],
+        welcomes,
+        CommitAuthorization(challengeId: challenge.challengeId, proof: proof),
       );
     } on TransportException {
-      // Resolved by the sync below: a commit that never landed is dropped.
+      // Resolved by the sync below: a commit that never landed (refused,
+      // unauthorized or unreachable) is dropped, never applied locally.
     }
     // Whatever the outcome, the server's commits/{epoch} decides: confirm
     // ours after flushing the epoch's messages, or discard and follow.

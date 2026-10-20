@@ -29,6 +29,10 @@ enum PairingFailure {
 
   /// This account already takes part in another open pairing.
   pairingInProgress,
+
+  /// The code the inviter entered is not the one the invitee's phone shows
+  /// (D-131). After three, the pairing is [pairingInvalidated].
+  confirmationCodeInvalid,
   alreadyPaired,
 
   /// An identity reset is pending on this account (D-082).
@@ -52,6 +56,7 @@ enum PairingFailure {
     'pairing_expired' => pairingExpired,
     'pairing_invalidated' => pairingInvalidated,
     'pairing_in_progress' => pairingInProgress,
+    'confirmation_code_invalid' => confirmationCodeInvalid,
     'already_paired' => alreadyPaired,
     'identity_reset_pending' => identityResetPending,
     'device_not_active' ||
@@ -176,8 +181,11 @@ sealed class PairingState {
           _ => throw const PairingException(PairingFailure.unavailable),
         },
         pairingId: id(data['pairingId']),
-        code: switch (data['confirmationCode']) {
-          final String c when _code.hasMatch(c) => c,
+        // D-131: only the invitee's phone shows the code; the inviter must
+        // enter what the invitee reads out, so it never receives it.
+        code: switch ((data['role'], data['confirmationCode'])) {
+          ('invitee', final String c) when _code.hasMatch(c) => c,
+          ('inviter', null) => null,
           _ => throw const PairingException(PairingFailure.unavailable),
         },
         partnerDisplayName: switch (data['partnerDisplayName']) {
@@ -204,7 +212,9 @@ class PairingInvited extends PairingState {
   final DateTime expiresAt;
 }
 
-/// Someone accepted; the inviter decides. Both sides show [code].
+/// Someone accepted; the inviter decides. The invitee's phone shows [code];
+/// the inviter types what the invitee reads out (D-131), so for the inviter
+/// [code] is null.
 class PairingAwaitingConfirmation extends PairingState {
   const PairingAwaitingConfirmation({
     required this.isInviter,
@@ -216,7 +226,7 @@ class PairingAwaitingConfirmation extends PairingState {
 
   final bool isInviter;
   final String pairingId;
-  final String code;
+  final String? code;
   final String? partnerDisplayName;
   final DateTime expiresAt;
 
@@ -245,7 +255,12 @@ abstract interface class PairingBackend {
 
   Future<PairingAcceptance> accept(SignedPairingStep step, String token);
 
-  Future<CoupleMembership> confirm(SignedPairingStep step, String pairingId);
+  /// [code]: the six digits the inviter entered (D-131).
+  Future<CoupleMembership> confirm(
+    SignedPairingStep step,
+    String pairingId,
+    String code,
+  );
 
   Future<void> reject(SignedPairingStep step, String pairingId);
 
@@ -303,12 +318,19 @@ class PairingService {
     );
   }
 
-  /// The inviter confirms the account that accepted (after comparing codes).
-  Future<CoupleMembership> confirm(String pairingId) => _run(
-    PairingStep.confirm,
-    (s) => _backend.confirm(s, pairingId),
-    pairingId: pairingId,
-  );
+  /// The inviter confirms the account that accepted, with the six-digit
+  /// [code] the invitee read out from their phone (D-131). A malformed code
+  /// is refused here without a server step.
+  Future<CoupleMembership> confirm(String pairingId, String code) {
+    if (!RegExp(r'^\d{6}$').hasMatch(code)) {
+      throw const PairingException(PairingFailure.invalidRequest);
+    }
+    return _run(
+      PairingStep.confirm,
+      (s) => _backend.confirm(s, pairingId, code),
+      pairingId: pairingId,
+    );
+  }
 
   /// The inviter refuses the account that accepted.
   Future<void> reject(String pairingId) => _run(

@@ -77,8 +77,10 @@ service cloud.firestore {
     //
     // Rules see the ACCOUNT, never the device: a write naming an active
     // device of the caller's account passes from any of that account's
-    // sessions (THREAT-MODEL E77). MLS, not these rules, binds a message to
-    // its sending device (D-089).
+    // sessions (THREAT-MODEL E77). That is why the epoch-moving writes
+    // (commits, Welcomes, the epoch) are server-only behind a device-key
+    // proof (D-127). For messages, MLS binds content to the sending device
+    // (D-089); a session alone can only add noise that devices reject.
     match /users/{accountId}/devices/{deviceId} {
       allow read: if isAccountOwner(accountId) || isPartnerOf(accountId);
       allow write: if false;
@@ -106,11 +108,13 @@ service cloud.firestore {
     //
     //   pairings/*          server-only (Prompt 12 pairing callables, above)
     //   accountPartners/*   server-only; owner read (D-086)
-    //   conversations/*     server-created; members read; clients may only
-    //                       move `epoch` by one, with that epoch's commit
+    //   conversations/*     server-created; members read; nobody writes
     //   .../keyPackages/*   a member publishes for one of its active devices
-    //   .../commits/{e}     create-only, one per epoch: first wins (D-088)
-    //   .../welcomes/*      create-only, only beside their accepted commit
+    //   .../commits/{e}     SERVER-ONLY since Prompt 17B (D-127): written by
+    //                       submitConversationCommit after a device-key
+    //                       proof, with the epoch move and the Welcomes; one
+    //                       per epoch, first wins (D-088)
+    //   .../welcomes/*      server-only, beside their commit (D-127)
     //   .../messages/*      create-only ciphertext at the current epoch
     //
     // Clients can never edit or delete commits, Welcomes or messages:
@@ -122,15 +126,9 @@ service cloud.firestore {
 
     match /conversations/{conversationId} {
       allow read: if isMember(conversationId);
-      allow create, delete: if false;
-      // The epoch counter only, by exactly one, and only in the same batch
-      // as the (new) commit for the old epoch, which its own rule validates.
-      allow update: if isMember(conversationId)
-        && resource.data.state == 'active'
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['epoch'])
-        && request.resource.data.epoch == resource.data.epoch + 1
-        && !exists(commitPath(conversationId, resource.data.epoch))
-        && existsAfter(commitPath(conversationId, resource.data.epoch));
+      // The epoch moves only with an authorized commit, written by the
+      // server (D-127): a Firebase session alone can never move it.
+      allow write: if false;
 
       match /keyPackages/{deviceId} {
         allow read: if isMember(conversationId);
@@ -143,14 +141,12 @@ service cloud.firestore {
 
       match /commits/{epoch} {
         allow read: if isMember(conversationId);
-        allow create: if validCommit(conversationId, epoch);
-        allow update, delete: if false;
+        allow write: if false;
       }
 
       match /welcomes/{welcomeId} {
         allow read: if isMember(conversationId);
-        allow create: if validWelcome(conversationId, welcomeId);
-        allow update, delete: if false;
+        allow write: if false;
       }
 
       match /messages/{messageId} {
@@ -204,10 +200,6 @@ service cloud.firestore {
         && get(device).data.status == 'active';
     }
 
-    function commitPath(conversationId, epoch) {
-      return /databases/$(database)/documents/conversations/$(conversationId)/commits/$(string(epoch));
-    }
-
     function validKeyPackage(conversationId, deviceId) {
       let d = request.resource.data;
       return isActiveMemberDevice(conversationId, deviceId)
@@ -220,48 +212,6 @@ service cloud.firestore {
         && d.keyPackage.size() > 0
         && d.keyPackage.size() <= 16384
         && d.updatedAt == request.time;
-    }
-
-    function validCommit(conversationId, epoch) {
-      let d = request.resource.data;
-      let before = conversation(conversationId);
-      let after = getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data;
-      return isActiveMemberDevice(conversationId, d.senderDeviceId)
-        && d.keys().hasOnly(['schemaVersion', 'epoch', 'senderAccountId', 'senderDeviceId', 'commit', 'createdAt'])
-        && d.keys().hasAll(['schemaVersion', 'epoch', 'senderAccountId', 'senderDeviceId', 'commit', 'createdAt'])
-        && d.schemaVersion == 1
-        && d.epoch is int
-        && d.epoch == before.epoch
-        && epoch == string(before.epoch)
-        && after.epoch == before.epoch + 1
-        && d.senderAccountId == request.auth.uid
-        && d.commit is bytes
-        && d.commit.size() > 0
-        && d.commit.size() <= 131072
-        && d.createdAt == request.time;
-    }
-
-    function validWelcome(conversationId, welcomeId) {
-      let d = request.resource.data;
-      let commit = commitPath(conversationId, d.epoch);
-      return isActiveMemberDevice(conversationId, d.senderDeviceId)
-        && d.keys().hasOnly(['schemaVersion', 'epoch', 'targetDeviceId', 'senderAccountId', 'senderDeviceId', 'welcome', 'createdAt'])
-        && d.keys().hasAll(['schemaVersion', 'epoch', 'targetDeviceId', 'senderAccountId', 'senderDeviceId', 'welcome', 'createdAt'])
-        && d.schemaVersion == 1
-        && d.epoch is int
-        && d.epoch == conversation(conversationId).epoch
-        && d.targetDeviceId is string
-        && d.targetDeviceId.matches('^[0-9a-f]{32}$')
-        && welcomeId == d.targetDeviceId + '_' + string(d.epoch)
-        && d.senderAccountId == request.auth.uid
-        // Only beside its own commit, created in this same batch.
-        && !exists(commit)
-        && existsAfter(commit)
-        && getAfter(commit).data.senderDeviceId == d.senderDeviceId
-        && d.welcome is bytes
-        && d.welcome.size() > 0
-        && d.welcome.size() <= 131072
-        && d.createdAt == request.time;
     }
 
     function validMessage(conversationId, messageId) {

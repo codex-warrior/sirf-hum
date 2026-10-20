@@ -27,6 +27,9 @@ class FakeRegistry implements DeviceRegistry {
 
   /// Account trust epoch; tests may lower it to simulate a rolled-back view.
   int trustEpoch = 0;
+
+  /// Completed identity resets (D-082), as `accountTrust.identityEpoch`.
+  int identityEpoch = 0;
   DateTime? resetEffectiveAt;
   String? firstDeviceId;
 
@@ -240,6 +243,7 @@ class FakeRegistry implements DeviceRegistry {
     _maybeFail();
     return AccountTrustState(
       trustEpoch: trustEpoch,
+      identityEpoch: identityEpoch,
       resetEffectiveAt: resetEffectiveAt,
     );
   }
@@ -307,6 +311,7 @@ class FakeRegistry implements DeviceRegistry {
     links.clear();
     revocations.clear();
     recoveryPublicKey = null;
+    identityEpoch++;
     trustEpoch++;
   }
 

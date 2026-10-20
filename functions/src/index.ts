@@ -48,6 +48,7 @@ import {
   requestPairingChallenge as requestPairingStepChallenge,
 } from './couple/pairing';
 import { PairingError, type PairingFailure } from './couple/state';
+import { requestCommitChallenge as commitChallenge, submitConversationCommit as submitCommit } from './conversation/commit';
 import { cleanupExpired } from './device/cleanup';
 import { DeviceError, type DeviceFailure } from './device/common';
 import { activateDevice as activate, issueDeviceChallenge as issueChallenge, registerDevice as register } from './device/registration';
@@ -102,6 +103,8 @@ const FAILURE_CODES: Record<DeviceFailure, FunctionsErrorCode> = {
   reset_not_ready: 'failed-precondition',
   rate_limited: 'resource-exhausted',
   device_not_active: 'failed-precondition',
+  commit_conflict: 'aborted',
+  conversation_unavailable: 'not-found',
 };
 
 const PAIRING_FAILURE_CODES: Record<PairingFailure, FunctionsErrorCode> = {
@@ -111,6 +114,7 @@ const PAIRING_FAILURE_CODES: Record<PairingFailure, FunctionsErrorCode> = {
   pairing_expired: 'deadline-exceeded',
   pairing_invalidated: 'aborted',
   pairing_in_progress: 'failed-precondition',
+  confirmation_code_invalid: 'permission-denied',
   already_paired: 'already-exists',
   identity_reset_pending: 'failed-precondition',
 };
@@ -214,6 +218,22 @@ export const cleanupExpiredDeviceRecords = onSchedule({ schedule: 'every 24 hour
   const result = await cleanupExpired(getFirestore(), new Date());
   logger.info('device_cleanup', { ...result });
 });
+
+// --------------------------------------- MLS commits (Prompt 17B, D-127)
+
+/**
+ * The only way a conversation's epoch moves: a commit authorized by the
+ * device key of an active member device. Clients can no longer write
+ * commits, Welcomes or the epoch (rules), so a Firebase session alone can
+ * never stall a conversation.
+ */
+export const requestCommitChallenge = callable('commit_challenge_issued', (uid, data, now) =>
+  commitChallenge(getFirestore(), uid, data, now),
+);
+
+export const submitMlsCommit = callable('commit_submitted', (uid, data, now) =>
+  submitCommit(getFirestore(), uid, data, now),
+);
 
 // ------------------------------------------------ couple pairing (Prompt 12)
 

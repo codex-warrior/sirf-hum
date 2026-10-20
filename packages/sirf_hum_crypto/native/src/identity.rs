@@ -232,6 +232,15 @@ pub enum ProofPurpose {
     /// The server binds the challenge to the step and its subject. A new
     /// accepted value only: ABI v6 functions and formats are unchanged.
     Pairing = 4,
+    /// An active device authorizing one MLS commit of a conversation
+    /// (Prompt 17B, D-127). The signed challenge is derived from a
+    /// single-use server nonce and the commit's binding (account, device,
+    /// conversation, epochs, protocol, commit and Welcome digests), so a
+    /// Firebase session without this key cannot move a conversation's epoch.
+    Commit = 5,
+    /// An active device rejecting a pending device's approval request
+    /// (Prompt 17B, D-129). The server binds the challenge to the request.
+    ApprovalRejection = 6,
 }
 
 impl ProofPurpose {
@@ -241,6 +250,8 @@ impl ProofPurpose {
             2 => Ok(ProofPurpose::Enrollment),
             3 => Ok(ProofPurpose::PushToken),
             4 => Ok(ProofPurpose::Pairing),
+            5 => Ok(ProofPurpose::Commit),
+            6 => Ok(ProofPurpose::ApprovalRejection),
             _ => Err(CoreError::InvalidInput),
         }
     }

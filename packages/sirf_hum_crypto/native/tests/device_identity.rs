@@ -158,6 +158,8 @@ fn proof_purposes_are_separate_signed_domains() {
         ProofPurpose::Enrollment,
         ProofPurpose::PushToken,
         ProofPurpose::Pairing,
+        ProofPurpose::Commit,
+        ProofPurpose::ApprovalRejection,
     ];
     for made in purposes {
         let proof = alice.core.device_proof(made, &challenge).unwrap();

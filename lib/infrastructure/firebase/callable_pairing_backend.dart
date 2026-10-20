@@ -86,10 +86,12 @@ class CallablePairingBackend implements PairingBackend {
   Future<CoupleMembership> confirm(
     SignedPairingStep step,
     String pairingId,
+    String code,
   ) async {
     final data = await _call('confirmPairing', {
       ..._signed(step),
       'pairingId': pairingId,
+      'confirmationCode': code,
     });
     final (couple, conversation) = (data['coupleId'], data['conversationId']);
     if (couple is! String || conversation is! String) throw _unavailable;

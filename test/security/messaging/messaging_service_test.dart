@@ -10,6 +10,7 @@ import 'package:sirf_hum/core/logging/app_logger.dart';
 import 'package:sirf_hum/security/device/device_registration.dart';
 import 'package:sirf_hum/security/device/device_status.dart';
 import 'package:sirf_hum/security/device/device_trust_service.dart';
+import 'package:sirf_hum/security/messaging/commit_authorization.dart';
 import 'package:sirf_hum/security/messaging/conversation_transport.dart';
 import 'package:sirf_hum/security/messaging/message_envelope.dart';
 import 'package:sirf_hum/security/messaging/messaging_service.dart';
@@ -138,6 +139,67 @@ void main() {
       for (final m in services[name]!.messages()) m.text,
     ];
 
+    /// While true the server refuses every commit authorization (models a
+    /// device revoked between staging and submission, or a forged proof).
+    var denyCommits = false;
+
+    /// The server-side proof check (D-127): Ed25519 is deterministic, so the
+    /// claimed device's own core recomputes the expected proof.
+    bool verifyCommitProof(
+      String deviceHex,
+      Uint8List signed,
+      Uint8List proof,
+    ) {
+      if (denyCommits) return false;
+      for (final e in cores.entries) {
+        if (hex(e.key) != deviceHex) continue;
+        final expected = e.value.deviceProof(DeviceProofPurpose.commit, signed);
+        return expected.length == proof.length &&
+            Iterable<int>.generate(
+              proof.length,
+            ).every((i) => expected[i] == proof[i]);
+      }
+      return false;
+    }
+
+    /// What a device does to submit a staged commit (D-127): challenge,
+    /// binding, signature by ITS core. [signer] lets a test sign with
+    /// another core (a forged authorization).
+    Future<WriteResult> submitAs(
+      String name,
+      AccountId account,
+      StagedCommit staged, {
+      String? signer,
+    }) async {
+      final c = await server.requestCommitChallenge(
+        cid,
+        deviceIdHex: hex(name),
+        fromEpoch: staged.fromEpoch,
+      );
+      final signed = commitAuthorizationChallenge(
+        nonce: c.nonce,
+        accountId: account.value,
+        deviceId: cores[name]!.publicIdentity().deviceId.bytes,
+        conversationId: cid.bytes,
+        fromEpoch: staged.fromEpoch,
+        protocolVersion: MessageVersions.protocol,
+        commit: staged.commit,
+        welcomes: const [],
+      );
+      return server.submitCommit(
+        cid,
+        _commit(staged, account.value, hex(name)),
+        const [],
+        CommitAuthorization(
+          challengeId: c.challengeId,
+          proof: cores[signer ?? name]!.deviceProof(
+            DeviceProofPurpose.commit,
+            signed,
+          ),
+        ),
+      );
+    }
+
     setUp(() async {
       root = Directory.systemTemp.createTempSync('sh_messaging_');
       registries = {
@@ -145,10 +207,12 @@ void main() {
         accountB.value: FakeRegistry(),
       };
       registry = _Registries(registries);
+      denyCommits = false;
       server = FakeTransport(
         members: [accountA.value, accountB.value],
         statusOf: (account, device) =>
             registries[account]?.statuses[device] ?? DeviceStatus.unknown,
+        verifyCommitProof: verifyCommitProof,
       );
       cores.clear();
       services.clear();
@@ -271,11 +335,7 @@ void main() {
         server.offline = false;
         // Meanwhile B1 commits (epoch 1 → 2).
         final staged = cores['b1']!.stageSelfUpdate(cid);
-        await server.submitCommit(
-          cid,
-          _commit(staged, accountB.value, hex('b1')),
-          const [],
-        );
+        await submitAs('b1', accountB, staged);
         await services['b1']!.sync();
         // A1 reconnects: the epoch-1 upload is refused as stale, A1 syncs,
         // re-encrypts the SAME message ID and uploads.
@@ -319,14 +379,10 @@ void main() {
         // ...B1 wins the epoch.
         await services['b1']!.reconcileMembership();
         expect(server.epoch, 2);
-        expect(
-          (await server.submitCommit(
-            cid,
-            _commit(a1Staged, accountA.value, hex('a1')),
-            const [],
-          )).outcome,
-          WriteOutcome.refused,
-          reason: 'epoch 1 already has a commit',
+        // Epoch 1 already has a commit: no authorization is even issued.
+        await expectLater(
+          submitAs('a1', accountA, a1Staged),
+          throwsA(isA<TransportException>()),
         );
         // A1 syncs: discards its staged commit and follows B1's.
         final r = await services['a1']!.sync();
@@ -348,11 +404,7 @@ void main() {
       'a staged commit survives a restart and is resolved by sync',
       () async {
         final staged = cores['a1']!.stageSelfUpdate(cid);
-        final result = await server.submitCommit(
-          cid,
-          _commit(staged, accountA.value, hex('a1')),
-          const [],
-        );
+        final result = await submitAs('a1', accountA, staged);
         expect(result.outcome, WriteOutcome.accepted);
         cores['a1']!.close();
         cores['a1'] = open('a1');
@@ -411,41 +463,180 @@ void main() {
       expect(texts('b1'), ['genuine']);
     });
 
-    // Prompt 17, P17-05 (E77): rules authorize accounts and never parse MLS,
-    // so any session of either account can win commits/{epoch} with filler
-    // bytes named as one of its active devices (firebase/tests, "documented
-    // limit"). What must hold on the devices: nobody accepts it, nobody
-    // silently resets or skips it, and nothing is sent past it. The stall
-    // itself is the open availability problem (blocker P1-3).
-    test('a commit nobody can validate wins the epoch: every device fails '
-        'closed, none resets or skips it', () async {
-      final written = await server.submitCommit(
+    // Prompt 17, P17-05 (E77), fixed by D-127. Before, any Firebase session
+    // of either account could win commits/{epoch} with filler bytes and
+    // every device then stalled (stateDiverged). Now the server needs this
+    // device's signed, single-use authorization over the exact commit.
+    test('a session without the device key cannot move the epoch; the '
+        'conversation keeps working', () async {
+      final filler = CommitRecord(
+        epoch: 1,
+        senderAccountId: accountA.value,
+        senderDeviceIdHex: hex('a1'),
+        commit: Uint8List.fromList(List.filled(500, 1)),
+      );
+      // A real challenge for A1 (a session may ask), but no device key.
+      final c = await server.requestCommitChallenge(
         cid,
-        CommitRecord(
-          epoch: 1,
-          senderAccountId: accountA.value,
-          senderDeviceIdHex: hex('a1'),
-          commit: Uint8List.fromList(List.filled(500, 1)),
+        deviceIdHex: hex('a1'),
+        fromEpoch: 1,
+      );
+      expect(
+        (await server.submitCommit(
+          cid,
+          filler,
+          const [],
+          CommitAuthorization(challengeId: c.challengeId, proof: Uint8List(64)),
+        )).outcome,
+        WriteOutcome.refused,
+      );
+      // A genuine authorization for ANOTHER commit cannot carry the filler,
+      // and is gone once used (replay).
+      final genuine = await server.requestCommitChallenge(
+        cid,
+        deviceIdHex: hex('a1'),
+        fromEpoch: 1,
+      );
+      final staged = cores['a1']!.stageSelfUpdate(cid);
+      final proof = cores['a1']!.deviceProof(
+        DeviceProofPurpose.commit,
+        commitAuthorizationChallenge(
+          nonce: genuine.nonce,
+          accountId: accountA.value,
+          deviceId: cores['a1']!.publicIdentity().deviceId.bytes,
+          conversationId: cid.bytes,
+          fromEpoch: 1,
+          protocolVersion: MessageVersions.protocol,
+          commit: staged.commit,
+          welcomes: const [],
         ),
-        const [],
       );
-      expect(written.outcome, WriteOutcome.accepted);
-      expect(server.epoch, 2);
+      final auth = CommitAuthorization(
+        challengeId: genuine.challengeId,
+        proof: proof,
+      );
+      expect(
+        (await server.submitCommit(cid, filler, const [], auth)).outcome,
+        WriteOutcome.refused,
+      );
+      expect(
+        (await server.submitCommit(
+          cid,
+          _commit(staged, accountA.value, hex('a1')),
+          const [],
+          auth,
+        )).outcome,
+        WriteOutcome.refused,
+        reason: 'single use',
+      );
+      cores['a1']!.discardCommit(cid, 1);
+      // Another device's key, or the partner, cannot sign for A1.
+      final a1Staged = cores['a1']!.stageSelfUpdate(cid);
+      expect(
+        (await submitAs('a1', accountA, a1Staged, signer: 'a2')).outcome,
+        WriteOutcome.refused,
+      );
+      expect(
+        (await submitAs('a1', accountA, a1Staged, signer: 'b1')).outcome,
+        WriteOutcome.refused,
+      );
+      cores['a1']!.discardCommit(cid, 1);
+      expect(server.epoch, 1);
+      expect(server.commits, isEmpty);
+      // Nothing stalled: every device syncs and a message flows.
       for (final n in ['a1', 'a2', 'b1', 'b2']) {
-        // a1 finds "its" commit was never staged; the others cannot
-        // process it.
-        await expectLater(
-          services[n]!.sync(),
-          matcher(MessagingFailure.stateDiverged),
-          reason: n,
-        );
-        expect(cores[n]!.epoch(GroupId(cid.bytes)), 1, reason: n);
+        expect((await services[n]!.sync()).epoch, 1, reason: n);
       }
-      await expectLater(
-        services['b1']!.sendText('after the stall'),
-        matcher(MessagingFailure.stateDiverged),
+      expect(await services['b1']!.sendText('still here'), SendOutcome.sent);
+      await services['a2']!.sync();
+      expect(texts('a2'), ['still here']);
+    });
+
+    test('a refused authorization never advances local state; a valid one '
+        'then does', () async {
+      await enroll('a3', accountA, approver: 'a1');
+      await online('a3', accountA);
+      await services['a1']!.refreshTrust();
+      denyCommits = true;
+      await services['a1']!.reconcileMembership();
+      expect(server.refusedCommits, greaterThan(0));
+      expect(server.epoch, 1);
+      expect(cores['a1']!.epoch(GroupId(cid.bytes)), 1);
+      expect(cores['a1']!.stagedCommitEpoch(cid), isNull);
+      expect((await services['a3']!.sync()).joined, isFalse);
+      denyCommits = false;
+      await services['a1']!.reconcileMembership();
+      expect(server.epoch, 2);
+      expect((await services['a3']!.sync()).joined, isTrue);
+    });
+
+    test(
+      'revoked, pending and unknown devices get no commit authorization',
+      () async {
+        registries[accountA.value]!.statuses[hex('a2')] = DeviceStatus.revoked;
+        final staged = cores['a2']!.stageSelfUpdate(cid);
+        await expectLater(
+          submitAs('a2', accountA, staged),
+          throwsA(isA<TransportException>()),
+        );
+        cores['a2']!.discardCommit(cid, 1);
+        await expectLater(
+          services['a2']!.reconcileMembership(),
+          matcher(MessagingFailure.deviceNotTrusted),
+        );
+        registries[accountB.value]!.statuses[hex('b2')] = DeviceStatus.pending;
+        await expectLater(
+          server.requestCommitChallenge(
+            cid,
+            deviceIdHex: hex('b2'),
+            fromEpoch: 1,
+          ),
+          throwsA(isA<TransportException>()),
+        );
+        await expectLater(
+          server.requestCommitChallenge(
+            cid,
+            deviceIdHex: 'ab' * 16,
+            fromEpoch: 1,
+          ),
+          throwsA(isA<TransportException>()),
+        );
+        expect(server.epoch, 1);
+      },
+    );
+
+    test('an authorization is bound to its device and account: another '
+        'account cannot use it', () async {
+      final c = await server.requestCommitChallenge(
+        cid,
+        deviceIdHex: hex('a1'),
+        fromEpoch: 1,
       );
-      expect(server.messageDocs, isEmpty);
+      final staged = cores['b1']!.stageSelfUpdate(cid);
+      final proof = cores['b1']!.deviceProof(
+        DeviceProofPurpose.commit,
+        commitAuthorizationChallenge(
+          nonce: c.nonce,
+          accountId: accountB.value,
+          deviceId: cores['b1']!.publicIdentity().deviceId.bytes,
+          conversationId: cid.bytes,
+          fromEpoch: 1,
+          protocolVersion: MessageVersions.protocol,
+          commit: staged.commit,
+          welcomes: const [],
+        ),
+      );
+      expect(
+        (await server.submitCommit(
+          cid,
+          _commit(staged, accountB.value, hex('b1')),
+          const [],
+          CommitAuthorization(challengeId: c.challengeId, proof: proof),
+        )).outcome,
+        WriteOutcome.refused,
+      );
+      cores['b1']!.discardCommit(cid, 1);
+      expect(server.epoch, 1);
     });
 
     test('a conversation the account is not a member of is unusable', () async {

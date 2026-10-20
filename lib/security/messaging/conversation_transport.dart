@@ -74,6 +74,34 @@ class WelcomeRecord {
   String toString() => 'WelcomeRecord(epoch: $epoch, <redacted>)';
 }
 
+/// A single-use server challenge for one commit, by one device, at one
+/// epoch (Prompt 17B, D-127). Its [nonce] goes into
+/// `commitAuthorizationChallenge`; the device key signs the result.
+class CommitChallenge {
+  CommitChallenge({required this.challengeId, required Uint8List nonce})
+    : nonce = Uint8List.fromList(nonce);
+
+  final String challengeId;
+  final Uint8List nonce;
+
+  @override
+  String toString() => 'CommitChallenge(<redacted>)';
+}
+
+/// The device's signed authorization for exactly one commit (D-127).
+class CommitAuthorization {
+  CommitAuthorization({required this.challengeId, required Uint8List proof})
+    : proof = Uint8List.fromList(proof);
+
+  final String challengeId;
+
+  /// Device proof, purpose `commit` (64 bytes).
+  final Uint8List proof;
+
+  @override
+  String toString() => 'CommitAuthorization(<redacted>)';
+}
+
 /// How the server answered a create-only write.
 enum WriteOutcome {
   /// Written.
@@ -120,12 +148,24 @@ abstract interface class ConversationTransport {
 
   Future<List<PublishedKeyPackage>> keyPackages(ConversationId id);
 
-  /// Writes the commit for `commit.epoch`, the epoch move and the Welcomes
-  /// in one atomic batch.
+  /// A single-use challenge for this device to authorize a commit from
+  /// [fromEpoch] (D-127). Throws [TransportException] when refused (device
+  /// not active, epoch already moved, not a member) or unreachable.
+  Future<CommitChallenge> requestCommitChallenge(
+    ConversationId id, {
+    required String deviceIdHex,
+    required int fromEpoch,
+  });
+
+  /// Asks the server to accept the commit for `commit.epoch`, the epoch move
+  /// and the Welcomes in one transaction (first commit wins, D-088). The
+  /// server verifies [authorization] against this device's key first: a
+  /// Firebase session alone can never move the epoch (D-127).
   Future<WriteResult> submitCommit(
     ConversationId id,
     CommitRecord commit,
     List<WelcomeRecord> welcomes,
+    CommitAuthorization authorization,
   );
 
   Future<CommitRecord?> commit(ConversationId id, int epoch);

@@ -36,9 +36,11 @@ EncryptedMessageEnvelope _parse(Map<String, Object?> data, [String id = _id]) =>
       timeOf: (v) => v is int ? v : null,
     );
 
+String get _rules => File('firebase/firestore.rules').readAsStringSync();
+
 /// The exact field list a rule allows, read from firebase/firestore.rules.
 Set<String> _ruleFields(String function) {
-  final rules = File('firebase/firestore.rules').readAsStringSync();
+  final rules = _rules;
   final body = rules.substring(rules.indexOf('function $function('));
   final list = RegExp(r'hasOnly\(\[([^\]]*)\]\)').firstMatch(body)!.group(1)!;
   return {for (final m in RegExp(r"'(\w+)'").allMatches(list)) m.group(1)!};
@@ -179,26 +181,41 @@ void main() {
         FirestoreConversationTransport.messageFields(e).keys.toSet(),
         _ruleFields('validMessage'),
       );
+      // Commits are no longer written by clients (D-127): the rules have
+      // no client shape for them, and the callable request is exact.
+      expect(_rules, isNot(contains('validCommit')));
+      expect(_rules, isNot(contains('validWelcome')));
       final commit = CommitRecord(
         epoch: 1,
         senderAccountId: 'accountA',
         senderDeviceIdHex: _device,
         commit: Uint8List(4),
       );
-      expect(
-        FirestoreConversationTransport.commitFields(commit).keys.toSet(),
-        _ruleFields('validCommit'),
-      );
-      expect(
-        FirestoreConversationTransport.welcomeFields(
-          commit,
+      final request = FirestoreConversationTransport.commitRequest(
+        ConversationId(Uint8List(16)),
+        commit,
+        [
           WelcomeRecord(
             epoch: 1,
             targetDeviceIdHex: _device,
             welcome: Uint8List(4),
           ),
-        ).keys.toSet(),
-        _ruleFields('validWelcome'),
+        ],
+        CommitAuthorization(challengeId: 'c', proof: Uint8List(64)),
+      );
+      expect(request.keys.toSet(), {
+        'deviceId',
+        'conversationId',
+        'fromEpoch',
+        'challengeId',
+        'proof',
+        'commit',
+        'welcomes',
+      });
+      expect(
+        ((request['welcomes']! as List).single as Map<String, Object>).keys
+            .toSet(),
+        {'targetDeviceId', 'welcome'},
       );
       // No field can carry readable content.
       final encoded = jsonEncode(e.toFields().map((k, v) => MapEntry(k, '$v')));

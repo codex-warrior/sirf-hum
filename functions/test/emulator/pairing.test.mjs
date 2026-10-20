@@ -69,6 +69,12 @@ async function rejectsWith(promise, failure) {
 
 /** Challenge for one step, signed by `signer`'s device key. */
 async function signed(d, action, extra = {}, { signer = d, purpose = ProofPurpose.pairing, at = new Date() } = {}) {
+  // D-131: a confirmation carries the code the invitee's phone shows, as an
+  // honest inviter hears it, unless the test supplies another.
+  if (action === 'confirm' && !('confirmationCode' in extra)) {
+    const code = (await db.doc(`pairings/${extra.pairingId}`).get()).get('confirmationCode');
+    extra = { ...extra, confirmationCode: typeof code === 'string' ? code : '000000' };
+  }
   const issued = await requestPairingChallenge(db, d.accountId, { deviceId: d.hex, action, ...extra }, at);
   const { signature } = makeProof({
     device: signer.device,
@@ -139,7 +145,8 @@ describe('pairing happy path (D-101, D-104)', () => {
     assert.equal(forA.role, 'inviter');
     assert.equal(forA.partnerDisplayName, 'Bilal');
     assert.equal(forB.role, 'invitee');
-    assert.equal(forA.confirmationCode, accepted.confirmationCode, 'both screens show the same code');
+    // D-131: only the invitee's screen shows the code; the inviter enters it.
+    assert.equal(forA.confirmationCode, undefined, 'the server never tells the inviter the code');
     assert.equal(forB.confirmationCode, accepted.confirmationCode);
 
     const done = await confirm(a, invite.pairingId);
@@ -533,6 +540,73 @@ describe('already paired, concurrency and stale state', () => {
     const fresh = await create(c, { at });
     const accepted = await accept(b, fresh.token, { at });
     assert.equal(accepted.pairingId, fresh.pairingId);
+  });
+});
+
+// Prompt 17B, P17-08 / D-131. Before, getPairingState handed the inviter
+// the same code the claimant saw and confirmPairing took no code, so an
+// inviter could confirm an intercepted claim without any comparison.
+describe('forced code comparison (D-131)', () => {
+  const wrongFor = (code) => (code === '000000' ? '111111' : '000000');
+  const confirmWith = async (d, pairingId, confirmationCode) =>
+    confirmPairing(db, d.accountId, await signed(d, 'confirm', { pairingId, confirmationCode }), new Date());
+
+  test('intercepted invitation: only the claimant sees the code; the inviter cannot confirm without hearing it', async () => {
+    const a = await device();
+    const stranger = await device();
+    const invite = await create(a);
+    // The link leaked; a stranger accepts it and sees the code on THEIR phone.
+    const accepted = await accept(stranger, invite.token);
+    assert.match(accepted.confirmationCode, /^\d{6}$/);
+    const forInviter = await getPairingState(db, a.accountId, new Date());
+    assert.equal(forInviter.state, 'awaiting_confirmation');
+    assert.equal(forInviter.confirmationCode, undefined);
+    assert.ok(!JSON.stringify(forInviter).includes(accepted.confirmationCode));
+    // The real partner never got a code, so whatever the inviter types is wrong.
+    await rejectsWith(confirmWith(a, invite.pairingId, wrongFor(accepted.confirmationCode)), 'confirmation_code_invalid');
+    assert.equal(await exists(`accountPartners/${a.accountId}`), false);
+    await reject(a, invite.pairingId);
+    assert.equal((await pairingDoc(invite.pairingId)).status, 'rejected');
+  });
+
+  test('three wrong codes end the pairing for good; nothing is paired', async () => {
+    const { a, b, invite, accepted } = await claimed();
+    const wrong = wrongFor(accepted.confirmationCode);
+    await rejectsWith(confirmWith(a, invite.pairingId, wrong), 'confirmation_code_invalid');
+    await rejectsWith(confirmWith(a, invite.pairingId, wrong), 'confirmation_code_invalid');
+    await rejectsWith(confirmWith(a, invite.pairingId, wrong), 'pairing_invalidated');
+    const p = await pairingDoc(invite.pairingId);
+    assert.equal(p.status, 'invalidated');
+    assert.equal(p.endReason, 'confirmation_code_mismatch');
+    assert.equal(p.confirmationCode, undefined, 'the code is gone with the pairing');
+    // Even the right code is too late now.
+    await rejectsWith(confirmWith(a, invite.pairingId, accepted.confirmationCode), 'pairing_not_open');
+    for (const d of [a, b]) assert.equal(await exists(`accountPartners/${d.accountId}`), false);
+    // Both are free to start again.
+    await create(a);
+    await create(b);
+  });
+
+  test('one mistake is allowed: the right code then pairs', async () => {
+    const { a, invite, accepted } = await claimed();
+    await rejectsWith(confirmWith(a, invite.pairingId, wrongFor(accepted.confirmationCode)), 'confirmation_code_invalid');
+    const done = await confirmWith(a, invite.pairingId, accepted.confirmationCode);
+    assert.match(done.coupleId, /^[0-9a-f]{32}$/);
+  });
+
+  test('a missing or malformed code is refused before any read, without spending an attempt', async () => {
+    const { a, invite, accepted } = await claimed();
+    for (const bad of [undefined, '', '12345', '1234567', '12a456', 123456]) {
+      const args = await signed(a, 'confirm', { pairingId: invite.pairingId, confirmationCode: bad });
+      await rejectsWith(confirmPairing(db, a.accountId, args, new Date()), 'invalid_argument');
+    }
+    assert.equal((await pairingDoc(invite.pairingId)).confirmAttempts, undefined);
+    await confirmWith(a, invite.pairingId, accepted.confirmationCode);
+  });
+
+  test('the invitee cannot confirm, even with the right code', async () => {
+    const { b, invite, accepted } = await claimed();
+    await rejectsWith(confirmWith(b, invite.pairingId, accepted.confirmationCode), 'pairing_not_found');
   });
 });
 

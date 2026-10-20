@@ -35,6 +35,8 @@ export const LIMITS = {
   identityReset: { max: 3, windowMs: 7 * 24 * HOUR },
   /** Push token challenges (Prompt 11, D-098): start-ups and rotations. */
   pushToken: { max: 20, windowMs: HOUR },
+  /** MLS commit challenges (Prompt 17B, D-127): group creation, adds, removals, updates. */
+  commit: { max: 60, windowMs: HOUR },
   /** Pairing step challenges (Prompt 12, D-103): every create/accept/confirm/reject/cancel. */
   pairing: { max: 30, windowMs: HOUR },
   /** Pairing invitations created. */

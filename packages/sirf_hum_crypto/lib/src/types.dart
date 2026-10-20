@@ -95,7 +95,16 @@ enum DeviceProofPurpose {
 
   /// An active device authorizing one pairing step (Prompt 12, D-102). The
   /// server binds the challenge to the step and its subject.
-  pairing(4);
+  pairing(4),
+
+  /// An active device authorizing one MLS commit (Prompt 17B, D-127). The
+  /// challenge is derived from a single-use server nonce and the commit's
+  /// binding (`commitAuthorizationChallenge` in the app).
+  commit(5),
+
+  /// An active device rejecting a pending device (Prompt 17B, D-129). The
+  /// server binds the challenge to the approval request.
+  approvalRejection(6);
 
   const DeviceProofPurpose(this.wireValue);
 

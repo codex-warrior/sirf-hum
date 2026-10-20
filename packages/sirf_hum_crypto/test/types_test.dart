@@ -70,6 +70,8 @@ void main() {
     expect(DeviceProofPurpose.enrollment.wireValue, 2);
     expect(DeviceProofPurpose.pushToken.wireValue, 3);
     expect(DeviceProofPurpose.pairing.wireValue, 4);
+    expect(DeviceProofPurpose.commit.wireValue, 5);
+    expect(DeviceProofPurpose.approvalRejection.wireValue, 6);
   });
 
   test('Web implementation is unavailable and fails closed', () {

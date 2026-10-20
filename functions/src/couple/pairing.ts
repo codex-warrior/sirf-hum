@@ -32,7 +32,7 @@
  * and clock (emulator-tested); callable wrappers live in ../index.ts. Errors
  * carry categories only; tokens, codes and IDs are never logged.
  */
-import { createHash, randomBytes, randomInt } from 'node:crypto';
+import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { type DocumentSnapshot, FieldValue, type Firestore, Timestamp, type Transaction } from 'firebase-admin/firestore';
 import { ConversationCollections, randomConversationId, writeCoupleConversation } from '../conversation/provision';
 import { InvalidCertificateError } from '../device/certificate';
@@ -58,6 +58,7 @@ import {
   assertTransition,
   COUPLE_SCHEMA_VERSION,
   CoupleCollections,
+  MAX_CONFIRMATION_ATTEMPTS,
   PAIRING_ACTIONS,
   PAIRING_SCHEMA_VERSION,
   type PairingAction,
@@ -68,6 +69,12 @@ import {
 
 export const PAIRING_CHALLENGE_PURPOSE = 'pairing';
 const TOKEN_BYTES = 16;
+/** The six-digit comparison code (D-101), entered by the inviter (D-131). */
+export const CODE_PATTERN = /^\d{6}$/;
+
+/** Constant-time comparison of two six-digit codes. */
+const sameCode = (a: string, b: unknown): boolean =>
+  typeof b === 'string' && b.length === a.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 /** 16 random bytes, base64url without padding. */
 export const TOKEN_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 
@@ -458,6 +465,10 @@ export async function confirmPairing(
   const args = input(data);
   const step = signedStep(args);
   const pairingId = requirePattern(args.pairingId, RECORD_ID_PATTERN);
+  // D-131: the inviter types the code the invitee's phone shows. The server
+  // no longer tells the inviter that code, so confirming proves the two
+  // people compared it through a channel the server does not control.
+  const enteredCode = requirePattern(args.confirmationCode, CODE_PATTERN);
   await requireBudget(db, accountId, 'verificationFailure', now);
 
   const coupleId = randomBytes(16).toString('hex');
@@ -518,6 +529,16 @@ export async function confirmPairing(
       release(tx, inviteeLock, pairingId);
       return failure;
     };
+    const stored = pairing.get('confirmationCode') as unknown;
+    if (typeof stored !== 'string' || !sameCode(stored, enteredCode)) {
+      const attempts = Number(pairing.get('confirmAttempts') ?? 0) + 1;
+      if (attempts >= MAX_CONFIRMATION_ATTEMPTS) {
+        // Too many guesses: this claimant can never be confirmed.
+        return invalidate('confirmation_code_mismatch', new PairingError('pairing_invalidated'));
+      }
+      tx.update(pairing.ref, { confirmAttempts: attempts });
+      return new PairingError('confirmation_code_invalid');
+    }
     if (inviterPartner.exists || inviteePartner.exists) return invalidate('already_paired', new PairingError('already_paired'));
     const trustChange =
       resetPending(inviterTrust) || identityEpoch(inviterTrust) !== pairing.get('inviterIdentityEpoch')
@@ -632,7 +653,8 @@ export type PairingState =
       readonly state: 'awaiting_confirmation';
       readonly role: 'inviter' | 'invitee';
       readonly pairingId: string;
-      readonly confirmationCode: string;
+      /** The invitee's only (D-131): the inviter must enter it, never read it. */
+      readonly confirmationCode?: string;
       readonly partnerDisplayName: string | null;
       readonly expiresAtMillis: number;
     };
@@ -673,7 +695,8 @@ export async function getPairingState(db: Firestore, uid: string | undefined, no
     state: 'awaiting_confirmation',
     role,
     pairingId: id,
-    confirmationCode: code,
+    // D-131: only the invitee's phone shows the code; the inviter enters it.
+    ...(role === 'invitee' ? { confirmationCode: code } : {}),
     partnerDisplayName: displayName(profile),
     expiresAtMillis: (pairing.get('confirmExpiresAt') as Timestamp).toMillis(),
   };
