@@ -14,6 +14,7 @@ the task — they replace restating the spec in prompts:
 | UI | `docs/design/DESIGN-CONSTITUTION.md`, `docs/design/DESIGN-TOKENS.md` |
 | Code structure | `docs/architecture/ARCHITECTURE.md` |
 | App shell, navigation, session/couple state, screens, empty/loading/error states | `docs/architecture/APP-SHELL-AND-NAVIGATION.md` (D-106–D-110) |
+| Together (activities, sessions, presence) | `docs/architecture/TOGETHER-ARCHITECTURE.md` (D-111, D-112) |
 | Environments, deploys, App Check, CI, branches | `docs/architecture/ENVIRONMENTS.md`, `docs/architecture/DEVELOPMENT-ENVIRONMENT.md`, `docs/architecture/ACCOUNT-OWNERSHIP.md` |
 | Firebase, rules, functions, notifications | `docs/architecture/FIREBASE-ARCHITECTURE.md` |
 | Private content, keys, devices | `docs/security/MLS-DECISION.md` (crypto core, conditions), `docs/security/E2EE-ARCHITECTURE.md`, `KEY-MANAGEMENT.md`, `PAIRING-AND-DEVICE-TRUST.md`, `RECOVERY-AND-REVOCATION.md`, `WEB-SECURITY.md` (all in `docs/security/`), `docs/architecture/CRYPTOGRAPHIC-BOUNDARIES.md`, `docs/security/THREAT-MODEL.md` |

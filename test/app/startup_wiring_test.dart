@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sirf_hum/features/together/application/together_controller.dart';
 import 'package:sirf_hum/infrastructure/firebase/firebase_bootstrap.dart';
 import 'package:sirf_hum/main.dart';
 import 'package:sirf_hum/security/account/account_session.dart';
@@ -51,6 +54,25 @@ void main() {
     expect(
       await sessionFor(FirebaseStatus.notConfigured),
       isA<SessionSignedOut>(),
+    );
+  });
+
+  test('production wires no Together backend (D-112)', () {
+    for (final status in [
+      FirebaseStatus.notConfigured,
+      FirebaseStatus.failed,
+    ]) {
+      final container = ProviderContainer(
+        overrides: sessionPortOverrides(status),
+      );
+      addTearDown(container.dispose);
+      expect(container.read(togetherBackendProvider), isNull);
+    }
+    // The ready branch builds Firebase objects, so it is checked by source:
+    // it must not mention Together at all.
+    expect(
+      File('lib/main.dart').readAsStringSync(),
+      isNot(contains('together')),
     );
   });
 

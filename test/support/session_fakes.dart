@@ -144,12 +144,14 @@ List<Override> sessionOverrides({
   CoupleProfiles? profiles,
   bool privateContent = true,
   DateTime? now,
+  List<Override> extra = const [],
 }) => [
   accountSessionProvider.overrideWithValue(session),
   pairingBackendProvider.overrideWithValue(backend),
   coupleProfilesProvider.overrideWithValue(profiles ?? FakeCoupleProfiles()),
   privateContentAvailableProvider.overrideWithValue(privateContent),
   homeClockProvider.overrideWithValue(() => now ?? DateTime(2026, 10, 19, 19)),
+  ...extra,
 ];
 
 void setPhoneWindow(WidgetTester tester, [Size size = const Size(390, 844)]) {
@@ -167,6 +169,7 @@ Future<void> pumpSirfHum(
   bool privateContent = true,
   String? initialLocation,
   bool settle = true,
+  List<Override> extra = const [],
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -175,6 +178,7 @@ Future<void> pumpSirfHum(
         backend: backend ?? FakePairingBackend.returning(paired),
         profiles: profiles ?? FakeCoupleProfiles(names),
         privateContent: privateContent,
+        extra: extra,
       ),
       child: SirfHumApp(initialLocation: initialLocation),
     ),
