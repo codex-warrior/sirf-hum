@@ -215,7 +215,7 @@ jobs:
           target: google_apis
           disable-animations: true
           script: >-
-            flutter test integration_test/crypto_core_test.dart integration_test/device_identity_test.dart integration_test/messaging_test.dart integration_test/media_test.dart integration_test/app_smoke_test.dart integration_test/core_ux_test.dart integration_test/together_test.dart
+            flutter test integration_test/crypto_core_test.dart integration_test/device_identity_test.dart integration_test/messaging_test.dart integration_test/media_test.dart integration_test/app_smoke_test.dart integration_test/core_ux_test.dart integration_test/together_test.dart integration_test/moments_test.dart
             --flavor development --dart-define=SH_ENV=development -d emulator-5554
 
   functions:

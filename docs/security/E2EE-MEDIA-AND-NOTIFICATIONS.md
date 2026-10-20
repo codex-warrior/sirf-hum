@@ -464,6 +464,11 @@ then decrypt) into a buffer the size of the plaintext.
 
 ## 15. Known limitations
 
+*Prompt 15:* Moments reuse this media layer unchanged for photos; a kind-3
+manifest references them (D-113, D-114,
+[MOMENTS-ARCHITECTURE](../architecture/MOMENTS-ARCHITECTURE.md)). No
+format, key or rule changed.
+
 - Not reviewed; not production E2EE; deployment BLOCKED (Blaze: Storage
   bucket, Functions, Firestore triggers, FCM sends).
 - Exact object sizes are visible (no padding yet).

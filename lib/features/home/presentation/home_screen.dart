@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sirf_hum/design_system/design_system.dart';
 import 'package:sirf_hum/features/home/application/home_providers.dart';
 import 'package:sirf_hum/features/home/domain/greeting.dart';
+import 'package:sirf_hum/features/moments/application/moments_controller.dart';
+import 'package:sirf_hum/features/moments/domain/moments_state.dart';
 import 'package:sirf_hum/security/couple/couple_profiles.dart';
 import 'package:sirf_hum/session/session_controller.dart';
 
@@ -34,6 +36,8 @@ class HomeScreen extends ConsumerWidget {
 
     final now = ref.watch(homeClockProvider)();
     final privateHere = ref.watch(privateContentAvailableProvider);
+    final moments = ref.watch(momentsProvider);
+    final kept = moments is MomentsReady ? moments.total : 0;
 
     return AppPage(
       header: _Greeting(greeting: greetingFor(now), names: couple.names),
@@ -42,17 +46,29 @@ class HomeScreen extends ConsumerWidget {
         const SizedBox(height: Spacing.xxl),
         AppSection(
           title: 'Recently',
-          child: EmptyState(
-            icon: Icons.photo_outlined,
-            title: 'Your first memory is waiting.',
-            message:
-                'Photos, voice notes and letters you keep together '
-                'will appear here.',
-            action: StateAction(
-              label: 'Go to Moments',
-              onPressed: onOpenMoments,
-            ),
-          ),
+          child: kept == 0
+              ? EmptyState(
+                  icon: Icons.photo_outlined,
+                  title: 'Your first memory is waiting.',
+                  message:
+                      'Photos, voice notes and letters you keep together '
+                      'will appear here.',
+                  action: StateAction(
+                    label: 'Go to Moments',
+                    onPressed: onOpenMoments,
+                  ),
+                )
+              : EmptyState(
+                  icon: Icons.photo_library_outlined,
+                  title: kept == 1
+                      ? 'You’ve kept your first memory.'
+                      : 'You’ve kept $kept memories together.',
+                  message: 'They’re waiting for you in Moments.',
+                  action: StateAction(
+                    label: 'Go to Moments',
+                    onPressed: onOpenMoments,
+                  ),
+                ),
         ),
         AppSection(
           title: 'Coming up',

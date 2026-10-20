@@ -35,6 +35,10 @@ dependencies:
   # account and signs out. No sign-in method is chosen yet. Imported only by
   # lib/infrastructure.
   firebase_auth: ^6.7.0
+  # Moments (Prompt 15, D-117): the system photo picker (Android Photo
+  # Picker, no storage permission). Its temporary copies are deleted after
+  # encryption. Imported only by features/moments/data.
+  image_picker: ^1.2.4
 
 dev_dependencies:
   flutter_lints: ^6.0.0

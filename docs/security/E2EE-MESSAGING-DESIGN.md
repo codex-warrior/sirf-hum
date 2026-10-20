@@ -260,7 +260,10 @@ message still decrypts.
 
 **Payload (encrypted):** `version u8 = 1 | kind u8 (1 = text) | client time
 ms u64 | u32 len | UTF-8 text`. Media kinds later reuse the same envelope
-with a `media_ref` kind: kind 2, built only by the core; Dart sees a
+with a `media_ref` kind: kind 2, built only by the core (and, since
+Prompt 15, kind 3 = a moment manifest built by Dart, D-114; **a chat
+view MUST omit `momentProtocolMessageIds(history)` — every manifest and
+every photo a moment claims**); Dart sees a
 key-free view (Prompt 11, [E2EE-MEDIA-AND-NOTIFICATIONS](E2EE-MEDIA-AND-NOTIFICATIONS.md),
 D-094).
 

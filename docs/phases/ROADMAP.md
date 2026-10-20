@@ -215,6 +215,29 @@ D-111, D-112):
 
   A real build shows the hub with nothing startable.
 
+**Prompt 15: Moments foundation.** The couple's private memory timeline
+([MOMENTS-ARCHITECTURE](../architecture/MOMENTS-ARCHITECTURE.md),
+D-113–D-117):
+- **Implemented (development, unreviewed):**
+  - a moment = its photos (kind-2 media refs, keys only in Rust) + a kind-3
+    manifest (caption, date, photo IDs) in the couple's existing MLS
+    conversation; no new server schema, rules, crypto or ABI;
+  - `MomentsService`: seal everything before upload, discard on failure,
+    offline/retry without duplicates, device-trust gating;
+  - timeline (by month, pages of 24), detail, new-memory flow (system photo
+    picker, up to 8 photos), honest empty/loading/error/blocked states, Home
+    summary;
+  - couple-isolation rules tests, real-core service tests, an on-device
+    test with the real platform key store.
+- **Pre-production:** nothing reviewed; Sirf Hum is NOT production E2EE.
+- **Blocked by Blaze / sign-in:** a production backend (D-116: sign-in
+  D-107, deployed device activation and Storage, D-025).
+- **Deferred:** deletion and editing (cannot be truthful yet, D-116), video,
+  voice notes, letters, thumbnails, EXIF stripping (D-117), moment
+  notifications.
+
+  A real build shows the Moments area with an honest entry state.
+
 ## Proposed sequence
 
 Ordering principle: identity and cryptography come **before** any feature

@@ -9,6 +9,7 @@ here. Full requirements: `docs/security/E2EE-REQUIREMENTS.md` and
 | `crypto/` | `EncryptedEnvelope` boundary type; `privateContentCryptoSupport()` over `package:sirf_hum_crypto` (Rust core, Prompt 06) | Core bundled; **development only** (unreviewed) |
 | `device/` | Device identity (per-account slots), `DeviceKeyStore` port, status state machine, registration flow (DEVICE-IDENTITY.md) | Implemented (Prompt 07); activation server emulator-only |
 | `couple/` | `PairingService` (device-signed pairing steps, purpose 4), `PairingBackend` port, strict `PairingState` (COUPLE-AND-PAIRING.md) | Implemented (Prompt 12); server emulator-only, no UI |
+| `moments/` | Moments over messaging + media: `MomentPayload` (kind 3), `assembleMoments` (timeline rules), `MomentsService` / `MomentsBackend` (MOMENTS-ARCHITECTURE.md) | Implemented (Prompt 15); **development only**, no production backend, not reviewed |
 | `messaging/` | Text messaging over the ABI v5 core: `MessagingService` (lineage trust, per-epoch sync, staged commits, sealed outbox), `EncryptedMessageEnvelope`, `TextPayload`, `ConversationTransport` port (E2EE-MESSAGING-DESIGN.md) | Implemented (Prompt 10); **development only**, no UI, not reviewed |
 
 Rules:

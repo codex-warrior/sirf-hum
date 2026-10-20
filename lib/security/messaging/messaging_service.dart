@@ -404,7 +404,7 @@ class MessagingService {
             .history(conversation)
             .where((m) => m.state == MessageState.queued)
             .toList()
-          ..sort((a, b) => a.createdAtMs.compareTo(b.createdAtMs));
+          ..sort(_outboxOrder);
     var sent = 0;
     for (final m in queued) {
       if (MediaRefView.isMedia(m.payload)) {
@@ -438,6 +438,38 @@ class MessagingService {
     }
     _log('messaging_outbox_flushed', sent > 0 ? 'sent' : 'idle');
     return sent;
+  }
+
+  /// Creation order. Within one millisecond media goes first: a message
+  /// that references media (a moment, D-113) is always created after it,
+  /// and must never reach the server before it. Then by ID, so the order is
+  /// total.
+  static int _outboxOrder(LocalMessage a, LocalMessage b) {
+    final t = a.createdAtMs.compareTo(b.createdAtMs);
+    if (t != 0) return t;
+    final media = (MediaRefView.isMedia(a.payload) ? 0 : 1).compareTo(
+      MediaRefView.isMedia(b.payload) ? 0 : 1,
+    );
+    if (media != 0) return media;
+    return EncryptedMessageEnvelope.hexOf(
+      a.messageId.bytes,
+    ).compareTo(EncryptedMessageEnvelope.hexOf(b.messageId.bytes));
+  }
+
+  /// Encrypts an application [payload] built by a feature (e.g. a moment,
+  /// kind 3, D-114) and seals it in the outbox **without uploading it**:
+  /// [flushOutbox] sends it after everything queued before it. The core
+  /// refuses media references (kind 2), which only it builds (D-094).
+  /// Returns the message ID. The caller wipes [payload].
+  Future<String> queuePayload(Uint8List payload) async {
+    await _requireActive();
+    _requireRoomToSend();
+    try {
+      final sent = core.sendMessage(conversation, payload);
+      return EncryptedMessageEnvelope.hexOf(sent.messageId.bytes);
+    } on CryptoException catch (e) {
+      throw _sendFailure(e);
+    }
   }
 
   Future<SendOutcome> _upload(SentMessage first) async {
@@ -659,12 +691,36 @@ class MessagingService {
     required String inputPath,
     required MediaClass mediaClass,
   }) async {
+    final sent = await _encryptMedia(inputPath, mediaClass);
+    final view = _ownView(sent.message.messageId);
+    final SendOutcome outcome = await _ensureObjectUploaded(view)
+        ? await _upload(sent.message)
+        : SendOutcome.queued;
+    _log('media_sent', outcome.name);
+    return outcome;
+  }
+
+  /// Like [sendMedia], but only encrypts and seals: the object and its
+  /// message stay in the outbox until [flushOutbox]. Lets a feature seal
+  /// several media and the message that references them before anything
+  /// leaves the device (a moment, D-113). Returns the message ID.
+  Future<String> queueMedia({
+    required String inputPath,
+    required MediaClass mediaClass,
+  }) async {
+    final sent = await _encryptMedia(inputPath, mediaClass);
+    return EncryptedMessageEnvelope.hexOf(sent.message.messageId.bytes);
+  }
+
+  Future<SentMedia> _encryptMedia(
+    String inputPath,
+    MediaClass mediaClass,
+  ) async {
     final media = _requireMedia();
     await _requireActive();
     _requireRoomToSend();
-    final SentMedia sent;
     try {
-      sent = core.sendMedia(
+      return core.sendMedia(
         conversation,
         inputPath: inputPath,
         mediaDirectory: media.directory,
@@ -681,12 +737,23 @@ class MessagingService {
         _ => _sendFailure(e),
       };
     }
-    final view = _ownView(sent.message.messageId);
-    final SendOutcome outcome = await _ensureObjectUploaded(view)
-        ? await _upload(sent.message)
-        : SendOutcome.queued;
-    _log('media_sent', outcome.name);
-    return outcome;
+  }
+
+  /// Drops an outgoing message that is still queued — and, for media, its
+  /// local ciphertext object — so it is never sent. Only for messages no
+  /// attempt has uploaded yet (the caller sealed them and has not flushed):
+  /// a message the server may already hold is never "un-sent" here.
+  /// Returns false when [messageIdHex] is not a queued outgoing message.
+  bool discardQueued(String messageIdHex) {
+    final id = MessageId(EncryptedMessageEnvelope.bytesOfHex(messageIdHex));
+    final record = _record(id);
+    if (record == null ||
+        record.direction != MessageDirection.outgoing ||
+        record.state != MessageState.queued) {
+      return false;
+    }
+    deleteForMe(messageIdHex);
+    return true;
   }
 
   /// Decrypts a media message's object for display: from the local

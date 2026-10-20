@@ -92,7 +92,8 @@ Rules (enforced in `SessionController`, tested in
 | Pair | Pairing explained in three steps, or the open pairing's stage | Check again |
 | Home | Greeting + couple mark + names; "Start something together" → Together; Recently (Moments empty state); Coming up (Future empty state); web notice | Go to Together |
 | Together | The Together hub (Prompt 14, [TOGETHER-ARCHITECTURE](TOGETHER-ARCHITECTURE.md)) | Start (supported activities only) |
-| Moments / Future | Area title and purpose + an honest entry state ("… is on its way") | none yet |
+| Moments | The memory timeline (Prompt 15, [MOMENTS-ARCHITECTURE](MOMENTS-ARCHITECTURE.md)); detail and "new memory" are pushed pages, never URLs | Add a memory (only with a backend) |
+| Future | Area title and purpose + an honest entry state ("… is on its way") | none yet |
 | Us | The couple's names, what will live here, sign-out (confirmed) | Sign out |
 
 Home shows only what exists. Presence, calls, moments and plans are not
