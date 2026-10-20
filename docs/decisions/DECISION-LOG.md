@@ -1092,3 +1092,42 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
   - or a reviewed server session record with presence controls and retention.
 - **Status:** Accepted · 2026-10-20. Backend design: **Open**.
 
+
+### D-113 — Moments are MLS application messages in the couple's conversation (Prompt 15)
+- **Decision:**
+  - A moment is its photos — kind-2 `media_ref` messages built only by the Rust core (D-094) — followed by one kind-3 **manifest** message built by Dart, all in the couple's existing conversation (D-104).
+  - No new server schema, Security Rules, Functions, cryptographic primitive, crate or ABI version. Caption and memory date are private content: they exist only inside MLS ciphertext and the sealed history (D-089, D-090).
+  - The couple binding is the server-provisioned conversation (ID from the pairing answer, bound into the MLS AAD, membership enforced by the rules). The creator binding is the manifest's MLS-authenticated sender device. No `coupleId` field exists in a moment.
+  - `MessagingService` gains `queueMedia`, `queuePayload` (seal without uploading) and `discardQueued` (drop a never-sent queued message and its object); within one millisecond the outbox sends media first. `sendMedia` and `sendText` are unchanged.
+- **Reason:** composing the existing trust, membership, encryption and outbox systems means Moments cannot weaken any of them, and no second security system exists.
+- **Alternatives considered:** a Firestore moment document with a plaintext caption (rejected: private content on the server); an encrypted moment document outside MLS (rejected: a second key system); a dedicated moments conversation (rejected for V1: needs server provisioning, i.e. Functions and Blaze, and a second MLS group, for no security gain).
+- **Status:** Accepted for development · 2026-10-20. Design: [MOMENTS-ARCHITECTURE](../architecture/MOMENTS-ARCHITECTURE.md).
+
+### D-114 — Moment manifest format v1 and timeline rules
+- **Decision:**
+  - Payload: `version 1 | kind 3 | client time u64 | schema u16 = 1 | date (y u16, m u8, d u8; zero = none) | count u8 (1..8) | count × photo message id [16] | caption len u16 | caption UTF-8 (≤ 2,000 bytes, trimmed)`. Strict decode; unknown versions, kinds or schemas fail closed.
+  - A manifest is shown only if each listed photo is an `image` media message from the **same sender device**, not claimed by an earlier moment. Otherwise the whole moment is unreadable. Photos not yet received are counted as missing.
+  - V1 limits: 8 photos per moment, 64 MiB per photo (D-093), photos only (video deferred: playback without plaintext at rest).
+  - No location, EXIF, dimensions, file names, MIME types, device or OS fields.
+- **Status:** Accepted for development · 2026-10-20. **Unreviewed.**
+
+### D-115 — Moments client behaviour
+- **Decision:**
+  - `MomentsController` is the only producer of an ID-free `MomentsState`; it runs only for a paired session, on a platform that may hold private content, with a backend, and rebuilds on any session change (generation check).
+  - Local first, then `refresh` = `refreshTrust` (active device + lineage) → `sync` → `flushOutbox`. A device that is not trusted is `MomentsBlocked`: the timeline is dropped and decoded images are evicted.
+  - Pages of 24 moments. Photos decrypt on demand, one at a time, at display size; bytes live in memory only and are wiped on dispose; failed photo loads are never retried automatically.
+  - Saving seals every part before anything is uploaded; any failure before the manifest is sealed discards everything; a permanent refusal after sealing (not a member, device not trusted) discards what the server has not taken and reports the failure. Otherwise the outcome is `saved` or `savedOnPhone`, never a duplicate.
+  - Detail and the new-memory flow are pushed pages: no moment is ever in a URL.
+- **Status:** Accepted for development · 2026-10-20.
+
+### D-116 — No production moments backend yet; deletion and editing deferred
+- **Decision:**
+  - Production wires no `MomentsBackend` (`momentsBackendProvider` is `null`): there is no sign-in method (D-107), device activation is not deployed (Blaze, D-025), and no `MessagingService` is wired for the paired account. Moments then shows an honest entry state. The fake backend lives under `test/` only.
+  - **Deletion is not offered.** It cannot be truthful yet: the rules forbid deleting objects and messages, server deletion needs a Function (Blaze) and a retention decision, and keys already on the partner's device cannot be recalled. A local-only "delete for me" would look like deletion while the moment remains elsewhere.
+  - **Editing is not offered:** a second manifest would claim the same photos, which the timeline refuses by design. Both need a product and security design.
+- **Status:** Accepted · 2026-10-20. Backend wiring: **Blocked** (D-107, D-025).
+
+### D-117 — System photo picker (`image_picker`) and EXIF
+- **Decision:** add `image_picker` (flutter.dev), used only by `features/moments/data/system_photo_picker.dart` and wired in `main.dart` on Android only. On Android 13+ it is the system Photo Picker: no storage permission, and the app sees only the chosen photos. The plugin's temporary copies (plaintext, app-private cache) are read only inside the core and deleted when the composer goes away, after any save still reading them. No resizing or re-encoding (it would write more plaintext files).
+- **EXIF:** stays inside the encrypted photo; the server never sees it, but the partner's device receives it, including any location. Stripping before encryption needs on-device re-encoding without plaintext at rest; deferred and tracked (E68).
+- **Status:** Accepted for development · 2026-10-20.

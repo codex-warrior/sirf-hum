@@ -43,6 +43,13 @@ the product is minimal. No coverage claims are made.
   - stale answers are dropped;
   - no internal IDs, codes or errors are rendered or logged.
 - Reduced motion: `Motion.resolve` returns zero duration.
+- Moments (Prompt 15): guidelines in light and dark and 200% text for the
+  timeline (empty, populated, blocked, offline), detail and composer; no
+  handles or internals on screen (`test/features/moments/`). Manifest and
+  timeline rules run without the native core (`test/security/moments/`);
+  `moments_service_test.dart` needs it (CI); couple isolation in
+  `firebase/tests/storage/moments_isolation.test.js`; on-device
+  `integration_test/moments_test.dart`.
 
 ## Running
 

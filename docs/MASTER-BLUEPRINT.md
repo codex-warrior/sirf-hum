@@ -3,7 +3,7 @@
 The index of record. Each section summarises what is **decided** and links
 to the detailed source of truth. Updated at the end of every phase.
 
-Last updated: **Prompt 12 — 2026-10-19**.
+Last updated: **Prompt 15 — 2026-10-20**.
 
 ## 1. Vision
 
@@ -60,7 +60,11 @@ messages, sealed local history; development only, no chat UI); encrypted
 media and content-free notifications added (Prompt 11, undeployed, no UI);
 couple / account foundation added (Prompt 12: two-consent, device-signed
 pairing, server-created couples; undeployed, no UI,
-[COUPLE-AND-PAIRING](security/COUPLE-AND-PAIRING.md)).
+[COUPLE-AND-PAIRING](security/COUPLE-AND-PAIRING.md)); app shell and Home
+(Prompt 13), Together foundation (Prompt 14), and Moments (Prompt 15: photos
+and an encrypted kind-3 manifest in the couple's MLS conversation, no new
+server state or crypto, no production backend yet,
+[MOMENTS-ARCHITECTURE](architecture/MOMENTS-ARCHITECTURE.md), D-113–D-117).
 Sirf Hum is NOT production E2EE yet:**
 
 - the platform key store exists (Prompt 07, D-066) but nothing is reviewed;
@@ -218,8 +222,8 @@ with `tool/verify.sh --all`. →
 
 ## 11. Feature roadmap
 
-Phase 01 done. Proposed: environments → identity → E2EE design → pairing →
-messaging → calls → Moments → … → [ROADMAP](phases/ROADMAP.md)
+Prompts 01–15 done (through the Moments foundation; nothing deployed).
+Next steps are confirmed prompt by prompt. → [ROADMAP](phases/ROADMAP.md)
 
 ## 12. Business model
 
