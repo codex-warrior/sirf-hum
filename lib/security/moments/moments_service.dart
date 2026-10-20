@@ -188,7 +188,9 @@ class MomentsService implements MomentsBackend {
   /// discarded, so a failed save leaves nothing behind and nothing was
   /// sent. Once sealed, the moment exists: a later upload failure only
   /// delays it ([MomentSaveOutcome.savedOnPhone]), and retrying never
-  /// creates it twice.
+  /// creates it twice — unless the server refuses it for good (this account
+  /// left the couple, this device lost trust): then whatever it has not
+  /// taken is discarded and the failure is reported, never "saved".
   @override
   Future<MomentSaveOutcome> create(MomentDraft draft) => _serial(() async {
     final count = draft.photos.length;
@@ -234,6 +236,22 @@ class MomentsService implements MomentsBackend {
           .any((m) => _hex(m.messageId) == manifest && m.state.isSent);
       if (sent) outcome = MomentSaveOutcome.saved;
     } on MessagingException catch (e) {
+      final permanent = switch (e.failure) {
+        MessagingFailure.notMember ||
+        MessagingFailure.deviceNotTrusted ||
+        MessagingFailure.removed => true,
+        _ => false,
+      };
+      if (permanent) {
+        // It could never be delivered: "saved on this phone" would be
+        // untrue. Drop what the server has not taken and say so.
+        for (final id in ids) {
+          _discard(id);
+        }
+        final failure = _failureOf(e);
+        _log('moment_upload_failed', failure.name);
+        throw MomentException(failure);
+      }
       _log('moment_upload_deferred', e.failure.name);
     } on MediaException catch (e) {
       _log('moment_upload_deferred', e.failure.name);

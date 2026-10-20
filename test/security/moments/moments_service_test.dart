@@ -486,6 +486,13 @@ void main() {
         moments['b1']!.create(draft([_photo(100)])),
         fails(MomentFailure.notPaired),
       );
+      // Never "saved on this phone" when it can never be delivered.
+      expect(
+        history('b1').where((m) => m.state == MessageState.queued),
+        isEmpty,
+      );
+      expect(Directory(mediaDirs['b1']!).listSync(), isEmpty);
+      expect(moments['b1']!.moments(), isEmpty);
     });
 
     test('another conversation (another couple) shares nothing', () async {
