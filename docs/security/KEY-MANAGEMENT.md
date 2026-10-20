@@ -82,7 +82,7 @@ principle, Prompt 01).
 | KEK | Android Keystore AES-256-GCM, `setIsStrongBoxBacked(true)` when available (fallback TEE) | Keychain item (or Secure Enclave P-256 key used to wrap the DEK via ECIES, since the Secure Enclave cannot hold X25519/Ed25519 keys) |
 | Access restriction | Non-exportable; app UID only; optional user-authentication-bound key for an app-lock mode | `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` (allows background message processing after first unlock); optional app-lock with `.userPresence` |
 | Device unlock | Background decryption needs the key without user auth, so auth-bound keys only for an opt-in app lock | `WhenUnlocked` would block background sync/notification processing; `AfterFirstUnlock` is the trade-off |
-| Backups | Exclude the crypto DB and caches from Auto Backup / device transfer (`dataExtractionRules`); Keystore keys are not backed up | `ThisDeviceOnly` keychain items are not migrated; mark DB files `isExcludedFromBackup` |
+| Backups | Implemented (D-066, D-123): crypto state in `noBackupFilesDir`; since Prompt 17 the app opts out of Auto Backup and device transfer for every domain (`allowBackup=false`, `dataExtractionRules`); Keystore keys are never backed up | `ThisDeviceOnly` keychain items are not migrated; mark DB files `isExcludedFromBackup` |
 | Device migration | Not migrated. The new phone is a new device, approved by the old one | Same |
 | Reinstall | Keystore keys are deleted with the app, so the device is new | **Keychain items survive app deletion.** On first launch, if no app-container marker exists, delete stale Sirf Hum keychain items; it's a new device |
 | Rotation | DEK re-wrap on KEK rotation; MLS keys rotate by protocol (Updates, new KeyPackages) | Same |

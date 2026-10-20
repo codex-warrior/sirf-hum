@@ -1,7 +1,8 @@
 # E2EE Test Plan
 
 Status: **Plan (Prompt 04); crypto-core foundation tests exist (Prompt 06,
-below).** Passing them is not an E2EE claim (see gates).
+below); security-review tests added (Prompt 17).** Passing them is not an
+E2EE claim (see gates).
 
 Principle: never prove only that our code agrees with itself. Correctness
 evidence comes from:
@@ -188,6 +189,29 @@ release build, `cargo test --release --test media -- --ignored --nocapture`.
 **Not covered yet:** a real FCM delivery and real Storage
 (Blaze BLOCKED); OEM background-delivery behaviour; physical-device
 throughput; objects over 64 MiB (refused by design).
+
+## Security review tests (exist; Prompt 17)
+
+Added by the Prompt 17 review; each was shown to fail on the code before
+its fix (or, for documented limits, pins today's behaviour so a change is
+noticed). Full mapping of adversarial properties to tests:
+[TEST-MATRIX](../security/audit/TEST-MATRIX.md).
+
+- **Rust** `a_revoked_pik_cannot_return_through_an_unaware_approver`
+  (D-122): a chain in which one PIK certifies two devices is invalid.
+- **Rust** `documented_limit_a_restored_older_state_is_not_detected_until_refreshed`
+  (D-079): exactly what a restored older state does, and that the next
+  current lineage re-learns the revocation.
+- **Rust** `ciphertext_length_hides_the_message_length_within_a_block`
+  (D-126): 256-byte padding for creator and joiner; exact payloads back.
+- **Emulator** `person key uniqueness (Prompt 17, D-122)`: revoked PIK under
+  a new device ID; two pending devices sharing a PIK; a PIK across accounts;
+  the old root PIK after an identity reset.
+- **Rules** `documented limit: rules authorize accounts, not devices` (E77);
+  `personKeyIndex` is client-unreachable.
+
+**Not covered:** an on-device backup/restore test of D-123; recovery from a
+stalled conversation (P17-05: the mechanism does not exist yet).
 
 ## Decision-gate tests (exist; experimental; regression suite)
 

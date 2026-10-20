@@ -38,6 +38,30 @@ fn couple_conversation() -> (Device, Device, Vec<u8>) {
     (a, b, cid)
 }
 
+// ---------------------------------------------------------------- padding
+
+/// D-126 (Prompt 17): the server sees a message's length only to within a
+/// 256-byte block, for messages from the creator and from a joiner alike,
+/// and receivers get the exact payload back.
+#[test]
+fn ciphertext_length_hides_the_message_length_within_a_block() {
+    fn padded(sender: &mut Device, receiver: &mut Device, cid: &[u8]) {
+        let short = sender.send(cid, b"ok");
+        let longer = sender.send(cid, &[b'x'; 150]);
+        let much_longer = sender.send(cid, &[b'x'; 600]);
+        assert_eq!(short.2.len(), longer.2.len(), "same block, same size");
+        assert!(much_longer.2.len() >= short.2.len() + 256, "next blocks");
+        assert_eq!(receiver.recv(cid, sender, &short).unwrap(), b"ok");
+        assert_eq!(
+            receiver.recv(cid, sender, &much_longer).unwrap(),
+            vec![b'x'; 600]
+        );
+    }
+    let (mut a, mut b, cid) = couple_conversation();
+    padded(&mut a, &mut b, &cid); // the group's creator
+    padded(&mut b, &mut a, &cid); // a device that joined by Welcome
+}
+
 // --------------------------------------------------------- staged commits
 
 #[test]

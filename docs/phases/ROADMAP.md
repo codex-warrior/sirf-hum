@@ -263,6 +263,21 @@ D-118–D-121):
 
   A real build shows Future and Us with honest entry states.
 
+**Prompt 17: Security hardening, threat model & audit preparation.** Not a
+feature phase ([audit package](../security/audit/README.md), D-122–D-126):
+- **Reviewed:** trust chain, MLS integration, media, messaging, Moments,
+  Future + Us, push, pairing, rate limits, logging, local storage/backup,
+  web boundary, rules/Functions, dependencies, CI/CD, repository.
+- **Fixed:** a person key can be activated on one device, ever (server
+  index + lineage rule); Android opts out of OS backup and device
+  transfer; CI actions/tools pinned and inputs passed as env; npm audit
+  gate for Functions; MLS messages padded to 256-byte blocks.
+- **Documented, not fixed:** 19 findings classified P0–P3
+  ([PRODUCTION-BLOCKERS](../security/audit/PRODUCTION-BLOCKERS.md)), new
+  threats E77–E83, a status for every threat ID.
+- **Outcome:** security blockers remain. No independent review has
+  happened; Sirf Hum is NOT production E2EE. Nothing deployed.
+
 ## Proposed sequence
 
 Ordering principle: identity and cryptography come **before** any feature

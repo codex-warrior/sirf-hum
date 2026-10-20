@@ -408,6 +408,17 @@ indexed forever); after a rollback, the next refresh re-learns the current
 server epoch; MLS removal still blocks new epochs. **No local rollback
 protection is claimed.**
 
+**Prompt 17 analysis** ([audit review §4.3](audit/PROMPT-17-SECURITY-REVIEW.md#43-local-rollback-d-079-exactly-what-happens)):
+a restored older copy on the same phone is not detected; it forgets later
+revocations and lowers the trust-epoch floors until the next refresh with
+the server's current lineage re-learns them (pinned by
+`documented_limit_a_restored_older_state_is_not_detected_until_refreshed`);
+consumed MLS keys and "deleted for me" history come back; within-epoch
+sender-key reuse is mitigated only probabilistically by OpenMLS's
+`reuse_guard`. It needs write access to the app's files with the Keystore
+usable (T4), never regains server trust, and is classified **P2**:
+server-anchored freshness or a written acceptance before public launch.
+
 ## 11. Peer-side lineage verification (D-084)
 
 The server stores, on each activated device record, the exact signed
@@ -421,7 +432,8 @@ revocation (`revocation`, `revokedEpoch`). A device verifies the chain
    firstDeviceId`); its certificate must self-verify.
 2. Links in activation-epoch order: each approver/registrar must already be
    in the chain (byte-identical certificate); every statement must verify;
-   protocol version must be 1; no duplicate device; expiry not before the
+   protocol version must be 1; no duplicate device **and no person key
+   certifying a second device** (D-122, Prompt 17); expiry not before the
    new certificate's issue time.
 3. Signed revocations: the revoker must be in the chain and the statement
    must verify. Server-asserted revocations (identity reset) are honoured
@@ -518,7 +530,7 @@ Peers verify certificates, PIKs and lineage themselves (§11, D-057).
 | `users/{uid}/devices/*` | The owner's revoke update was the last client write | **Removed**: `allow write: if false` (D-081) |
 | `accountTrust/{uid}` | Server-only; clients need the epoch and reset state | Owner read only; every write denied (tested: no epoch rollback, bootstrap reopen or fake reset) |
 | Challenges, requests, indexes, `rateLimits` | Server-only | Unreachable from clients (tested) |
-| `listDeviceApprovalRequests`, `rejectDeviceApproval` | Any signed-in session of the account may call them | Accepted: they expose only public material, and rejecting is a denial of service a password holder could cause anyway; never a trust gain |
+| `listDeviceApprovalRequests`, `rejectDeviceApproval` | Any signed-in session of the account may call them | Accepted: they expose only public material, and rejecting is a denial of service a password holder could cause anyway; never a trust gain. **Prompt 17 (P17-07):** re-classified P2: rejection should need a device proof and a rate limit, in line with D-081 |
 | `registerDevice` → `duplicate_device` | Reveals that a device ID or key is already indexed somewhere | Low risk: IDs are 128-bit random and keys are public; rate-limited per account. Recorded, not changed |
 | Every callable | Account from the verified auth context only; App Check enforced; category-only errors; state derived server-side in transactions | No client-supplied security state is trusted |
 

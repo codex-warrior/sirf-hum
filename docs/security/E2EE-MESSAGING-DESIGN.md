@@ -365,7 +365,9 @@ sender's next `refreshTrust`.
 - device IDs, certificates and the trust lineage (public);
 - conversation ID, MLS group ID (the same), epochs;
 - per message: ID, sender account and device, epoch, ciphertext size,
-  server time;
+  server time. Since Prompt 17 every PrivateMessage is padded to 256-byte
+  blocks (D-126), so the size reveals the length only to within a block
+  (before, exactly);
 - commits and Welcomes (MLS handshake bytes; public-key encrypted where MLS
   encrypts them);
 - KeyPackages (public);

@@ -33,6 +33,8 @@ export const Collections = {
   approvalRequests: 'deviceApprovalRequests',
   deviceIdIndex: 'deviceIdIndex',
   deviceKeyIndex: 'deviceKeyIndex',
+  /** One activated device per person key (PIK), ever (Prompt 17, D-122). */
+  personKeyIndex: 'personKeyIndex',
   rateLimits: 'rateLimits',
   /** Server-only: one FCM token per active device (Prompt 11, D-098). */
   pushTokens: 'pushTokens',

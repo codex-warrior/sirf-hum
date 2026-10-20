@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ (API 31+): nothing of Sirf Hum leaves the phone through
+     cloud backup or device-to-device transfer (Prompt 17, D-123).
+
+     The crypto slots and wrapped store keys already live in
+     noBackupFilesDir (D-066), and a copied wrapped key is useless without
+     this phone's Keystore. Everything else is excluded too: the Firebase
+     Auth session (a restored session is account access, never device
+     trust), the Firestore offline cache (relationship metadata, ciphertext,
+     device directory) and any plugin state. A new phone is a new device
+     (D-071): it is approved by a trusted device or the recovery key. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="device_file" path="." />
+        <exclude domain="device_database" path="." />
+        <exclude domain="device_sharedpref" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="device_file" path="." />
+        <exclude domain="device_database" path="." />
+        <exclude domain="device_sharedpref" path="." />
+    </device-transfer>
+</data-extraction-rules>

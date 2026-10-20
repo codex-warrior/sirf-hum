@@ -682,6 +682,12 @@ pub struct RevocationEvidence<'a> {
 /// (server-asserted revocations, e.g. identity reset; honoured because
 /// revocation only reduces trust).
 ///
+/// Every device in a chain has its own PIK (D-074) and a PIK certifies
+/// exactly one device ID (D-085), so a chain in which one person key
+/// certifies two devices is invalid as a whole (Prompt 17, D-122): it is how
+/// a revoked device's retained PIK would re-enter through an approver that
+/// had not yet learned of the revocation.
+///
 /// Returns the certificates still trusted, in chain order. Fails closed on
 /// any broken link. Freshness (expiry) is enforced by the server at the
 /// time of use; peers check the expiry is not before the certificate was
@@ -808,7 +814,9 @@ pub fn verify_lineage_detailed(
         let (new_bytes, expires_at) = new_cert;
         let cert = DeviceCertificate::decode(new_bytes).map_err(invalid)?;
         if expires_at < cert.issued_at_unix
-            || chain.iter().any(|(_, c)| c.device_id == cert.device_id)
+            || chain
+                .iter()
+                .any(|(_, c)| c.device_id == cert.device_id || c.person_key == cert.person_key)
         {
             return Err(CoreError::TrustChainInvalid);
         }

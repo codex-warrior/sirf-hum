@@ -73,7 +73,12 @@ service cloud.firestore {
     // (D-086), their partner's: public material only, needed to verify the
     // partner's lineage on their own device. Server-only collections
     // (deviceChallenges, deviceApprovalRequests, deviceIdIndex,
-    // deviceKeyIndex, rateLimits) stay default-deny.
+    // deviceKeyIndex, personKeyIndex, rateLimits) stay default-deny.
+    //
+    // Rules see the ACCOUNT, never the device: a write naming an active
+    // device of the caller's account passes from any of that account's
+    // sessions (THREAT-MODEL E77). MLS, not these rules, binds a message to
+    // its sending device (D-089).
     match /users/{accountId}/devices/{deviceId} {
       allow read: if isAccountOwner(accountId) || isPartnerOf(accountId);
       allow write: if false;

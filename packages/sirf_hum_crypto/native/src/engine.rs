@@ -226,6 +226,13 @@ fn ratchet() -> SenderRatchetConfiguration {
     SenderRatchetConfiguration::new(OUT_OF_ORDER_TOLERANCE, MAX_FORWARD_DISTANCE)
 }
 
+/// Every PrivateMessage this device sends (application and handshake) is
+/// zero-padded so its encrypted content is a multiple of this many bytes
+/// (RFC 9420 §6.3.1, OpenMLS `padding_size`; receivers strip it). The
+/// server then learns a message's length only to within 256 bytes, not
+/// exactly (Prompt 17, D-126). OpenMLS's default is 0: no padding.
+const PADDING_BLOCK: usize = 256;
+
 fn join_config() -> MlsGroupJoinConfig {
     // Past-epoch window stays at the OpenMLS default (0): D-091 makes it
     // safe for messaging by processing each epoch's messages before its
@@ -233,6 +240,7 @@ fn join_config() -> MlsGroupJoinConfig {
     MlsGroupJoinConfig::builder()
         .use_ratchet_tree_extension(true)
         .sender_ratchet_configuration(ratchet())
+        .padding_size(PADDING_BLOCK)
         .build()
 }
 
@@ -241,6 +249,7 @@ fn create_config() -> MlsGroupCreateConfig {
         .ciphersuite(CIPHERSUITE)
         .use_ratchet_tree_extension(true)
         .sender_ratchet_configuration(ratchet())
+        .padding_size(PADDING_BLOCK)
         .build()
 }
 

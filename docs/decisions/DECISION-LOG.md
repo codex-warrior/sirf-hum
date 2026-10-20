@@ -111,6 +111,11 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-119 | Notebook payload v1 (kind 4: create / update / remove ops) and assembly rules (server order, last change wins, terminal remove, shared editing) | Accepted (development); **unreviewed** | 2026-10-20 |
 | D-120 | Future and Us product model: four Future kinds, planned/done, never "missed"; story, little things, rituals, together since; V1 limits; no scores, streaks, reminders or calendars | Accepted (development) | 2026-10-20 |
 | D-121 | Notebook client behaviour: one ID-free controller for Future and Us; no production backend yet; web fails closed | Accepted; backend wiring **Blocked** (D-107, D-025) | 2026-10-20 |
+| D-122 | A person key (PIK) belongs to one device, ever: server `personKeyIndex` and a lineage rule rejecting chains where one PIK certifies two devices | Accepted (development); needs independent review | 2026-10-20 |
+| D-123 | Android: no app data in OS cloud backup or device-to-device transfer | Accepted | 2026-10-20 |
+| D-124 | CI/CD supply chain: actions pinned to commit SHAs, exact firebase-tools, inputs passed as env, npm audit gate for Functions | Accepted | 2026-10-20 |
+| D-125 | Prompt 17 security review: findings, audit package and P0–P3 production-blocker classification are the release gate of record | Accepted | 2026-10-20 |
+| D-126 | MLS PrivateMessages padded to 256-byte blocks (`padding_size`); the server learns lengths only to within a block | Accepted (development); needs independent review | 2026-10-20 |
 
 ---
 
@@ -1176,3 +1181,53 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
   - Production wires no `NotebookBackend` (`notebookBackendProvider` is `null`), for the same reasons as D-116; Future and Us show honest entry states. The fake backend lives under `test/` only.
   - Web shows the shells, names and sign-out, never the notebook (D-046).
 - **Status:** Accepted · 2026-10-20. Backend wiring: **Blocked** (D-107, D-025).
+
+### D-122 — A person key belongs to one device, ever (Prompt 17)
+- **Problem (Prompt 17 finding P17-01):** D-074 gives every device its own PIK and D-085 says a PIK certifies exactly one device ID, but nothing enforced it end to end:
+  - the server indexed device IDs and device keys (D-069), not person keys;
+  - `approve_device` refuses a revoked PIK only when the approver *already knows* of the revocation;
+  - the lineage verifier rejected duplicate device IDs, not a PIK certifying a second device.
+
+  So a revoked device's retained PIK could certify a fresh device ID that an approver who had not refreshed lineage approved; the server activated it. Peers' MLS trust skipped it (revoked PIK), but the static `verifyLineage` listed it as proven, and devices *it* approved became lineage-trusted. After an identity reset, the old root's PIK could also root the new identity.
+- **Decision:**
+  - **Server:** a server-only `personKeyIndex/{sha256(PIK)}` is created in the same transaction as every activation (bootstrap, approval, recovery), next to `deviceIdIndex` and `deviceKeyIndex`. Registration and activation refuse a PIK that was ever activated, in any account, with the existing `duplicate_device`.
+  - **Device (Rust lineage):** a chain in which one person key certifies two devices is `trust_chain_invalid` as a whole, like a duplicate device ID.
+  - No format, ABI, statement, primitive or pin changes. Golden vectors are unaffected (each vector device has its own PIK).
+- **Why fail the whole chain:** an honest server can no longer produce one, so such a chain means server misbehaviour; every other lineage defect already fails closed.
+- **Tests:** Rust `a_revoked_pik_cannot_return_through_an_unaware_approver` (fails on the old verifier); emulator `person key uniqueness (Prompt 17, D-122)` (4 tests, each fails on the old server code); rules: `personKeyIndex` is client-unreachable.
+- **Status:** Accepted for development · 2026-10-20. Needs independent review with the rest of the lineage design.
+
+### D-123 — No app data in OS backups or device transfers (Android)
+- **Problem (P17-02):** the manifest left Auto Backup on (the default) with no extraction rules. The crypto slots were already safe (`noBackupFilesDir`, D-066; a copied wrapped key is useless without this phone's Keystore), but the Firebase Auth session (shared preferences) and the Firestore offline cache (relationship metadata, device directory, ciphertext) could go to Google cloud backup or to a new phone by device-to-device transfer.
+- **Decision:** `android:allowBackup="false"` and `android:fullBackupContent="false"` (Android ≤ 11: cloud and adb backup), plus `android:dataExtractionRules` excluding every domain for both `cloud-backup` and `device-transfer` (Android 12+, where transfer ignores `allowBackup`).
+- **Consequence:** a new or restored phone starts signed out and is a new device (D-071): it is approved by a trusted device or the recovery key. This was already the trust model; the change removes the restored *session*, which was never trust.
+- **Not claimed:** protection from a rooted device or from the OS vendor; this governs only the app's backup participation.
+- **Status:** Accepted · 2026-10-20. Verified by the CI Android builds (manifest merge); no on-device backup test exists.
+
+### D-124 — CI/CD supply-chain hardening
+- **Problem (P17-03, P17-04):** workflow actions were referenced by mutable tags (`@v4`, `@v2`) and one by a branch (`dtolnay/rust-toolchain@master`); `firebase-tools` was installed unpinned in the job that holds deploy credentials; the production gate spliced the free-text `confirm` input into a shell script.
+- **Decision:**
+  - every action is pinned to a full commit SHA, with the version as a comment; pins are updated deliberately, in a PR;
+  - `firebase-tools` is pinned to an exact version in CI and Deploy;
+  - workflow inputs reach shell steps only as environment variables;
+  - the Functions CI job runs `npm audit --omit=dev --audit-level=low`, the npm counterpart of `tool/crypto_audit.sh` (D-068), for the code that runs on the server.
+- **Not covered (tracked in the Prompt 17 blocker list):** branch protection and GitHub secret scanning are repository settings (owner action); Dart and Gradle dependencies have no advisory gate yet.
+- **Status:** Accepted · 2026-10-20
+
+### D-125 — Prompt 17 security review and production-blocker classification
+- **Decision:** the Prompt 17 review ([audit package](../security/audit/README.md)) is the security baseline of record:
+  - the security-gap matrix and findings P17-01…P17-19 ([PROMPT-17-SECURITY-REVIEW](../security/audit/PROMPT-17-SECURITY-REVIEW.md));
+  - the P0–P3 classification ([PRODUCTION-BLOCKERS](../security/audit/PRODUCTION-BLOCKERS.md)): no production security claim while any P0 is open, and no production E2EE while any P1 is open;
+  - the threat-model status table (THREAT-MODEL, "Prompt 17 status review").
+- **Changes made:** D-122, D-123, D-124, D-126 and documentation corrections. No primitive, statement format, ABI or pin changed; D-126 sets a standard MLS framing option.
+- **Not a claim:** this is an internal engineering review. It is not an independent audit and does not make Sirf Hum production E2EE.
+- **Status:** Accepted · 2026-10-20
+
+### D-126 — MLS message padding (Prompt 17)
+- **Problem (P17-19):** THREAT-MODEL E2/E12 and E2EE-ARCHITECTURE §8 listed "padded sizes" as a mitigation, but the core never set OpenMLS `padding_size`, whose default is 0. Every PrivateMessage therefore revealed its exact content length to the server: a text message, a moment caption, a notebook record. Measured: "ok" and a 150-byte payload gave 219- and 368-byte ciphertexts.
+- **Decision:** both group configurations (create and join) set `padding_size = 256`. Each device pads what it sends; RFC 9420 §6.3.1 zero padding, stripped by every receiver, so the wire format, ABI and interoperability are unchanged. It applies to application messages and to handshake messages (D-055).
+- **Bounds:** payloads stay ≤ 16 KiB and ciphertexts ≤ 32 KiB (`MAX_MESSAGE_CIPHERTEXT_BYTES`, rules) with ≤ 255 added bytes. Groups created before this change keep their stored configuration (development only; nothing is deployed).
+- **What it is not:** length *hiding*. The server still learns the length to within 256 bytes, the message count and timing. Media objects are a separate format with exact sizes (E45, D-099). A finer scheme (e.g. Padmé buckets) would need custom padding and review.
+- **Tests:** `ciphertext_length_hides_the_message_length_within_a_block` (creator and joiner; fails without the change).
+- **Status:** Accepted for development · 2026-10-20. Needs independent review with the rest of the MLS configuration (D-054).
+

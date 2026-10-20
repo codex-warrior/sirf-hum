@@ -293,6 +293,7 @@ describe('server-only collections', () => {
       'deviceChallenges/c1',
       'deviceIdIndex/i1',
       'deviceKeyIndex/k1',
+      'personKeyIndex/p1',
       'deviceApprovalRequests/r1',
       `rateLimits/${A}__register`,
     ]) {

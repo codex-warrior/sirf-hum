@@ -229,6 +229,21 @@ describe('messages (D-089)', () => {
     await assertFails(sendAs(A, { senderDeviceId: 'not-hex' }), 'malformed device id');
   });
 
+  // Prompt 17 review (THREAT-MODEL E77): Firebase Auth identifies the
+  // ACCOUNT, never the device. The rules check that the claimed sender is
+  // an active device of the caller's account, but cannot tell which of the
+  // account's sessions is calling: a session left on revoked device A2 may
+  // write as active A1. MLS is what refuses it (receivers compare the
+  // envelope's device with the authenticated MLS sender, D-089, and reject
+  // a revoked credential), so this is availability, not confidentiality.
+  // If device-bound authorization arrives, this test must flip.
+  test('documented limit: rules authorize accounts, not devices', async () => {
+    await provision();
+    // Indistinguishable from A1's own session: both are just "accountA".
+    await assertSucceeds(sendAs(A, { senderDeviceId: A1 }), 'any session of A may claim A1');
+    await assertSucceeds(commitBatch(A, { commit: { senderDeviceId: A1 } }), 'including an epoch commit');
+  });
+
   test('6. a closed conversation accepts nothing', async () => {
     await provision({ state: 'closed' });
     await assertFails(sendAs(A));

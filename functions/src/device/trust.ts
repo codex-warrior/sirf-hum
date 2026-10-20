@@ -26,7 +26,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { type DocumentReference, type DocumentSnapshot, FieldValue, type Firestore, Timestamp } from 'firebase-admin/firestore';
-import { InvalidCertificateError, verifyCertificate } from './certificate';
+import { type DeviceCertificate, InvalidCertificateError, verifyCertificate } from './certificate';
 import {
   Collections,
   DEVICE_ID_PATTERN,
@@ -45,7 +45,7 @@ import {
 import { CHALLENGE_BYTES, InvalidProofError, PROOF_BYTES, ProofPurpose, verifyDeviceProof } from './proof';
 import { bumpEpoch } from './epoch';
 import { consume, requireBudget } from './rateLimit';
-import { challengeFailure, keyIndexId, pendingFailure, recordFailure } from './registration';
+import { activationIndexes, anyIndexTaken, challengeFailure, claimIndexes, pendingFailure, recordFailure } from './registration';
 import {
   InvalidStatementError,
   RECOVERY_KEY_BYTES,
@@ -224,20 +224,19 @@ async function activateApproved(
   activation: Activation,
   trustFields: Record<string, unknown> = {},
 ): Promise<DeviceFailure | null> {
-  let deviceSignatureKey: Buffer;
+  let cert: DeviceCertificate;
   try {
-    deviceSignatureKey = verifyCertificate(device.get('certificate') as Uint8Array).deviceSignatureKey;
+    cert = verifyCertificate(device.get('certificate') as Uint8Array);
   } catch {
     return 'certificate_invalid';
   }
   const deviceId = device.id;
-  const idRef = db.collection(Collections.deviceIdIndex).doc(deviceId);
-  const keyRef = db.collection(Collections.deviceKeyIndex).doc(keyIndexId(deviceSignatureKey));
-  const [idIndex, keyIndex] = await Promise.all([tx.get(idRef), tx.get(keyRef)]);
-  if (idIndex.exists || keyIndex.exists) return 'duplicate_device';
+  // D-122: also refuses a person key any device ever activated with, e.g. a
+  // revoked device's retained PIK approved by a device that did not know.
+  const indexes = activationIndexes(db, deviceId, cert);
+  if (await anyIndexTaken(tx, indexes)) return 'duplicate_device';
   const epoch = bumpEpoch(tx, trust.ref, trust, trustFields);
-  tx.create(idRef, { accountId });
-  tx.create(keyRef, { accountId, deviceId });
+  claimIndexes(tx, indexes, accountId, deviceId);
   tx.update(device.ref, {
     status: 'active',
     activatedAt: FieldValue.serverTimestamp(),

@@ -3,7 +3,7 @@
 The index of record. Each section summarises what is **decided** and links
 to the detailed source of truth. Updated at the end of every phase.
 
-Last updated: **Prompt 16 — 2026-10-20**.
+Last updated: **Prompt 17 — 2026-10-20**.
 
 ## 1. Vision
 
@@ -48,6 +48,15 @@ area. → [ARCHITECTURE](architecture/ARCHITECTURE.md)
 
 Clients untrusted; server-side authorization; default-deny rules; explicit
 trust boundaries and threat actors. → [THREAT-MODEL](security/THREAT-MODEL.md)
+
+**Prompt 17 security review (internal, not an audit):** security-gap
+matrix, threat status for every ID, P0–P3 production blockers and the
+independent-review package → [audit/README](security/audit/README.md)
+(D-122–D-126). Fixed: PIK reuse across devices, Android backup, CI
+supply-chain pinning, unpadded MLS messages. Open P1s include partner PIK
+verification, forced pairing-code comparison, device-bound commit
+authorization and unpairing. **Security blockers remain; no production
+security claim is allowed (P0).**
 
 ## 8. E2EE architecture
 

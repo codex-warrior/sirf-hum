@@ -1,8 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- No app data in OS backups or device transfers (Prompt 17, D-123):
+         allowBackup="false" covers Android 11 and older (cloud and adb
+         backup); the extraction rules cover Android 12+, where
+         device-to-device transfer ignores allowBackup. -->
     <application
         android:label="@string/app_name"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules">
         <!-- Crash collection starts disabled; the app enables it per environment
              (lib/infrastructure/firebase/crash_reporting.dart). -->
         <meta-data
