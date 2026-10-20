@@ -53,6 +53,22 @@ enum NotebookFailure {
   unavailable,
 }
 
+/// The [NotebookFailure] for fields that cannot be built, so a screen that
+/// validates before saving reports exactly what the service would.
+NotebookFailure notebookFailureOf(NotebookPayloadFailure failure) =>
+    switch (failure) {
+      NotebookPayloadFailure.missingTitle => NotebookFailure.missingTitle,
+      NotebookPayloadFailure.titleTooLong => NotebookFailure.titleTooLong,
+      NotebookPayloadFailure.noteTooLong => NotebookFailure.noteTooLong,
+      NotebookPayloadFailure.detailTooLong => NotebookFailure.detailTooLong,
+      NotebookPayloadFailure.invalidText => NotebookFailure.invalidText,
+      NotebookPayloadFailure.invalidCategory ||
+      NotebookPayloadFailure.invalidStatus => NotebookFailure.invalidCategory,
+      NotebookPayloadFailure.invalidDate => NotebookFailure.invalidDate,
+      NotebookPayloadFailure.malformed ||
+      NotebookPayloadFailure.unsupported => NotebookFailure.rejected,
+    };
+
 class NotebookException implements Exception {
   const NotebookException(this.failure);
 
@@ -339,17 +355,7 @@ class NotebookService implements NotebookBackend {
 
   static NotebookFailure _failureOf(Exception e) => switch (e) {
     NotebookException(:final failure) => failure,
-    NotebookPayloadException(:final failure) => switch (failure) {
-      NotebookPayloadFailure.missingTitle => NotebookFailure.missingTitle,
-      NotebookPayloadFailure.titleTooLong => NotebookFailure.titleTooLong,
-      NotebookPayloadFailure.noteTooLong => NotebookFailure.noteTooLong,
-      NotebookPayloadFailure.detailTooLong => NotebookFailure.detailTooLong,
-      NotebookPayloadFailure.invalidText => NotebookFailure.invalidText,
-      NotebookPayloadFailure.invalidCategory ||
-      NotebookPayloadFailure.invalidStatus => NotebookFailure.invalidCategory,
-      NotebookPayloadFailure.invalidDate => NotebookFailure.invalidDate,
-      _ => NotebookFailure.rejected,
-    },
+    NotebookPayloadException(:final failure) => notebookFailureOf(failure),
     MessagingException(:final failure) => switch (failure) {
       MessagingFailure.deviceNotTrusted ||
       MessagingFailure.removed => NotebookFailure.deviceNotTrusted,

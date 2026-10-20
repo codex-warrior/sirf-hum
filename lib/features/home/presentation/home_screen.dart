@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sirf_hum/design_system/design_system.dart';
+import 'package:sirf_hum/features/future/domain/future_sections.dart';
 import 'package:sirf_hum/features/home/application/home_providers.dart';
 import 'package:sirf_hum/features/home/domain/greeting.dart';
 import 'package:sirf_hum/features/moments/application/moments_controller.dart';
 import 'package:sirf_hum/features/moments/domain/moments_state.dart';
+import 'package:sirf_hum/features/notebook/application/notebook_controller.dart';
+import 'package:sirf_hum/features/notebook/domain/notebook_state.dart';
 import 'package:sirf_hum/security/couple/couple_profiles.dart';
+import 'package:sirf_hum/security/moments/moment_payload.dart';
+import 'package:sirf_hum/security/notebook/notebook_payload.dart';
 import 'package:sirf_hum/session/session_controller.dart';
 
 /// The couple's front door (PRODUCT-CONSTITUTION §4).
@@ -38,6 +43,14 @@ class HomeScreen extends ConsumerWidget {
     final privateHere = ref.watch(privateContentAvailableProvider);
     final moments = ref.watch(momentsProvider);
     final kept = moments is MomentsReady ? moments.total : 0;
+    final notebook = ref.watch(notebookProvider);
+    final next = notebook is NotebookReady
+        ? FutureSections.of(
+            notebook.snapshot.section(NotebookSection.future),
+            MomentDate.of(now),
+          ).next
+        : null;
+    final nextDate = next?.date;
 
     return AppPage(
       header: _Greeting(greeting: greetingFor(now), names: couple.names),
@@ -72,12 +85,27 @@ class HomeScreen extends ConsumerWidget {
         ),
         AppSection(
           title: 'Coming up',
-          child: EmptyState(
-            icon: Icons.event_outlined,
-            title: 'Make a plan for the two of you.',
-            message: 'Dates, trips and little things to look forward to.',
-            action: StateAction(label: 'Go to Future', onPressed: onOpenFuture),
-          ),
+          child: next == null || nextDate == null
+              ? EmptyState(
+                  icon: Icons.event_outlined,
+                  title: 'Make a plan for the two of you.',
+                  message: 'Dates, trips and little things to look forward to.',
+                  action: StateAction(
+                    label: 'Go to Future',
+                    onPressed: onOpenFuture,
+                  ),
+                )
+              : EmptyState(
+                  icon: Icons.event_outlined,
+                  title: next.title,
+                  message: MaterialLocalizations.of(
+                    context,
+                  ).formatMediumDate(nextDate.toLocal()),
+                  action: StateAction(
+                    label: 'Go to Future',
+                    onPressed: onOpenFuture,
+                  ),
+                ),
         ),
         if (!privateHere)
           const Notice(
