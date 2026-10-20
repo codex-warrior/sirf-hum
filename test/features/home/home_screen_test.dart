@@ -6,10 +6,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sirf_hum/app/product_area.dart';
 import 'package:sirf_hum/design_system/design_system.dart';
 import 'package:sirf_hum/features/home/presentation/home_screen.dart';
+import 'package:sirf_hum/features/notebook/application/notebook_controller.dart';
 import 'package:sirf_hum/security/couple/couple_profiles.dart';
 import 'package:sirf_hum/security/couple/pairing.dart';
+import 'package:sirf_hum/security/moments/moment_payload.dart';
 import 'package:sirf_hum/session/session_controller.dart';
 
+import '../../support/notebook_fakes.dart';
 import '../../support/session_fakes.dart';
 
 void main() {
@@ -53,6 +56,34 @@ void main() {
     for (final generic in ['No data', 'No items', 'Lorem', 'TODO']) {
       expect(find.textContaining(generic), findsNothing);
     }
+  });
+
+  testWidgets('the soonest plan ahead is what is coming up; a passed or '
+      'undated plan is not', (tester) async {
+    setPhoneWindow(tester);
+    final backend = FakeNotebookBackend([
+      fakeEntry(1, plan('Someday trip')),
+      fakeEntry(2, plan('Last spring', date: MomentDate(2026, 4, 1))),
+      fakeEntry(3, plan('Udaipur', date: MomentDate(2026, 12, 28))),
+      fakeEntry(4, plan('Dinner', date: MomentDate(2026, 10, 25))),
+    ]);
+    await pumpSirfHum(
+      tester,
+      extra: [notebookBackendProvider.overrideWithValue(backend)],
+    );
+    await tester.scrollUntilVisible(find.text('Dinner'), 100);
+    expect(
+      find.text(
+        const DefaultMaterialLocalizations().formatMediumDate(
+          DateTime(2026, 10, 25),
+        ),
+      ),
+      findsOneWidget,
+    );
+    for (final other in ['Udaipur', 'Someday trip', 'Last spring']) {
+      expect(find.text(other), findsNothing, reason: other);
+    }
+    expect(find.text('Make a plan for the two of you.'), findsNothing);
   });
 
   testWidgets('Home leads to Together, Moments and Future', (tester) async {
@@ -148,8 +179,7 @@ void main() {
 
     await tester.tap(find.byIcon(ProductArea.us.icon));
     await tester.pumpAndSettle();
-    expect(find.text('Asha'), findsOneWidget);
-    expect(find.text('Ravi'), findsOneWidget);
+    expect(find.text('Asha & Ravi'), findsOneWidget);
     expectNoSecretsOnScreen(tester);
     handle.dispose();
   });

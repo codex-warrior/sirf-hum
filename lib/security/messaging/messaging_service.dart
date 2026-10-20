@@ -163,9 +163,23 @@ class MessagingService {
   final MediaSupport? _media;
   final int Function() _clock;
 
+  Future<void> _exclusiveTail = Future.value();
+
   GroupId get _group => GroupId(conversation.bytes);
 
   DeviceId get _ownId => core.publicIdentity().deviceId;
+
+  /// Runs [action] after every earlier exclusive action on this service has
+  /// finished. Features that share the conversation (Moments, the couple's
+  /// notebook, D-118) run their state-changing operations — trust refresh,
+  /// sync, sealing, flushing — through here, so two features never
+  /// interleave a sync with a seal or with another sync. Not re-entrant:
+  /// [action] must not call [exclusive] again.
+  Future<T> exclusive<T>(Future<T> Function() action) {
+    final result = _exclusiveTail.then((_) => action());
+    _exclusiveTail = result.then<void>((_) {}, onError: (Object _) {});
+    return result;
+  }
 
   String get _ownHex => EncryptedMessageEnvelope.hexOf(_ownId.bytes);
 

@@ -263,7 +263,9 @@ ms u64 | u32 len | UTF-8 text`. Media kinds later reuse the same envelope
 with a `media_ref` kind: kind 2, built only by the core (and, since
 Prompt 15, kind 3 = a moment manifest built by Dart, D-114; **a chat
 view MUST omit `momentProtocolMessageIds(history)` — every manifest and
-every photo a moment claims**); Dart sees a
+every photo a moment claims**; and since Prompt 16, kind 4 = a couple
+notebook operation built by Dart, D-119; **a chat view MUST also omit
+`notebookProtocolMessageIds(history)`**); Dart sees a
 key-free view (Prompt 11, [E2EE-MEDIA-AND-NOTIFICATIONS](E2EE-MEDIA-AND-NOTIFICATIONS.md),
 D-094).
 

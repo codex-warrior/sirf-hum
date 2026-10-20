@@ -16,7 +16,7 @@ void main() {
     ProductArea.home: 'Asha & Ravi',
     ProductArea.together: 'Spend time together, wherever you are.',
     ProductArea.moments: 'Your memories, just for the two of you.',
-    ProductArea.future: 'Where the two of you are going.',
+    ProductArea.future: 'Things you want to do together.',
     ProductArea.us: 'The two of you.',
   };
 
@@ -136,7 +136,7 @@ void main() {
       backend: backend,
       initialLocation: ProductArea.us.path,
     );
-    expect(find.text('Asha'), findsOneWidget);
+    expect(find.text('Asha & Ravi'), findsOneWidget);
 
     session.emit(AccountId('uidBob'));
     // One frame for the auth event to reach the session, one to rebuild.
