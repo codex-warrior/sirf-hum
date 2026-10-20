@@ -216,6 +216,14 @@ noticed). Full mapping of adversarial properties to tests:
 **Not covered:** an on-device backup/restore test of D-123; recovery from a
 stalled conversation (P17-05: the mechanism does not exist yet).
 
+## Security blocker remediation tests (exist; Prompt 17B)
+
+See [TEST-MATRIX](../security/audit/TEST-MATRIX.md) "Prompt 17B": device-bound
+commits (D-127), partner verification (D-128), rejection proof (D-129),
+forced code comparison (D-131), reset alerts (D-132). Each fix's old
+behaviour is asserted to fail (the Prompt 17 documented-limit tests were
+flipped, not deleted).
+
 ## Decision-gate tests (exist; experimental; regression suite)
 
 `prototypes/mls-decision-gate` (`.github/workflows/prototypes.yml`), run

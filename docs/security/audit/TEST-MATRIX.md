@@ -36,7 +36,7 @@ unit (`functions/test`), **S** = Security Rules (`firebase/tests`),
 | Stale offline message | R `offline_send_is_queued_sealed_and_reencrypted_after_a_stale_refusal`; D `messaging_service_test.dart` |
 | Message length hidden within a block | **New** R `ciphertext_length_hides_the_message_length_within_a_block` |
 | Rules: sender device / account-level authorization | S `2–5. wrong account, revoked, pending or fake sender devices are refused`; **New** S `documented limit: rules authorize accounts, not devices` (E77) |
-| An unverifiable commit wins the epoch | **New** D (native, CI) `a commit nobody can validate wins the epoch: every device fails closed, none resets or skips it` (P17-05: fail-closed holds; the stall itself is open) |
+| Device-bound commit authorization (D-127) | **17B** F `device-bound commit authorization (D-127)`: active device commits; password-only session fails; wrong device; revoked/pending/unknown (incl. revoked after its challenge); modified signature/conversation/epoch/commit/Welcome/purpose; replay and expiry; concurrent valid commits (first wins); wrong account or couple; malformed. S `commits, Welcomes and the epoch are server-only (D-127)`. Fu `commit authorization v1`. D vector `commit_authorization_test.dart`; D native (CI) `a session without the device key cannot move the epoch; the conversation keeps working`, `a refused authorization never advances local state; a valid one then does`, `revoked, pending and unknown devices get no commit authorization`, `an authorization is bound to its device and account…` |
 
 ## Media
 
@@ -58,6 +58,16 @@ unit (`functions/test`), **S** = Security Rules (`firebase/tests`),
 | Log leakage | Fu `every logger call logs only an event name and an outcome category`, notification and pairing static guards; R `crypto_core_source_contains_no_logging_or_printing`, `debug_output_is_redacted`, `decrypted_content_and_handshake_outputs_never_print`; D `app_logger_test.dart`, `the recovery key, signatures and codes are never logged` |
 | Notification leakage | Fu `no identifiers, topics, previews or other platforms ever appear`; F `revoked, pending and stale devices are never targeted…`, `a password alone cannot register a token…` |
 
+## Prompt 17B
+
+| Property | Tests |
+| --- | --- |
+| Partner verification (D-128) | D `safety_number_test.dart` (7); D `verification_controller_test.dart` (13: gating, explicit confirmation only, wrong QR, "They don't match", changed while shown, revoked, single flight, sign-out and account switch during async work, logs, the Us → Safety screen flow); D native (CI) `partner_verification_test.dart` (10: correct verification, wrong QR, restart, server substitution, new device, changed identity, revoked root, account switch, revoked own device, unavailable partner) |
+| Forced code comparison (D-131) | F `forced code comparison (D-131)` (5); D pairing parse/service tests |
+| Rejection needs a trusted device (D-129) | F `rejection needs a trusted device (D-129)` (2) + updated rejection tests; D trust-service test (native) |
+| Reset alerts (D-132) | Fu payload test; F `identity reset alerts (D-132)` (3); static guards |
+| Proof purposes 5 and 6 | R `proof_purposes_are_separate_signed_domains`, `challenge_must_be_exactly_32_bytes`; Fu purpose matrix; D wire values |
+
 ## Known gaps (no test, by design or pending)
 
 - No on-device Android backup/restore test for D-123 (manifest verified by
@@ -65,5 +75,7 @@ unit (`functions/test`), **S** = Security Rules (`firebase/tests`),
 - No end-to-end forged `media_ref` from another member (D-093 F9).
 - No fuzzing of MLS, lineage or certificate decoders beyond the malformed
   input tests (recommended for the independent review).
-- No test of a stalled conversation recovery (P17-05): the recovery path
-  does not exist yet.
+- No test of conversation re-provisioning (P1-3b): designed in D-127, not
+  built.
+- The native Dart verification and messaging tests run only in CI (Linux
+  host); this Windows machine has no host build of the core.

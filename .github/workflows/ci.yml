@@ -272,6 +272,30 @@ jobs:
       - run: npm install -g firebase-tools@15.34.0
       - run: npm test
 
+  # Known-vulnerability gate for the Dart/Flutter dependencies (Prompt 17B,
+  # D-133). Rust has cargo-audit with its documented ignores (D-068) and
+  # Functions has npm audit (D-124); Gradle has no lockfile to scan yet.
+  # Like those gates it knows only published advisories.
+  dart-advisories:
+    name: Dart dependency advisories (OSV-Scanner)
+    runs-on: ubuntu-24.04
+    env:
+      OSV_SCANNER_VERSION: 2.6.0
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install OSV-Scanner (checksum-verified)
+        run: |
+          base=https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}
+          curl -sSLO "$base/osv-scanner_linux_amd64"
+          curl -sSLO "$base/osv-scanner_SHA256SUMS"
+          grep " osv-scanner_linux_amd64$" osv-scanner_SHA256SUMS | sha256sum -c -
+          chmod +x osv-scanner_linux_amd64
+      - name: Scan pubspec.lock files
+        run: |
+          ./osv-scanner_linux_amd64 scan source \
+            --lockfile pubspec.lock \
+            --lockfile packages/sirf_hum_crypto/pubspec.lock
+
   secrets-scan:
     name: Secret scan (gitleaks CLI)
     runs-on: ubuntu-24.04

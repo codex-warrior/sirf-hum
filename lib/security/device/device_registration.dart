@@ -183,7 +183,14 @@ enum DeviceRegistryFailure {
   deviceNotTrusted,
 
   /// Network, App Check or backend unavailable; safe to retry later.
-  unavailable;
+  unavailable,
+
+  /// A commit's epoch already moved or has a commit (D-127; first commit
+  /// wins). Raised by the commit callables, which share this vocabulary.
+  commitConflict,
+
+  /// Unknown conversation, not a member, or closed (D-127): one category.
+  conversationUnavailable;
 
   /// Maps the server's category string; anything unknown is [unavailable]
   /// (retryable), never success.
@@ -213,6 +220,8 @@ enum DeviceRegistryFailure {
         'rate_limited' => rateLimited,
         // Prompt 11 (push tokens): the device is not active on the server.
         'device_not_active' => deviceNotTrusted,
+        'commit_conflict' => commitConflict,
+        'conversation_unavailable' => conversationUnavailable,
         _ => unavailable,
       };
 }
@@ -232,6 +241,10 @@ enum ChallengePurpose {
   recoveryRegistration,
   revocation,
   resetCancel,
+
+  /// An active device rejecting one approval request (D-129): the challenge
+  /// is bound to that request.
+  approvalRejection,
 }
 
 /// The account's server-side trust state (D-082, D-083), owner-readable.
@@ -279,11 +292,14 @@ abstract interface class DeviceRegistry {
   /// Registers this device as `pending` (`registerDevice`).
   Future<void> register(PendingDeviceRegistration registration);
 
+  /// [requestId] binds an [ChallengePurpose.approvalRejection] challenge to
+  /// the one request it may close; other purposes ignore it.
   Future<ActivationChallenge> requestChallenge(
     AccountId account,
     String deviceIdHex,
-    ChallengePurpose purpose,
-  );
+    ChallengePurpose purpose, {
+    String? requestId,
+  });
 
   /// First device only: proof of possession activates it (`activateDevice`).
   Future<void> activate(
@@ -316,7 +332,15 @@ abstract interface class DeviceRegistry {
     Uint8List signature,
   );
 
-  Future<void> reject(AccountId account, String requestId);
+  /// An active device rejects a request with a device proof (purpose
+  /// `approvalRejection`, D-129); a session alone cannot.
+  Future<void> reject(
+    AccountId account,
+    String requestId, {
+    required String rejecterDeviceIdHex,
+    required String challengeId,
+    required Uint8List proof,
+  });
 
   /// Signed revocation by a trusted device of the account, possibly of
   /// itself (`revokeDevice`, D-081). One way.

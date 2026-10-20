@@ -116,6 +116,14 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-124 | CI/CD supply chain: actions pinned to commit SHAs, exact firebase-tools, inputs passed as env, npm audit gate for Functions | Accepted | 2026-10-20 |
 | D-125 | Prompt 17 security review: findings, audit package and P0–P3 production-blocker classification are the release gate of record | Accepted | 2026-10-20 |
 | D-126 | MLS PrivateMessages padded to 256-byte blocks (`padding_size`); the server learns lengths only to within a block | Accepted (development); needs independent review | 2026-10-20 |
+| D-127 | Device-bound MLS commit authorization: commits, Welcomes and the epoch are server-written only after a device-key proof (purpose 5) over the commit's binding | Accepted (development); needs independent review | 2026-10-20 |
+| D-128 | Partner identity verification: safety number + QR over both root PIKs; trust only by explicit confirmation; reported revocations always applied | Accepted (development); needs independent review | 2026-10-20 |
+| D-129 | Rejecting a pending device needs an active device's proof (purpose 6) bound to the request | Accepted | 2026-10-20 |
+| D-130 | `qr` + `mobile_scanner` (Android only, CAMERA permission) for the safety-number code; `crypto` direct | Accepted | 2026-10-20 |
+| D-131 | Forced pairing-code comparison: only the invitee sees the code, the inviter enters it, 3 wrong codes end the pairing (amends D-101) | Accepted (development) | 2026-10-20 |
+| D-132 | Content-free identity-reset alerts (kind `a`) to the account and, on completion, the partner | Accepted (development) | 2026-10-20 |
+| D-133 | OSV-Scanner for Dart lockfiles in CI; GitHub secret scanning, push protection, Dependabot alerts and a `main` ruleset | Accepted | 2026-10-20 |
+| D-134 | Unpairing needs its own security decision; not implemented | **Open** | 2026-10-20 |
 
 ---
 
@@ -993,7 +1001,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
   - The token is generated on the server, not the device, which guarantees its entropy.
   - Adds the inviter's confirmation step.
   - PIK fingerprint verification stays a later UX step. The comparison code is a human check, not cryptographic verification.
-- **Status:** Accepted for development · 2026-10-19.
+- **Status:** Accepted for development · 2026-10-19. **Amended by D-131** (2026-10-20): only the invitee sees the code; the inviter enters it.
 
 ### D-102 — Every pairing step is signed by an active device (proof purpose 4)
 - **Decision:**
@@ -1231,3 +1239,69 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Tests:** `ciphertext_length_hides_the_message_length_within_a_block` (creator and joiner; fails without the change).
 - **Status:** Accepted for development · 2026-10-20. Needs independent review with the rest of the MLS configuration (D-054).
 
+### D-127 — Device-bound MLS commit authorization (Prompt 17B)
+- **Problem (P17-05, high):** clients wrote `commits/{epoch}`, the Welcomes and the epoch move themselves, and the rules could only check the account. Any Firebase session of either partner (a password thief, a session left on a revoked or stolen phone) could win an epoch with bytes no device can process: every device then failed closed and the conversation stalled permanently.
+- **Decision:**
+  - The rules deny every client write to `conversations/{c}` (including `epoch`), `commits/*` and `welcomes/*`. Members still read them.
+  - Two callables are the only writers: `requestCommitChallenge` (single-use 32-byte nonce bound to account, device, conversation and `fromEpoch`; 5 minutes; rate limit `commit` 60/h) and `submitMlsCommit`.
+  - The device signs, with its **device key** and the D-070 proof format under the new purpose **`commit` = 5**, a challenge derived from the nonce and the commit's binding: `SHA-256("SirfHum-CommitAuthorization-v1" | 1 | nonce | len|account | device | conversation | fromEpoch | toEpoch | protocol | SHA-256(commit) | SHA-256(n | n × (target | SHA-256(welcome))))`.
+  - In one transaction the server checks the challenge (account, device, purpose, conversation, epoch, expiry; consumed whatever the outcome), the device (`active` now, of the caller's account), the conversation (active, caller a member), the proof against the stored certificate, and only then first-commit-wins (epoch unchanged, no commit yet). It writes the commit (sender from the verified values), the epoch move and the Welcomes together.
+  - The server hashes opaque bytes and never parses or decrypts MLS. Staged-commit semantics are unchanged (stage → submit → confirm/discard by the server's `commits/{epoch}`).
+- **Reuses:** the device certificate, the device-proof format and the challenge pattern of D-070, D-098 and D-102. No new primitive, statement format, ABI function or pin; one additive proof purpose (an older native library refuses it: fails closed).
+- **What it does not stop:** a *trusted, active* device (a modified partner client, or a compromised phone) can still commit something the others reject. Recovery: see "Conversation recovery" below.
+- **Conversation recovery (design, not built):** when devices hold `stateDiverged` for the current epoch, any active member device may call a future `reprovisionConversation` with the same device-bound authorization. In one transaction the server marks the conversation `retired`, creates a new conversation for the same couple (new ID = new MLS group, epoch 0) and points both `accountPartners` records at it. Devices keep the old history locally (sealed), start the new group from verified lineage, and show "Your conversation was restarted". Abuse bound: a rate limit per couple, and an abusive partner who keeps stalling is an unpairing case (D-134). Needs its own review; P1 until built.
+- **Tests:** emulator `device-bound commit authorization (D-127)` (9); rules `commits, Welcomes and the epoch are server-only (D-127)` and the flipped documented-limit test; Functions unit `commit authorization v1` (vector, every bound field, malformed); Dart golden vector; Dart native (CI) password-only / wrong device / revoked / replay / refused-never-advances / cross-account.
+- **Status:** Accepted for development · 2026-10-20. Needs independent review. Deployment needs Blaze (D-025).
+
+### D-128 — Partner identity verification: safety number and QR (Prompt 17B)
+- **Problem (P17-09, high):** nothing in the app could anchor a partner's root person key, so messaging could not start in production, and a future UX risked silent trust-on-first-use of server data.
+- **Decision:**
+  - **What is verified:** each person's **root PIK** (the anchor of their signed lineage, D-084/D-085) bound to their account. Every other device of a person is trusted only by signatures from that root, so one comparison covers devices added later.
+  - **Safety number:** `fingerprint = SHA-256("SirfHum-SafetyNumber-v1" | 1 | len|account | len|root PIK)`; 30 digits per person (six 5-byte chunks, each mod 100000), the account that sorts first first: 60 digits, 12 groups, identical on both phones. **QR:** `SHSN1:` + upper-case hex of both 32-byte fingerprints (QR alphanumeric mode).
+  - **Trust changes only by explicit confirmation:** "The numbers match" (after a confirmation dialog) or a scanned code equal to the shown number anchors the partner's root (`trustVerifiedPersonKey`, sealed in the core, survives restarts), and only if the server still presents that same root (`changedWhileShown` otherwise).
+  - **Status is computed, never stored apart from the core:** verified = the partner's current lineage applies from an anchored root whose root device is still trusted. A new root (reset, substitution) is not anchored → "Not verified"; a revoked root can never be anchored again.
+  - **Own root:** a device anchors its own account's root automatically only from a lineage that proves the device itself (a chain containing this device can only descend from this person's real root).
+  - **Revocations always land:** when a partner's lineage cannot be applied, every device the server reports `revoked` is revoked locally (only removes trust). This closes a gap: an identity reset's revocations previously reached peers only after the new identity was verified.
+  - **UI:** Us → Safety → "Safety number" (Verified / Not verified) → a pushed page with the number, the code, "The numbers match", "Scan their code", "They don't match". Web says it happens on the phone. Production wires no backend yet (D-116), so it shows an honest "on its way" state.
+- **Not claimed:** verification does not make Sirf Hum production E2EE or audited; it authenticates the partner's identity key only.
+- **Tests:** safety-number format (7); controller and screen (13, incl. sign-out and account switch during async work, wrong QR, mismatch, changed while shown, revoked); native service (10, CI): correct verification, wrong QR, server substitution, new device, changed identity, revoked root, restart, account switch, unavailable partner.
+- **Status:** Accepted for development · 2026-10-20. Needs independent review (number construction, own-root rule).
+
+### D-129 — Rejecting a pending device needs a trusted device (Prompt 17B)
+- **Problem (P17-07):** `rejectDeviceApproval` accepted a Firebase session alone: a password thief could permanently block the owner's new devices (terminal `rejected`), against D-081's principle.
+- **Decision:** the rejecter must be an **active** device of the account and sign a single-use challenge (`issueDeviceChallenge` purpose `approval_rejection`, bound to the request ID) with its device key under the new proof purpose **`approval_rejection` = 6**. Failed proofs count toward the shared failure budget; challenges are rate-limited at issue. Pending, revoked and other accounts' devices cannot reject.
+- **Tests:** emulator `rejection needs a trusted device (D-129)` (2) and the updated rejection tests; Dart trust-service test (native).
+- **Status:** Accepted · 2026-10-20
+
+### D-130 — QR rendering and scanning dependencies (Prompt 17B)
+- **Decision:** `qr` 4.0.0 (pure Dart, renders the code in the design-system `ScannableCode`, always dark-on-light) and `mobile_scanner` 7.4.2 (Android CameraX + on-device ML Kit barcode reading; frames never leave the phone). `mobile_scanner` is imported only by `features/verification/data/camera_qr_code_scanner.dart` and wired in `main.dart` on Android only. It adds the `CAMERA` permission to the merged Android manifest, requested only when the person taps "Scan their code".
+- **Also:** `crypto` (dart-lang, already locked transitively) became a direct dependency for SHA-256 (D-127, D-128).
+- **Status:** Accepted · 2026-10-20
+
+### D-131 — Forced pairing-code comparison (amends D-101)
+- **Problem (P17-08):** `getPairingState` gave the inviter the same code the claimant saw and `confirmPairing` took no code, so confirming did not prove any comparison happened; an intercepted link plus a careless inviter paired a stranger.
+- **Decision (amends D-101):** only the **invitee's** phone shows the six-digit code. The inviter must **enter** the code the invitee reads out; `confirmPairing` requires it, compares in constant time, and after **3** wrong codes invalidates the pairing (`confirmation_code_mismatch`, locks released, code deleted). A wrong code returns `confirmation_code_invalid`. The Dart client refuses a malformed code without a server step and treats a server that hands the inviter a code as broken.
+- **Still true:** the comparison is a human check, not cryptographic verification; the partner's identity is authenticated by D-128.
+- **Tests:** emulator `forced code comparison (D-131)` (5: intercepted invitation, three wrong codes, one mistake allowed, malformed codes, invitee cannot confirm); Dart parse and service tests.
+- **Status:** Accepted for development · 2026-10-20
+
+### D-132 — Content-free identity-reset alerts (Prompt 17B)
+- **Problem:** D-082 left reset notifications OPEN: a reset requested with only the password raised no signal.
+- **Decision:** a Firestore trigger on `accountTrust/{uid}` reads only the reset status and sends the new constant kind `a` (visible: "Sirf Hum" / "Review a security change", its own notification slot, `visibility: private`, no IDs):
+  - reset **requested** → every active device of the account (so it can be cancelled from any trusted phone);
+  - reset **completed** → the partner's active devices (they must verify the new identity, D-128);
+  - reset **cancelled** → the account's devices sync silently.
+- **Tests:** payload unit test; emulator `identity reset alerts (D-132)` (3); the static guards (reads only `reset`, logs counts only).
+- **Status:** Accepted for development · 2026-10-20. Deployment needs Blaze (Eventarc).
+
+### D-133 — Dependency advisories for Dart and GitHub security controls (Prompt 17B)
+- **Decision:**
+  - CI job `dart-advisories` runs OSV-Scanner 2.6.0 (checksum-verified, pinned) on `pubspec.lock` and the crypto package's lockfile. Rust keeps `cargo audit` with its three documented, re-verified ignores (D-068); Functions keep `npm audit` (D-124).
+  - Gradle has no lockfile, so it is covered only by GitHub's dependency graph and Dependabot alerts until Gradle dependency locking is adopted.
+  - On the public repository the owner authorized enabling GitHub secret scanning, push protection, Dependabot alerts and a ruleset on `main` (PR required, required status checks, no force-push or deletion). Repository privacy is not a security boundary.
+- **Status:** Accepted · 2026-10-20
+
+### D-134 — Unpairing needs its own security decision (Prompt 17B)
+- **Decision:** unpairing is **not implemented** in Prompt 17B. It must be unilateral and instant (T10), and that touches decisions not yet made: what happens to shared history (open decision 6), MLS removal of the other person's devices versus retiring the conversation, rules for a dissolved couple, re-pairing (a new group, never reused, D-044), content-free notification to the other person, and the account-deletion flow (D-105). A rushed version would risk an account-takeover path (a password alone dissolving a couple) or silent retention.
+- **Required properties for the future decision:** device-key authorization (as D-127), no password-only path, server-side end of access for the other account, MLS removal or retirement, honest copy about what the partner keeps.
+- **Status:** **Open** · 2026-10-20. Production blocker P1-5.

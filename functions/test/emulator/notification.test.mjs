@@ -16,7 +16,7 @@ import { makeDevice, makeProof } from '../support.mjs';
 const { DeviceError } = common;
 const { ProofPurpose } = proofModule;
 const { requestPushTokenChallenge, registerPushToken } = tokensModule;
-const { onMessageCreated, onCommitCreated, onDeviceStatusChanged, STALE_TOKEN_MS } = fanoutModule;
+const { onMessageCreated, onCommitCreated, onDeviceStatusChanged, onTrustChanged, STALE_TOKEN_MS } = fanoutModule;
 
 assert.ok(process.env.FIRESTORE_EMULATOR_HOST, 'run through `npm run test:emulator`');
 
@@ -292,5 +292,44 @@ describe('fan-out (D-097)', () => {
       failed: 0,
       removed: 0,
     });
+  });
+});
+
+// Prompt 17B, D-132: content-free identity-reset alerts. Before, a reset
+// requested with only the password raised no signal at all (D-082 OPEN).
+describe('identity reset alerts (D-132)', () => {
+  const pending = { status: 'pending', effectiveAtMillis: 1 };
+
+  test('a reset request alerts every active device of the account, and nobody else', async () => {
+    const { A, a1, a2 } = await couple();
+    const revoked = await device(A, 'revoked');
+    await db.doc(`pushTokens/${revoked.hex}`).set({ accountId: A, deviceId: revoked.hex, token: 'tok-revoked', updatedAt: Timestamp.now() });
+    const fcm = fakeFcm();
+    const r = await onTrustChanged(db, fcm.send, A, undefined, pending, now());
+    assert.equal(r.kind, 'alert');
+    assert.deepEqual(byToken(fcm.sent), { [`tok-${a1.hex}`]: 'a', [`tok-${a2.hex}`]: 'a' });
+    for (const m of fcm.sent) {
+      assert.equal(m.android.notification.body, 'Review a security change');
+      assert.doesNotMatch(JSON.stringify({ ...m, token: undefined }), /[0-9a-f]{32}|acct/);
+    }
+  });
+
+  test('a completed reset alerts the partner; a cancelled one syncs the account silently', async () => {
+    const { A, b1, b2, a1, a2 } = await couple();
+    const done = fakeFcm();
+    await onTrustChanged(db, done.send, A, pending, { status: 'completed' }, now());
+    assert.deepEqual(byToken(done.sent), { [`tok-${b1.hex}`]: 'a', [`tok-${b2.hex}`]: 'a' });
+    const cancelled = fakeFcm();
+    await onTrustChanged(db, cancelled.send, A, pending, undefined, now());
+    assert.deepEqual(byToken(cancelled.sent), { [`tok-${a1.hex}`]: 's', [`tok-${a2.hex}`]: 's' });
+  });
+
+  test('other trust changes (epochs, repeats) send nothing', async () => {
+    const { A } = await couple();
+    const fcm = fakeFcm();
+    for (const [before, after] of [[undefined, undefined], [pending, pending], [{ status: 'completed' }, { status: 'completed' }]]) {
+      assert.equal((await onTrustChanged(db, fcm.send, A, before, after, now())).kind, 'none');
+    }
+    assert.equal(fcm.sent.length, 0);
   });
 });

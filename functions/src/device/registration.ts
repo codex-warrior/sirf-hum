@@ -48,7 +48,14 @@ import { CHALLENGE_BYTES, InvalidProofError, PROOF_BYTES, ProofPurpose, verifyDe
 import { bumpEpoch } from './epoch';
 import { consume, requireBudget } from './rateLimit';
 
-export const CHALLENGE_PURPOSES = ['activation', 'recovery_registration', 'revocation', 'reset_cancel'] as const;
+export const CHALLENGE_PURPOSES = [
+  'activation',
+  'recovery_registration',
+  'revocation',
+  'reset_cancel',
+  /** Prompt 17B, D-129: an active device rejecting one approval request. */
+  'approval_rejection',
+] as const;
 export type ChallengePurpose = (typeof CHALLENGE_PURPOSES)[number];
 
 export interface IssuedChallenge {
@@ -204,6 +211,8 @@ export async function issueDeviceChallenge(
   if (typeof purpose !== 'string' || !(CHALLENGE_PURPOSES as readonly string[]).includes(purpose)) {
     throw new DeviceError('invalid_argument');
   }
+  // A rejection challenge is bound to the one request it may close.
+  const requestId = purpose === 'approval_rejection' ? requirePattern(args.requestId, RECORD_ID_PATTERN) : undefined;
   await requireBudget(db, accountId, 'verificationFailure', now);
   await consume(db, accountId, 'challenge', now);
 
@@ -225,6 +234,7 @@ export async function issueDeviceChallenge(
     accountId,
     deviceId,
     purpose,
+    ...(requestId === undefined ? {} : { requestId }),
     challenge,
     expiresAt: Timestamp.fromMillis(expiresAtUnix * 1000),
   });

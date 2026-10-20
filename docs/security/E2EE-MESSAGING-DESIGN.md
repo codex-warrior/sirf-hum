@@ -456,3 +456,17 @@ measured (emulator only, no deployment).
   epoch rule relies on Firestore evaluating rule reads inside the write.
 - Web: no private messaging (D-046); the stub fails closed.
 - Dart heap copies of plaintext cannot be wiped (CRYPTO-CORE-ARCHITECTURE).
+
+## Prompt 17B: device-bound commits (D-127)
+
+Since Prompt 17B clients no longer write commits, Welcomes or the epoch.
+`MessagingService._submit` asks `requestCommitChallenge` for a single-use
+nonce, derives the commit authorization challenge
+(`lib/security/messaging/commit_authorization.dart`, binding account,
+device, conversation, both epochs, protocol, and the exact commit and
+Welcome bytes), signs it in the core with device-proof purpose 5 and calls
+`submitMlsCommit`, which verifies everything and applies first-commit-wins
+in one transaction. Refused or unreachable: the following `sync` discards
+the staged commit as before. A Firebase session alone can no longer move a
+conversation's epoch. Conversation recovery after a trusted device's
+invalid commit is designed in D-127 and not built (P1-3b).

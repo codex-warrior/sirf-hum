@@ -565,3 +565,18 @@ Functions; the Firebase Rules.
 - **Own-account root anchoring** for non-root devices needs a verification
   UX (D-085 open).
 - **Device-management UI** (Prompt 09 excluded it).
+
+## 17. Prompt 17B changes
+
+- **Rejection** (`rejectDeviceApproval`) needs an active device's proof,
+  purpose `approval_rejection` = 6, over a challenge bound to the request
+  (D-129). A password alone can no longer block new devices.
+- **Reset alerts** (D-132) close the D-082 "OPEN before production" item in
+  code; they need deployment (Eventarc).
+- **Revocations always reach peers:** when an account's lineage cannot be
+  applied (e.g. a reset to an identity not yet verified), every device the
+  server reports `revoked` is revoked locally (D-128). Revocation only
+  removes trust, so this is safe against a lying server.
+- **Partner verification** anchors the partner's root only after an explicit
+  comparison (D-128); a non-root device anchors its own account's root from
+  a lineage that proves the device itself.

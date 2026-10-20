@@ -55,12 +55,13 @@ rollback by someone controlling the phone's storage (D-079); web clients
   no key or state ([CRYPTO-CORE-ARCHITECTURE](../CRYPTO-CORE-ARCHITECTURE.md)).
 - **Trust roots:** a partner's root PIK must be verified out of band; every
   other device is trusted only through a signed lineage from that root
-  ([MULTI-DEVICE-TRUST](../MULTI-DEVICE-TRUST.md) §11). The verification UX
-  does not exist yet, so no partner device can be trusted in production
-  (P1-1).
+  ([MULTI-DEVICE-TRUST](../MULTI-DEVICE-TRUST.md) §11). The partner's root is
+  anchored only when the person compares the safety number or scans the
+  partner's QR code (D-128); never on first contact.
 - **The server is trusted for availability and ordering only**, and for
   authorization of *ciphertext access* (which accounts may read/write).
-  Firebase Auth identifies accounts, never devices (E77).
+  Firebase Auth identifies accounts, never devices: everything that moves a
+  conversation's epoch therefore needs a device-key proof (D-127).
 
 ## 3. Package contents (the 22 requested areas)
 
@@ -84,12 +85,14 @@ rollback by someone controlling the phone's storage (D-079); web clients
 | 16 | Firebase security | `firebase/firestore.rules`, `firebase/storage.rules`, `functions/src/`; review §4.14 |
 | 17 | CI/CD security | [ENVIRONMENTS](../../architecture/ENVIRONMENTS.md), [ACCOUNT-OWNERSHIP](../../architecture/ACCOUNT-OWNERSHIP.md), `.github/workflows/`; review §4.16 |
 | 18 | Known limitations | [PRODUCTION-BLOCKERS](PRODUCTION-BLOCKERS.md); THREAT-MODEL residual risks |
-| 19 | Security decisions | [DECISION-LOG](../../decisions/DECISION-LOG.md) D-042–D-126 |
+| 19 | Security decisions | [DECISION-LOG](../../decisions/DECISION-LOG.md) D-042–D-134 |
 | 20 | Test matrix | [TEST-MATRIX](TEST-MATRIX.md); [E2EE-TEST-PLAN](../../testing/E2EE-TEST-PLAN.md) |
 | 21 | Dependency / audit status | Review §4.15; `tool/crypto_audit.sh`, `tool/check_crypto_core.sh` |
 | 22 | Open production blockers | [PRODUCTION-BLOCKERS](PRODUCTION-BLOCKERS.md) |
 
-Findings of the internal review: [PROMPT-17-SECURITY-REVIEW](PROMPT-17-SECURITY-REVIEW.md).
+Findings of the internal review: [PROMPT-17-SECURITY-REVIEW](PROMPT-17-SECURITY-REVIEW.md);
+what Prompt 17B fixed, deferred and still needs external review:
+[PROMPT-17B-REMEDIATION](PROMPT-17B-REMEDIATION.md).
 
 ## 4. Where we most want scrutiny
 
@@ -99,12 +102,12 @@ Findings of the internal review: [PROMPT-17-SECURITY-REVIEW](PROMPT-17-SECURITY-
    first-commit-wins ordering (D-087, D-088); message AAD (D-089).
 2. The device-trust statements and lineage verification (D-070, D-075,
    D-081–D-084), including the documented server-ordering limit and the
-   account-level authorization limit: any session of either account can
-   stall the conversation with an unverifiable commit (E77, P17-05).
+   device-bound commit authorization that replaced account-level commit
+   writes (D-127, P17-05).
 3. The media format: STREAM over XChaCha20-Poly1305 with our AAD and digest
    (D-093; `aead::stream` itself has no known audit).
-4. The pairing protocol's human verification step (D-101, P17-08) and the
-   missing PIK verification UX (P17-09).
+4. The pairing protocol's code entry (D-101, D-131) and the partner
+   verification / safety-number construction (D-128).
 5. The Android Keystore adapter and sealed local store (D-065, D-066) and
    the local rollback analysis (review §4.3).
 

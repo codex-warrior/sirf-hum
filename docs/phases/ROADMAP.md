@@ -278,6 +278,14 @@ feature phase ([audit package](../security/audit/README.md), D-122–D-126):
 - **Outcome:** security blockers remain. No independent review has
   happened; Sirf Hum is NOT production E2EE. Nothing deployed.
 
+**Prompt 17B: Security blocker remediation** ([remediation](../security/audit/PROMPT-17B-REMEDIATION.md),
+D-127–D-134): both high findings fixed (device-bound commits; partner
+verification by safety number and QR), forced pairing-code entry, signed
+rejection, identity-reset alerts, Dart advisory scanning, GitHub security
+controls. Deferred with reasons: picker cache sweep, web CSP, Gradle
+scanning, local rollback, deletion. Open: conversation re-provisioning,
+unpairing (D-134), deployment, sign-in, independent review.
+
 ## Proposed sequence
 
 Ordering principle: identity and cryptography come **before** any feature

@@ -88,6 +88,13 @@ async function approveNew(acct, approver, d) {
   return request;
 }
 
+/** A trusted device rejects a request (D-129). */
+async function rejectSigned(acct, rejecter, request) {
+  const c = await issueDeviceChallenge(db, acct, { deviceId: rejecter.hex, purpose: 'approval_rejection', requestId: request.requestId }, now());
+  const { signature } = makeProof({ device: rejecter.device, accountId: acct, deviceId: rejecter.deviceId, certificate: rejecter.certificate, challenge: fromB64(c.challenge), purpose: 6 });
+  return rejectDeviceApproval(db, acct, { requestId: request.requestId, deviceId: rejecter.hex, challengeId: c.challengeId, proof: b64(signature) }, now());
+}
+
 /** The real, signed revocation path (D-081). */
 async function revoke(acct, revoker, target, { reason = 2, signer, at } = {}) {
   const c = await issueDeviceChallenge(db, acct, { deviceId: revoker.hex, purpose: 'revocation' }, now());
@@ -313,7 +320,7 @@ describe('state machine edges (§8)', () => {
     // Rejected: the rejected device can never be approved.
     const rB = await enroll(acct, B);
     const sigB = approvalSig(acct, A, B, rB);
-    await rejectDeviceApproval(db, acct, { requestId: rB.requestId }, now());
+    await rejectSigned(acct, A, rB);
     await rejectsWith(approve(acct, A, rB, sigB), 'request_invalid');
     await rejectsWith(requestDeviceApproval(db, acct, { deviceId: B.hex }, now()), 'device_not_pending');
     // Expired device (pending past its deadline).

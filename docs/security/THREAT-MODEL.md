@@ -1,6 +1,6 @@
 # Threat Model
 
-Status: **Foundation (Prompt 01); E2EE analysis added (Prompt 04); crypto-core threats added (Prompt 06); device identity added (Prompt 07, scenario table in [DEVICE-IDENTITY §9](DEVICE-IDENTITY.md#9-compromised-device-and-server-assumptions)); encrypted media and notifications added (Prompt 11, E35–E46, [E2EE-MEDIA-AND-NOTIFICATIONS](E2EE-MEDIA-AND-NOTIFICATIONS.md)); couple and pairing added (Prompt 12, E47–E60, [COUPLE-AND-PAIRING](COUPLE-AND-PAIRING.md)); moments (Prompt 15, E61–E68); Future and Us (Prompt 16, E69–E76, [FUTURE-AND-US-ARCHITECTURE](../architecture/FUTURE-AND-US-ARCHITECTURE.md)); Prompt 17 security review (E77–E83 and the status review below, [audit package](audit/README.md)).** A living document. Each phase that adds
+Status: **Foundation (Prompt 01); E2EE analysis added (Prompt 04); crypto-core threats added (Prompt 06); device identity added (Prompt 07, scenario table in [DEVICE-IDENTITY §9](DEVICE-IDENTITY.md#9-compromised-device-and-server-assumptions)); encrypted media and notifications added (Prompt 11, E35–E46, [E2EE-MEDIA-AND-NOTIFICATIONS](E2EE-MEDIA-AND-NOTIFICATIONS.md)); couple and pairing added (Prompt 12, E47–E60, [COUPLE-AND-PAIRING](COUPLE-AND-PAIRING.md)); moments (Prompt 15, E61–E68); Future and Us (Prompt 16, E69–E76, [FUTURE-AND-US-ARCHITECTURE](../architecture/FUTURE-AND-US-ARCHITECTURE.md)); Prompt 17 security review (E77–E83 and the status review below, [audit package](audit/README.md)); Prompt 17B remediation (statuses updated, [PROMPT-17B-REMEDIATION](audit/PROMPT-17B-REMEDIATION.md)).** A living document. Each phase that adds
 data, endpoints or devices must update it. Not every threat can be
 eliminated; the goal is that each one is *explicit*.
 
@@ -188,7 +188,7 @@ design review.
 
 ## Prompt 17 status review
 
-Reviewed against the implementation on 2026-10-20 (D-125). **Status
+Reviewed against the implementation on 2026-10-20 (D-125), **updated after Prompt 17B** (D-127–D-134). **Status
 describes the development code as tested in CI and the emulators; nothing is
 deployed or independently reviewed.** Production impact uses the classes in
 [PRODUCTION-BLOCKERS](audit/PRODUCTION-BLOCKERS.md); tests are mapped in
@@ -199,23 +199,23 @@ Status: **M** mitigated · **P** partially mitigated · **A** accepted ·
 
 | ID | Status | Evidence | Residual risk | Production impact |
 | --- | --- | --- | --- | --- |
-| T1 | P | MLS content; trust only from anchored lineage; Functions hold no keys | Metadata, withholding, ordering; partner PIK verification UX missing (fails closed today) | P1-1, P3-1, P3-3 |
+| T1 | P | MLS content; trust only from anchored lineage, anchored only by explicit partner verification (D-128); Functions hold no keys; commits need a device key (D-127) | Metadata, withholding, ordering | P0-1, P3-1, P3-3 |
 | T2 | P | Ciphertext only; padded messages (D-126) | Relationship graph, timing, exact media sizes | P3-1, P3-2 |
 | T3 | P | As T1; rules/Functions in source control; WIF deploys | Admin can disrupt, read metadata, ship web code (no private content on web) | P0-1, P3-1 |
 | T4 | A | OS keystore, sealed state | An owned endpoint sees what the user sees | P3 |
 | T5 | P | Keystore, signed revocation (D-081) | No app lock; content readable until revoked | P2 (app lock is product work) |
-| T6 | P | Device trust needs proof, approval or recovery key; reset delayed and cancellable | Social engineering of approval; reset notifications not built | P1-4 |
-| T7 | P | Signed revocation, MLS Remove, token deletion | E33 window; E77 session writes | P1-3, P2-10 |
-| T8 | P | TLS + authenticated MLS + signed device statements | No PIK verification UX yet | P1-1 |
+| T6 | P | Device trust needs proof, approval or recovery key; reset delayed, cancellable and now alerted (D-132); a password can neither commit (D-127) nor reject devices (D-129) | Social engineering of approval; alerts need deployment | P1-6 |
+| T7 | P | Signed revocation, MLS Remove, token deletion; a revoked device's session can no longer commit (D-127) | E33 window | P2-10 |
+| T8 | M | TLS + authenticated MLS + signed device statements + safety-number/QR verification (D-128) | Users who never compare stay "Not verified" (messaging fails closed) | P0-1 |
 | T9 | P | Default deny, signed callables, rate limits, uniform errors | App Check attestation not configured | P1-8 |
 | T10 | P | No partner access to the other's account or devices; no presence features | No unpairing (E19); lockout (E82) | P1-5, P2-1 |
 | T11 | M | Constant payloads (D-097) | Timing | P3-5 |
 | T12 | M | Client-side STREAM encryption, create-only objects | Exact sizes | P3-2 |
-| E1 | P | Same as T1 | Same as T1 | P1-1 |
+| E1 | P | Same as T1 | Same as T1 | P0-1 |
 | E2 | P | Ciphertext only; D-126 padding | Metadata | P3-1 |
 | E3 | P | Same as T3 | Same as T3 | P0-1 |
 | E4 | M | Functions never hold keys; membership needs member-signed MLS commits | DoS, metadata | — |
-| E5 | P | MLS authentication | TOFU risk until the verification UX exists | P1-1 |
+| E5 | M | MLS authentication + partner verification; no trust on first use (D-128) | Users must compare once per identity | P0-1 |
 | E6 | P | Signed revocation | No app lock | P2 |
 | E7 | M | Approval or recovery key required for new devices (tested) | Social engineering | P0-1 (review) |
 | E8 | A | By nature: the partner reads shared content | Copying | — |
@@ -232,16 +232,16 @@ Status: **M** mitigated · **P** partially mitigated · **A** accepted ·
 | E21 | M | Sealed records, Keystore-wrapped key | Rooted device while running | — |
 | E22 | A | Documented; `documented_limit_a_restored_older_state_is_not_detected_until_refreshed` | Rollback undetected until the next refresh | P2-7 |
 | E23 | M | No logging in the core (CI scan); redacted Debug | Dart heap | P3-6 |
-| E24 | M | Approvals and comparison codes; a password cannot revoke | Social engineering; `rejectDeviceApproval` by password (DoS) | P2-2 |
+| E24 | M | Approvals and comparison codes; a password cannot revoke or reject (D-129) | Social engineering | — |
 | E25 | P | Signed revocation; approver must be active now | Only-device-stolen case | P3-11 |
 | E26 | M | Domain-separated, single-use statements (tested) | — | — |
-| E27 | P | Reset to a new identity | No reset notifications | P1-4 |
+| E27 | P | Reset to a new identity; alerts to the account and the partner (D-132); peers revoke the old identity's devices at once (D-128) | Alerts need deployment | P1-6 |
 | E28 | P | On-device lineage; fails closed on unproven active devices | Omission and ordering by the server | P3-10 |
 | E29 | M | Golden vectors, single-use challenges | — | — |
 | E30 | M | Exact-certificate trust unit (D-085) + PIK uniqueness (D-122) | Server ordering (E28) | — |
 | E31 | M | Rust AAD binding (tested) | Drop/delay (E10) | — |
-| E32 | P | Staged commits, first commit wins | An invalid winning commit stalls; no re-provisioning; amplified by E77 | P1-3 |
-| E33 | P | Roster checks, Remove | Window until peers refresh; E77 | P1-3, P2-10 |
+| E32 | P | Staged commits, first commit wins, device-bound commits (D-127) | A *trusted* device's invalid commit still stalls; re-provisioning designed, not built | P1-3b |
+| E33 | P | Roster checks, Remove that a revoked device can no longer pre-empt (D-127) | Window until peers refresh | P2-10 |
 | E34 | M | Sealed history (tested) | Rollback (E22), root (E21) | — |
 | E35 | M | Ciphertext, member-only `get`, no `list` | Sizes, timing | P3-2 |
 | E36 | M | Create-only; digest + AEAD | DoS | — |
@@ -251,37 +251,45 @@ Status: **M** mitigated · **P** partially mitigated · **A** accepted ·
 | E40 | M | Constant payloads; count-only logs | Timing | P3-5 |
 | E41 | M | Active-only fan-out; token deletion | A push already in flight | — |
 | E42 | M | Token bound by a device proof | — | — |
-| E43 | P | Member reads; the client refuses when not active | Account-level reads of ciphertext | P1-3 |
+| E43 | P | Member reads; the client refuses when not active | Account-level reads of ciphertext (no content without MLS keys) | P3-1 |
 | E44 | M | No keys or media in Functions | Metadata | — |
 | E45 | P | Opaque paths, fixed metadata | Exact sizes; EXIF to the partner | P2-9, P3-2 |
 | E46 | M | Ciphertext-only cache | Dart heap | P3-6 |
 | E47 | M | Every pairing step signed by an active device | An unlocked trusted device | — |
-| E48 | P | Two consents, reject path | Confirmation does not force the comparison (P17-08) | P1-2 |
+| E48 | M | Two consents; the inviter must enter the invitee's code, 3 wrong codes end the pairing (D-131); identity then verified by D-128 | A person who reads the code to an impostor | — |
 | E49–E59 | M | Pairing tests: single use, expiry, races, rules, enumeration, clocks, logs | Display names after acceptance | — |
 | E60 | P | Active device proof on every step | No deletion flow | P2-8 |
 | E61 | M | Conversation from the server's pairing answer, AAD, member rules | — | — |
 | E62 | M | Kind-3 payload only in MLS + sealed history; padded (D-126) | Existence and approximate size | P3-1 |
 | E63 | M | Same-sender, single-claim rules | DoS of the forger's own moment | — |
-| E64 | P | Active-status and roster checks | E77 writes | P1-3 |
+| E64 | M | Active-status and roster checks; device-bound commits (D-127) | Message noise from a session (rejected by MLS) | — |
 | E65 | M | Seal-first outbox, lost-ack recognition (tested) | — | — |
 | E66 | A | Unclaimed photos never shown | Orphan media delivered | — |
 | E67 | P | Wipe on dispose/block | Dart heap; picker copies after process death (E81) | P2-3, P3-6 |
 | E68 | U | — | EXIF reaches the partner | P2-9 |
 | E69 | M | As E61 | — | — |
 | E70 | M | Kind-4 payload only in MLS + sealed history; padded (D-126) | Existence and approximate size | P3-1 |
-| E71 | P | As E64 | E77 writes | P1-3 |
+| E71 | M | As E64 | As E64 | — |
 | E72 | A | Honest wording | Not erasure | P2-8 |
 | E73 | A | Deterministic order | Last change wins silently | — |
 | E74 | A | Section limits, outbox bound | Shared history bound | P3-12 |
 | E75 | M | Constant notifications | Timing | P3-5 |
 | E76 | M | Strict decode | — | — |
-| E77 | U | Documented-limit rules test; MLS refuses the content | Permanent conversation stall by any session of either account; pre-empted Remove | P1-3 |
+| E77 | M | Commits, Welcomes and the epoch server-only behind a device-key proof (D-127); rules test flipped; 9 emulator + Dart tests | Messages and media stay account-authorized (noise MLS rejects) | — |
 | E78 | M | D-122 (server + Rust; the tests fail on the old code) | — | — |
 | E79 | M | D-123 | No on-device backup test | — |
 | E80 | P | D-124 | Branch protection, provenance | P2-5, P2-11 |
 | E81 | U | — | Picker plaintext after process death | P2-3 |
-| E82 | U | — | Partner lockout | P2-1 |
-| E83 | U | gitleaks clean | Settings need the owner | P2-5 |
+| E82 | U | A password can no longer remove devices (D-127) | A trusted partner device can still remove the other's devices | P2-1 (with D-134) |
+| E83 | P | gitleaks clean; secret scanning, push protection, Dependabot alerts, `main` ruleset (D-133) | Still public; make private before release | P2-5 |
+
+### New in Prompt 17B
+
+| ID | Threat | Status | Evidence | Residual | Production impact |
+| --- | --- | --- | --- | --- | --- |
+| E84 | A compromised server substitutes a partner's root identity after it was verified, or a stale confirmation is replayed onto a new number | M | Verification anchors only the root behind the number shown, and only if the server still presents it (`changedWhileShown`); a different root falls back to "Not verified" (D-128, native tests) | — | P0-1 |
+| E85 | An identity reset's revocations never reach a partner who has not verified the new identity (old, possibly stolen devices stay trusted) | M | Server-reported revocations are applied locally even when a lineage cannot be (D-128) | A server that also omits the revocation (E28) | — |
+| E86 | Lock-screen or push metadata from security alerts | A | Constant text, no IDs (D-132) | That a security change happened is visible on the lock screen and to FCM | P3-5 |
 
 ## Assumptions
 
@@ -311,3 +319,4 @@ Status: **M** mitigated · **P** partially mitigated · **A** accepted ·
 11. Local whole-state rollback is undetected (E22). Prompt 17 characterised exactly what it does and pinned it with a test (audit review §4.3); classified P2.
 12. The Prompt 06 crypto core (credential policy, record format, FFI, rollback) is unreviewed.
 19. Prompt 17 (2026-10-20): every open item is classified P0–P3 in [PRODUCTION-BLOCKERS](audit/PRODUCTION-BLOCKERS.md). New: account-level authorization and conversation stall (E77), partner lockout (E82), picker copies (E81), repository settings (E83). Closed: PIK reuse (E78), backup (E79), CI pinning (E80, partly), message length (D-126).
+20. Prompt 17B (2026-10-20): E77 mitigated (D-127); verification (D-128), forced code (D-131), rejection proof (D-129), reset alerts (D-132) built; new E84–E86. Open: conversation re-provisioning (P1-3b), unpairing (D-134), deployment and sign-in.

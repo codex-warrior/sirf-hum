@@ -34,6 +34,7 @@ import {
   onCommitCreated,
   onDeviceStatusChanged,
   onMessageCreated,
+  onTrustChanged,
   type PushSender,
   type SendResult,
 } from './notification/fanout';
@@ -322,6 +323,24 @@ export const notifyOnCommit = onDocumentCreated('conversations/{conversationId}/
   const doc = event.data;
   if (doc === undefined) return;
   const result = await onCommitCreated(getFirestore(), fcm, event.params.conversationId, String(doc.get('senderDeviceId')), new Date());
+  logger.info('push_fanout', { ...result });
+});
+
+/**
+ * Identity reset alerts (Prompt 17B, D-132): reads only the reset status of
+ * the account trust record; the payload is the constant security alert.
+ */
+export const notifyOnTrustChange = onDocumentUpdated('accountTrust/{accountId}', async (event) => {
+  const change = event.data;
+  if (change === undefined) return;
+  const result = await onTrustChanged(
+    getFirestore(),
+    fcm,
+    event.params.accountId,
+    change.before.get('reset'),
+    change.after.get('reset'),
+    new Date(),
+  );
   logger.info('push_fanout', { ...result });
 });
 

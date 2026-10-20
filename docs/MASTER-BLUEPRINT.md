@@ -58,6 +58,13 @@ verification, forced pairing-code comparison, device-bound commit
 authorization and unpairing. **Security blockers remain; no production
 security claim is allowed (P0).**
 
+**Prompt 17B remediation** ([PROMPT-17B-REMEDIATION](security/audit/PROMPT-17B-REMEDIATION.md),
+D-127–D-134): device-bound MLS commits (a password can no longer stall a
+conversation), partner verification by safety number and QR, the inviter
+enters the pairing code, trusted-device rejection, identity-reset alerts,
+Dart advisory scanning and GitHub security controls. Still open: conversation
+re-provisioning, unpairing (D-134), deployment, sign-in, independent review.
+
 ## 8. E2EE architecture
 
 Requirements: private content is encrypted on the device; the server never

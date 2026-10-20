@@ -101,8 +101,11 @@ void main() {
         core: a,
         account: account,
       )).single;
-      await service.reject(account: account, candidate: candidate);
+      await service.reject(core: a, account: account, candidate: candidate);
       expect(registry.statuses[id(b)], DeviceStatus.rejected);
+      // D-129: signed by A's key, over a challenge for this request.
+      expect(registry.calls, contains('challenge:approvalRejection'));
+      expect(registry.submitted['reject'], hasLength(64));
       expect(await enroll(b), isA<EnrollmentTerminal>());
     });
 

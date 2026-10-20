@@ -52,8 +52,26 @@ describe('push payloads (D-097)', () => {
     });
   });
 
+  test('a security alert is visible, generic and has its own slot (D-132)', () => {
+    assert.deepEqual(pushMessage(TOKEN, 'alert'), {
+      token: TOKEN,
+      data: { v: '1', k: 'a' },
+      android: {
+        priority: 'high',
+        collapseKey: 'sh_a',
+        ttl: 24 * 60 * 60 * 1000,
+        notification: {
+          title: 'Sirf Hum',
+          body: 'Review a security change',
+          tag: 'sh_a',
+          visibility: 'private',
+        },
+      },
+    });
+  });
+
   test('no identifiers, topics, previews or other platforms ever appear', () => {
-    for (const kind of ['message', 'sync']) {
+    for (const kind of ['message', 'sync', 'alert']) {
       const m = pushMessage(TOKEN, kind);
       assert.deepEqual(Object.keys(m).sort(), ['android', 'data', 'token']);
       for (const s of strings({ ...m, token: undefined })) {
@@ -121,9 +139,10 @@ describe('no content reaches Functions code or logs (static guard)', () => {
     const triggers = index.slice(index.indexOf('notifications (Prompt 11)'));
     assert.doesNotMatch(triggers, /\.data\(\)|ciphertext'|\.get\('ciphertext/);
     const reads = [...triggers.matchAll(/\.get\('([A-Za-z]+)'\)/g)].map((m) => m[1]);
-    assert.deepEqual([...new Set(reads)].sort(), ['senderAccountId', 'senderDeviceId', 'status']);
+    // `reset`: the identity-reset status only (D-132), never the record.
+    assert.deepEqual([...new Set(reads)].sort(), ['reset', 'senderAccountId', 'senderDeviceId', 'status']);
     const logs = [...triggers.matchAll(/logger\.\w+\(([^;]*)\);/g)].map((m) => m[1]);
-    assert.equal(logs.length, 3);
+    assert.equal(logs.length, 4);
     for (const args of logs) assert.match(args, /^'push_fanout', \{ \.\.\.result \}$/);
   });
 });

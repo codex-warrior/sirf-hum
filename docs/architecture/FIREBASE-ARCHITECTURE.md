@@ -94,6 +94,7 @@ D-070).
 | `accountTrust/{uid}` | Owner and partner (D-086): read. No write | Bootstrap marker (`firstDeviceId`, `bootstrapOpen`), `trustEpoch` (D-083), `identityEpoch` and `reset` (D-082), recovery key **public** half with its registration evidence |
 | `rateLimits/{uid}__{op}` | None | Per-account rate limits (D-077) |
 | `deviceIdIndex/{deviceId}`, `deviceKeyIndex/{sha256}`, `personKeyIndex/{sha256}` | None | Global uniqueness of activated device IDs, device keys and person keys (D-122), kept forever |
+| `conversations/{c}`, `…/commits/*`, `…/welcomes/*` | Members read; **nobody writes** (Prompt 17B) | Written only by `submitMlsCommit` after a device-key proof (D-127) |
 
 Callables:
 

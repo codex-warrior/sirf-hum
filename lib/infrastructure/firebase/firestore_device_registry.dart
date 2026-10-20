@@ -77,8 +77,9 @@ class FirestoreDeviceRegistry implements DeviceRegistry {
   Future<ActivationChallenge> requestChallenge(
     AccountId account,
     String deviceIdHex,
-    ChallengePurpose purpose,
-  ) => _guard(() async {
+    ChallengePurpose purpose, {
+    String? requestId,
+  }) => _guard(() async {
     final data = await _call('issueDeviceChallenge', {
       'deviceId': deviceIdHex,
       'purpose': switch (purpose) {
@@ -86,7 +87,9 @@ class FirestoreDeviceRegistry implements DeviceRegistry {
         ChallengePurpose.recoveryRegistration => 'recovery_registration',
         ChallengePurpose.revocation => 'revocation',
         ChallengePurpose.resetCancel => 'reset_cancel',
+        ChallengePurpose.approvalRejection => 'approval_rejection',
       },
+      'requestId': ?requestId,
     });
     return ActivationChallenge(
       challengeId: _string(data, 'challengeId'),
@@ -164,8 +167,18 @@ class FirestoreDeviceRegistry implements DeviceRegistry {
   });
 
   @override
-  Future<void> reject(AccountId account, String requestId) =>
-      _call('rejectDeviceApproval', {'requestId': requestId});
+  Future<void> reject(
+    AccountId account,
+    String requestId, {
+    required String rejecterDeviceIdHex,
+    required String challengeId,
+    required Uint8List proof,
+  }) => _call('rejectDeviceApproval', {
+    'requestId': requestId,
+    'deviceId': rejecterDeviceIdHex,
+    'challengeId': challengeId,
+    'proof': base64Encode(proof),
+  });
 
   @override
   Future<void> revoke(

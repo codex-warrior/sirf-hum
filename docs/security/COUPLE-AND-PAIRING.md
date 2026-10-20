@@ -298,3 +298,14 @@ E47–E60 in [THREAT-MODEL](THREAT-MODEL.md). In short:
 - **Notifications** for pairing events (content-free, D-097 style).
 - **Retention** of ended pairing records.
 - **Independent review** of this design and its implementation.
+
+## Prompt 17B: the inviter enters the code (D-131)
+
+The six-digit code is shown **only on the invitee's phone**.
+`getPairingState` no longer returns it to the inviter, and `confirmPairing`
+requires `confirmationCode`: the code the invitee reads out, compared in
+constant time. A wrong code returns `confirmation_code_invalid`; the third
+ends the pairing (`invalidated`, reason `confirmation_code_mismatch`). An
+intercepted link therefore pairs a stranger only if the inviter types the
+stranger's code. The partner's identity itself is verified afterwards with
+the safety number (D-128).

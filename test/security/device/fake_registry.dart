@@ -81,8 +81,9 @@ class FakeRegistry implements DeviceRegistry {
   Future<ActivationChallenge> requestChallenge(
     AccountId account,
     String deviceIdHex,
-    ChallengePurpose purpose,
-  ) async {
+    ChallengePurpose purpose, {
+    String? requestId,
+  }) async {
     calls.add('challenge:${purpose.name}');
     _maybeFail();
     if (purpose == ChallengePurpose.activation && trustInitialized) {
@@ -199,8 +200,22 @@ class FakeRegistry implements DeviceRegistry {
   }
 
   @override
-  Future<void> reject(AccountId account, String requestId) async {
+  Future<void> reject(
+    AccountId account,
+    String requestId, {
+    required String rejecterDeviceIdHex,
+    required String challengeId,
+    required Uint8List proof,
+  }) async {
     calls.add('reject');
+    _maybeFail();
+    if (statuses[rejecterDeviceIdHex] != DeviceStatus.active ||
+        _challenges.remove(challengeId) == null) {
+      throw const DeviceRegistryException(
+        DeviceRegistryFailure.approverNotTrusted,
+      );
+    }
+    submitted['reject'] = proof;
     final r = requests.remove(requestId)!;
     statuses[r.deviceId] = DeviceStatus.rejected;
   }

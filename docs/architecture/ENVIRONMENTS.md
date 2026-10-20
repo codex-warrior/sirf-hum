@@ -300,9 +300,12 @@ on `production` and branch protection on `main` (D-038).
 
 **Prompt 17 (P17-13):** the repository is currently **public**, and public
 repositories get rulesets/branch protection, secret scanning, push
-protection and Dependabot alerts on the free plan. They are not enabled
-(verified 2026-10-20). Enabling them is an owner action (PRODUCTION-BLOCKERS
-P2-5); visibility must be decided before production.
+protection and Dependabot alerts on the free plan. **Enabled in Prompt 17B
+(owner-authorized, D-133):** secret scanning, push protection, Dependabot
+alerts, and ruleset "main: PR + CI required" (pull request required, the
+ten CI checks required, no force pushes, no deletion, no bypass actors).
+Visibility: make the repository private before the first production
+release (PROMPT-17B-REMEDIATION §5); privacy is not a security boundary.
 
 Rules:
 - Use **Workload Identity Federation**, never service-account JSON keys.
