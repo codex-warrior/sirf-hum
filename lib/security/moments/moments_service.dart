@@ -94,6 +94,27 @@ enum MomentSaveOutcome {
   savedOnPhone,
 }
 
+/// What the Moments area needs (D-115). It takes no account, couple,
+/// conversation or device identifier: an implementation is built for one
+/// account's couple conversation, which comes from the server. Handles are
+/// issued by the implementation and only refer back to it. Failures are
+/// [MomentException]s.
+abstract interface class MomentsBackend {
+  int get maxPhotos;
+
+  /// The timeline from this phone, newest first. No network.
+  List<MomentEntry> moments();
+
+  Future<void> refresh();
+
+  Future<void> retryPending();
+
+  Future<MomentSaveOutcome> create(MomentDraft draft);
+
+  /// Private plaintext for display only.
+  Future<Uint8List> openPhoto(MomentPhoto photo);
+}
+
 /// Moments for one couple on one device (Prompt 15, D-113–D-116): the
 /// couple's existing MLS conversation (D-104) carries each moment as its
 /// photos (kind-2 media references, keys only in the core, D-094) followed
@@ -111,7 +132,7 @@ enum MomentSaveOutcome {
 ///   never in logs.
 ///
 /// Operations that change local state run one at a time.
-class MomentsService {
+class MomentsService implements MomentsBackend {
   MomentsService({required this.messaging, DateTime Function()? now})
     : _now = now ?? DateTime.now;
 
@@ -121,9 +142,11 @@ class MomentsService {
   Future<void> _tail = Future.value();
   Future<void> _openTail = Future.value();
 
-  static const int maxPhotos = MomentPayload.maxPhotos;
+  @override
+  int get maxPhotos => MomentPayload.maxPhotos;
 
   /// The timeline from local history, newest first. No network.
+  @override
   List<MomentEntry> moments() => assembleMoments(
     messaging.core.history(messaging.conversation),
     isOwnAccount: _isOwnAccount,
@@ -132,6 +155,7 @@ class MomentsService {
   /// Confirms this device is still trusted (lineage, D-085), fetches what
   /// arrived and finishes queued saves. A device that is no longer active
   /// stops here: it fetches nothing new (D-096).
+  @override
   Future<void> refresh() => _serial(() async {
     try {
       await messaging.refreshTrust();
@@ -149,6 +173,7 @@ class MomentsService {
   });
 
   /// Finishes queued saves without fetching anything.
+  @override
   Future<void> retryPending() => _serial(() async {
     try {
       await messaging.flushOutbox();
@@ -164,6 +189,7 @@ class MomentsService {
   /// sent. Once sealed, the moment exists: a later upload failure only
   /// delays it ([MomentSaveOutcome.savedOnPhone]), and retrying never
   /// creates it twice.
+  @override
   Future<MomentSaveOutcome> create(MomentDraft draft) => _serial(() async {
     final count = draft.photos.length;
     _log('moment_upload_started', 'ok', {'photos': count});
@@ -221,6 +247,7 @@ class MomentsService {
   /// photos of a moment this phone can show open here. The result is
   /// private: render it, never store it; wipe it when done. One at a time,
   /// which also bounds plaintext in memory.
+  @override
   Future<Uint8List> openPhoto(MomentPhoto photo) {
     final result = _openTail.then((_) async {
       final known = moments().whereType<Moment>().any(
@@ -242,7 +269,7 @@ class MomentsService {
   void _validate(MomentDraft draft) {
     final photos = draft.photos;
     if (photos.isEmpty) throw const MomentException(MomentFailure.noPhotos);
-    if (photos.length > maxPhotos) {
+    if (photos.length > MomentPayload.maxPhotos) {
       throw const MomentException(MomentFailure.tooManyPhotos);
     }
     for (final p in photos) {

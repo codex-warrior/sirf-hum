@@ -15,7 +15,7 @@ void main() {
   final areaTitles = {
     ProductArea.home: 'Asha & Ravi',
     ProductArea.together: 'Spend time together, wherever you are.',
-    ProductArea.moments: 'Your story, just for the two of you.',
+    ProductArea.moments: 'Your memories, just for the two of you.',
     ProductArea.future: 'Where the two of you are going.',
     ProductArea.us: 'The two of you.',
   };

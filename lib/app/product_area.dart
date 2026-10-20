@@ -23,7 +23,7 @@ enum ProductArea {
   moments(
     path: '/moments',
     label: 'Moments',
-    purpose: 'Your story, just for the two of you.',
+    purpose: 'Your memories, just for the two of you.',
     icon: Icons.photo_library_outlined,
     selectedIcon: Icons.photo_library,
   ),

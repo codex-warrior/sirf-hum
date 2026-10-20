@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +8,8 @@ import 'package:sirf_hum/app/app_config.dart';
 import 'package:sirf_hum/app/app_providers.dart';
 import 'package:sirf_hum/app/environment_guard.dart';
 import 'package:sirf_hum/core/logging/app_logger.dart';
+import 'package:sirf_hum/features/moments/application/moment_photo_picker.dart';
+import 'package:sirf_hum/features/moments/data/system_photo_picker.dart';
 import 'package:sirf_hum/infrastructure/firebase/app_check_bootstrap.dart';
 import 'package:sirf_hum/infrastructure/firebase/callable_pairing_backend.dart';
 import 'package:sirf_hum/infrastructure/firebase/crash_reporting.dart';
@@ -54,6 +57,11 @@ Future<void> main() async {
         appConfigProvider.overrideWithValue(config),
         firebaseStatusProvider.overrideWithValue(firebaseStatus),
         ...sessionPortOverrides(firebaseStatus),
+        // Web never handles private media (D-046): no picker there.
+        if (!kIsWeb)
+          momentPhotoPickerProvider.overrideWithValue(
+            const SystemPhotoPicker(),
+          ),
       ],
       child: const SirfHumApp(),
     ),
