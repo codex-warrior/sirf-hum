@@ -371,7 +371,7 @@ void main() {
       await tester.tap(find.widgetWithText(TextButton, 'Sign out'));
       await tester.pumpAndSettle();
       expect(session.signOuts, 1);
-      expect(text('A private home for the two of you.'), findsOneWidget);
+      expect(text('Your private space for two.'), findsOneWidget);
       for (final t in ['Asha', 'Tum Hi Ho', 'Friday movie', 'Together since']) {
         expect(find.textContaining(t), findsNothing, reason: t);
       }

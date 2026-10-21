@@ -21,6 +21,10 @@ export const PROJECTS = {
   production: { id: 'sirf-hum-prod', number: '244475624083' },
 };
 
+export function isGoogleClientOf(project, clientId) {
+  return clientId.startsWith(`${project.number}-`) && clientId.endsWith('.apps.googleusercontent.com');
+}
+
 /** Returns the list of problems (empty when the config is valid for `env`). */
 export function checkEnvConfig(env, config) {
   const own = PROJECTS[env];
@@ -49,9 +53,20 @@ export function checkEnvConfig(env, config) {
       }
     }
   }
-  // Production never ships the debug provider (also refused at start-up).
-  if (env === 'production' && config.SH_APPCHECK_PROVIDER === 'debug') {
-    problems.push('production must not use the App Check debug provider');
+  // Google ID tokens are minted for this OAuth client (D-150): it must be
+  // one of this project's (Google prefixes client IDs with the project
+  // number). Also checked at start-up (environment_guard.dart).
+  const google = config.SH_GOOGLE_SERVER_CLIENT_ID ?? '';
+  if (google !== '' && !isGoogleClientOf(own, String(google))) {
+    problems.push("SH_GOOGLE_SERVER_CLIENT_ID is not an OAuth client of this environment's project");
+  }
+  if (env === 'production') {
+    // Production never ships the debug provider (also refused at start-up).
+    if (config.SH_APPCHECK_PROVIDER === 'debug') {
+      problems.push('production must not use the App Check debug provider');
+    }
+    // The production build offers Google sign-in (D-150).
+    if (google === '') problems.push('production requires SH_GOOGLE_SERVER_CLIENT_ID');
   }
   return problems;
 }

@@ -5,9 +5,14 @@ import 'package:sirf_hum/core/config/app_environment.dart';
 import 'package:sirf_hum/infrastructure/firebase/app_check_config.dart';
 import 'package:sirf_hum/infrastructure/firebase/firebase_config.dart';
 
-FirebaseConfig _firebase(String projectId) => FirebaseConfig(
+/// A realistic config for [projectId]: its own project number as sender.
+FirebaseConfig _firebase(String projectId, {String? sender}) => FirebaseConfig(
   projectId: projectId,
-  messagingSenderId: '1',
+  messagingSenderId:
+      sender ??
+      AppEnvironment.values
+          .firstWhere((e) => e.firebaseProjectId == projectId)
+          .firebaseProjectNumber,
   platform: FirebasePlatform.android,
   apps: const {
     FirebasePlatform.android: FirebaseAppCredentials(appId: 'a', apiKey: 'k'),
@@ -25,12 +30,17 @@ AppConfig _config(
   AppEnvironment env, {
   FirebaseConfig? firebase,
   AppCheckProvider appCheck = AppCheckProvider.attestation,
+  String? googleClient,
 }) => AppConfig(
   environment: env,
   firebase: firebase ?? _firebase(env.firebaseProjectId),
   appCheck: AppCheckConfig(provider: appCheck),
   crashReportingEnabled: false,
+  googleServerClientId: googleClient,
 );
+
+String _googleClientOf(AppEnvironment env) =>
+    '${env.firebaseProjectNumber}-abc123.apps.googleusercontent.com';
 
 void main() {
   test('each environment is consistent with its own project and flavor', () {
@@ -57,7 +67,8 @@ void main() {
       AppEnvironment.development,
       firebase: _firebase('sirf-hum-prod'),
     );
-    expect(environmentViolations(config), hasLength(1));
+    // Both the project ID and its number are production's.
+    expect(environmentViolations(config), hasLength(2));
     expect(
       () => ensureEnvironmentIsConsistent(config),
       throwsA(isA<EnvironmentMismatchError>()),
@@ -128,7 +139,9 @@ void main() {
   group('production web App Check (D-139)', () {
     FirebaseConfig web(String projectId) => FirebaseConfig(
       projectId: projectId,
-      messagingSenderId: '1',
+      messagingSenderId: AppEnvironment.values
+          .firstWhere((e) => e.firebaseProjectId == projectId)
+          .firebaseProjectNumber,
       platform: FirebasePlatform.web,
       apps: const {
         FirebasePlatform.web: FirebaseAppCredentials(appId: 'w', apiKey: 'k'),
@@ -192,5 +205,80 @@ void main() {
       ),
       isEmpty,
     );
+  });
+
+  test('a config with another project number is refused', () {
+    for (final env in AppEnvironment.values) {
+      for (final other in AppEnvironment.values.where((e) => e != env)) {
+        expect(
+          environmentViolations(
+            _config(
+              env,
+              firebase: _firebase(
+                env.firebaseProjectId,
+                sender: other.firebaseProjectNumber,
+              ),
+            ),
+          ),
+          hasLength(1),
+          reason: '${env.name} project with ${other.name} sender ID',
+        );
+      }
+    }
+  });
+
+  group('Google OAuth client (D-150)', () {
+    test('each environment accepts only its own client', () {
+      for (final env in AppEnvironment.values) {
+        expect(
+          environmentViolations(
+            _config(env, googleClient: _googleClientOf(env)),
+            nativeFlavor: env.name,
+          ),
+          isEmpty,
+        );
+        for (final other in AppEnvironment.values.where((e) => e != env)) {
+          expect(
+            () => ensureEnvironmentIsConsistent(
+              _config(env, googleClient: _googleClientOf(other)),
+            ),
+            throwsA(isA<EnvironmentMismatchError>()),
+            reason: '${env.name} build with a ${other.name} Google client',
+          );
+        }
+      }
+    });
+
+    test('production cannot start with the staging client', () {
+      expect(
+        environmentViolations(
+          _config(
+            AppEnvironment.production,
+            googleClient: _googleClientOf(AppEnvironment.staging),
+          ),
+        ),
+        hasLength(1),
+      );
+    });
+
+    test('a value that is not a Google client ID is refused', () {
+      for (final bad in [
+        '244475624083-abc.example.com',
+        'abc.apps.googleusercontent.com',
+        '',
+      ]) {
+        expect(
+          environmentViolations(
+            _config(AppEnvironment.production, googleClient: bad),
+          ),
+          isNotEmpty,
+          reason: bad,
+        );
+      }
+    });
+
+    test('no client: Google is simply not offered', () {
+      expect(environmentViolations(_config(AppEnvironment.staging)), isEmpty);
+    });
   });
 }

@@ -59,6 +59,10 @@ enum WindowSize {
   /// Readable content width on large screens (web/tablet).
   static const double maxContentWidth = 720;
 
+  /// A single column of actions (sign-in): full width on a phone, never a
+  /// stretched bar on a tablet or browser.
+  static const double maxFormWidth = 440;
+
   static WindowSize fromWidth(double width) {
     if (width >= expandedMinWidth) return WindowSize.expanded;
     if (width >= mediumMinWidth) return WindowSize.medium;

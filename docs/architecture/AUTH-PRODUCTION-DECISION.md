@@ -2,7 +2,9 @@
 
 Status: **Accepted by the owner (D-138), 2026-10-21. Built for Android in
 Prompt 19 (D-148); staging configuration in progress; production not
-configured.** Follows D-029 (no provider before the identity
+configured. Amended by D-150 (owner request, 2026-10-21): "Continue with
+Google" is the primary provider and email link the fallback; see §11.**
+Follows D-029 (no provider before the identity
 phase; intended baseline "email link or email/password") and D-107
 (session observation only; sign-in method open).
 
@@ -153,5 +155,47 @@ path, tests including account switch during the link round-trip.
 
 ## 11. Status
 
-P1-7 stays **open**: this document decides the provider (pending owner
-approval); nothing is configured or built.
+P1-7 stays **open** until production Auth is configured and both
+providers are tested on a production-signed phone. Built: email link
+(D-148) and Google (D-150) on Android. Staging Auth is configured for
+email link only (no Google provider yet). Development and production Auth
+are not initialized (verified 2026-10-21: `CONFIGURATION_NOT_FOUND`).
+
+## 12. Google sign-in (D-150)
+
+Owner request (2026-10-21): **Continue with Google** first, **Continue
+with Email** (this document's email link) as the fallback, in every
+environment. §2's "reconsider only with a written justification" is met by
+D-150: Google is what most Android users already have on the phone, it
+adds no password, and it changes nothing in §3: a Google session is still
+only an account session.
+
+| | |
+| --- | --- |
+| Flow | `google_sign_in` 7.2.0 (Credential Manager) → Google **ID token** for the project's Web OAuth client → `signInWithCredential(GoogleAuthProvider.credential(idToken))`. No access token, no scopes, nothing stored, no token to our backend, no client secret in any client |
+| New vs existing | Firebase decides; the app treats both the same (only a `new_account` boolean is logged) |
+| Same email, two providers | One account per email (staging verified: `allowDuplicateEmails` unset). Google for an address Firebase trusts Google for → same UID. Otherwise `account-exists-with-different-credential` → "Continue with Email"; the app **never links** accounts. Email link to a Google address → same UID |
+| Unverified | Signed out at once; callables refuse it anyway (D-149) |
+| Privacy (§7 addition) | Firebase Auth keeps the Google account's name and photo URL on the Auth user record. Sirf Hum never reads them (the couple sees the display name the user types) |
+| Compromised Google account | Same as a compromised mailbox (§3, §9): metadata and a pending device, never content |
+
+### Console steps per project (owner; staging first, then production)
+
+Only the console can do these: enabling Google creates the Web OAuth
+client **and its secret**, which stays inside Firebase and must never be
+copied into the repository.
+
+1. (Production and development only) **Authentication → Get started**.
+2. **Authentication → Sign-in method → Add new provider → Google →
+   Enable**; choose the project support email; Save.
+3. **Project settings → Your apps → that project's Android app only**
+   (`com.sirfhum.app.staging` / `com.sirfhum.app`) → **Add fingerprint** →
+   the **SHA-1** of that environment's signing key (staging: from the
+   Staging beta build job summary; production: from the production upload
+   key, later also Play's app-signing key). Never add a staging fingerprint
+   to production or the reverse.
+4. Production only: §10 steps 2–5 (email link, enumeration protection,
+   authorized domains, templates).
+5. Then `node tool/generate_env_config.mjs <env>` regenerates the config,
+   now with `SH_GOOGLE_SERVER_CLIENT_ID`, and the environment's
+   `SH_ENV_CONFIG_JSON` GitHub secret is updated from it.

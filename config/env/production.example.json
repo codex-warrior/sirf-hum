@@ -11,6 +11,7 @@
   "SH_FIREBASE_IOS_API_KEY": "<generated>",
   "SH_FIREBASE_WEB_APP_ID": "<generated>",
   "SH_FIREBASE_WEB_API_KEY": "<generated>",
+  "SH_GOOGLE_SERVER_CLIENT_ID": "<generated>",
   "SH_APPCHECK_PROVIDER": "attestation",
   "SH_APPCHECK_WEB_RECAPTCHA_SITE_KEY": "<reCAPTCHA Enterprise site key>",
   "SH_CRASH_REPORTING": "true"

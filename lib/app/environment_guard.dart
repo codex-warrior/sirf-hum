@@ -1,4 +1,5 @@
 import 'package:sirf_hum/app/app_config.dart';
+import 'package:sirf_hum/core/config/app_environment.dart';
 import 'package:sirf_hum/infrastructure/firebase/app_check_config.dart';
 import 'package:sirf_hum/infrastructure/firebase/firebase_config.dart';
 
@@ -16,6 +17,14 @@ List<String> environmentViolations(AppConfig config, {String? nativeFlavor}) {
         config.firebase.projectId != env.firebaseProjectId)
       'Firebase project "${config.firebase.projectId}" is not allowed for '
           '${env.name}; expected "${env.firebaseProjectId}".',
+    if (config.firebase.isComplete &&
+        config.firebase.messagingSenderId != env.firebaseProjectNumber)
+      'Firebase messaging sender ID is not the ${env.name} project number.',
+    // Google ID tokens are minted for this client; another project's client
+    // would sign users in to the wrong project, or fail (D-150).
+    if (config.googleServerClientId case final client?
+        when !isGoogleClientOf(env, client))
+      'The Google OAuth client ID is not a ${env.name} client.',
     if (env.isProduction && config.appCheck.provider == AppCheckProvider.debug)
       'The App Check debug provider is never allowed in production.',
     if (env.isProduction && !config.firebase.isComplete)
@@ -29,6 +38,12 @@ List<String> environmentViolations(AppConfig config, {String? nativeFlavor}) {
           '(SH_APPCHECK_WEB_RECAPTCHA_SITE_KEY) for App Check.',
   ];
 }
+
+/// Whether [clientId] is an OAuth client of [env]'s project: Google prefixes
+/// client IDs with the project number.
+bool isGoogleClientOf(AppEnvironment env, String clientId) =>
+    clientId.startsWith('${env.firebaseProjectNumber}-') &&
+    clientId.endsWith('.apps.googleusercontent.com');
 
 class EnvironmentMismatchError extends Error {
   EnvironmentMismatchError(this.violations);

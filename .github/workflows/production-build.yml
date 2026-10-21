@@ -1,0 +1,188 @@
+name: Production Android build
+
+# Manual. Builds the signed PRODUCTION Android app (com.sirfhum.app) as an
+# APK (internal sideload) and an AAB (Play internal testing, uploaded by the
+# owner by hand) (D-150, D-143). Never deploys, never uploads to Google Play
+# or anywhere else, holds no deploy credentials, and cannot build any other
+# flavor.
+#
+# Gates, all required, in order:
+#   - run from main, with the typed confirmation `sirf-hum-prod`;
+#   - the `production` GitHub Environment (main-only branch policy; its
+#     secrets exist only there);
+#   - config/launch_gate.json productionTraffic == "open" (D-137): a
+#     production build handed to people IS production traffic, so it waits
+#     for the same gate as production Functions and Hosting;
+#   - the production client config passes tool/check_env_config.mjs
+#     (production project only, no App Check debug provider, Google client
+#     present) and is never modified here (no debug App Check, unlike the
+#     staging beta, D-147);
+#   - signing with the production upload key (secrets
+#     PRODUCTION_KEYSTORE_BASE64, PRODUCTION_KEYSTORE_PASSWORD), whose
+#     SHA-256 must equal the environment variable PRODUCTION_CERT_SHA256 and
+#     must not be the staging certificate.
+# Artifacts on this public repository are visible to signed-in GitHub users,
+# so retention is short; a provenance attestation records the digests.
+# Supply chain (D-124): actions pinned to full commit SHAs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type sirf-hum-prod to build the production app
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-build
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: 3.41.5
+  APK: build/app/outputs/flutter-apk/app-production-release.apk
+  AAB: build/app/outputs/bundle/productionRelease/app-production-release.aab
+  # The staging certificate (staging-build.yml) must never sign production.
+  STAGING_CERT_SHA256: e7c88d35f7c9f52093a7ca758ff320480460f639499f9db3d4e2551095a4bbc7
+
+jobs:
+  build:
+    name: Production release (com.sirfhum.app)
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Production gates
+        # Inputs reach the shell as environment variables, never as text
+        # spliced into the script (D-124).
+        env:
+          REF: ${{ github.ref }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::Production builds must run from main."; exit 1
+          fi
+          if [ "$CONFIRM" != "sirf-hum-prod" ]; then
+            echo "::error::Type sirf-hum-prod in the 'confirm' input to build production."; exit 1
+          fi
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Launch gate is open (D-137)
+        run: |
+          gate="$(node -p 'require("./config/launch_gate.json").productionTraffic')"
+          if [ "$gate" != "open" ]; then
+            echo "::error::config/launch_gate.json productionTraffic is '$gate'. A production build for real users waits for the launch gate (docs/security/audit/PRODUCTION-LAUNCH-GATE.md)."
+            exit 1
+          fi
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      # Same pinned NDK and Rust toolchain as ci.yml (see the comments there).
+      - name: Install pinned Android NDK
+        run: |
+          for attempt in 1 2 3; do
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;28.2.13676358" > /dev/null \
+              && test -f "$ANDROID_HOME/ndk/28.2.13676358/source.properties" && exit 0
+            echo "NDK install attempt $attempt failed; retrying"
+            rm -rf "$ANDROID_HOME/ndk/28.2.13676358"
+          done
+          exit 1
+      - name: Install pinned Rust toolchain
+        working-directory: packages/sirf_hum_crypto/native
+        run: |
+          rustup toolchain install || true
+          rustc --version | grep -q '^rustc 1\.96\.0 ' || { echo "::error::rustc is not the pinned 1.96.0"; exit 1; }
+      - name: Write and check the production config
+        env:
+          SH_ENV_CONFIG_JSON: ${{ secrets.SH_ENV_CONFIG_JSON }}
+        run: |
+          [[ -n "$SH_ENV_CONFIG_JSON" ]] || { echo "::error::production secret SH_ENV_CONFIG_JSON is not set"; exit 1; }
+          printf '%s' "$SH_ENV_CONFIG_JSON" > config/env/production.json
+          node tool/check_env_config.mjs production config/env/production.json
+          provider="$(node -p 'require("./config/env/production.json").SH_APPCHECK_PROVIDER ?? ""')"
+          [[ "$provider" == "attestation" ]] || { echo "::error::production must use App Check attestation"; exit 1; }
+      - name: Production signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.PRODUCTION_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.PRODUCTION_KEYSTORE_PASSWORD }}
+          CERT_SHA256: ${{ vars.PRODUCTION_CERT_SHA256 }}
+        run: |
+          [[ -n "$KEYSTORE_BASE64" && -n "$KEYSTORE_PASSWORD" ]] || { echo "::error::production signing secrets are not set"; exit 1; }
+          [[ "$CERT_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::environment variable PRODUCTION_CERT_SHA256 is not set (lowercase hex)"; exit 1; }
+          [[ "$CERT_SHA256" != "$STAGING_CERT_SHA256" ]] || { echo "::error::the staging key must never sign production"; exit 1; }
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > android/app/production.jks
+          {
+            echo 'storeFile=production.jks'
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo 'keyAlias=production'
+            echo "keyPassword=$KEYSTORE_PASSWORD"
+          } > android/key.properties
+      # No SH_ALLOW_DEBUG_SIGNED_RELEASE: Gradle refuses an unsigned
+      # production release (D-143).
+      - name: Build APK and AAB
+        run: |
+          flutter build apk --release --flavor production --dart-define-from-file=config/env/production.json
+          flutter build appbundle --release --flavor production --dart-define-from-file=config/env/production.json
+      - name: Remove the signing key from the runner
+        if: always()
+        run: rm -f android/app/production.jks android/key.properties
+      - name: Gradle lockfile unchanged by the build
+        run: git diff --exit-code -- android/app/gradle.lockfile
+      - name: Verify application ID
+        run: |
+          aapt2="$(ls -d "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -n 1)"
+          "$aapt2" dump badging "$APK" | grep -q "package: name='com.sirfhum.app' " \
+            || { echo "::error::$APK is not com.sirfhum.app"; exit 1; }
+      - name: Verify the production signing certificate
+        env:
+          CERT_SHA256: ${{ vars.PRODUCTION_CERT_SHA256 }}
+        run: |
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)"
+          certs="$("$apksigner" verify --print-certs "$APK")"
+          grep -qi "SHA-256 digest: $CERT_SHA256" <<<"$certs" || { echo "::error::APK is not signed with the registered production key"; exit 1; }
+          if grep -qi "SHA-256 digest: $STAGING_CERT_SHA256" <<<"$certs"; then echo "::error::APK carries the staging certificate"; exit 1; fi
+          # Fingerprints are public; Google sign-in's Android OAuth client
+          # is keyed on the SHA-1 (register it on the production app only).
+          grep -i "SHA-1 digest" <<<"$certs" | head -n 1 >> "$GITHUB_STEP_SUMMARY"
+          jarsigner -verify "$AAB" > /dev/null || { echo "::error::AAB is not signed"; exit 1; }
+      - name: Verify crypto core is bundled for every ABI
+        run: |
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            unzip -l "$APK" | grep -q "lib/$abi/libsirf_hum_crypto.so" || { echo "::error::libsirf_hum_crypto.so missing for $abi"; exit 1; }
+          done
+      # The compiled Dart code carries the dart-defines: production's
+      # Android app ID and Google client, nothing of staging or development
+      # (project numbers: tool/check_env_config.mjs).
+      - name: Verify only production Firebase config is embedded
+        run: |
+          so="$(mktemp)"
+          unzip -p "$APK" lib/arm64-v8a/libapp.so > "$so"
+          grep -aq '1:244475624083:android:' "$so" || { echo "::error::production Android app ID not embedded"; exit 1; }
+          grep -aq '244475624083-[a-z0-9]*\.apps\.googleusercontent\.com' "$so" || { echo "::error::production Google client not embedded"; exit 1; }
+          for number in 203770631547 627383930881; do
+            if grep -aq "$number" "$so"; then echo "::error::another environment's identifier is embedded"; exit 1; fi
+          done
+          sha256sum "$APK" "$AAB" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            ${{ env.APK }}
+            ${{ env.AAB }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sirf-hum-production-android
+          path: |
+            ${{ env.APK }}
+            ${{ env.AAB }}
+          retention-days: 3
+          if-no-files-found: error

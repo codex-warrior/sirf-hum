@@ -23,7 +23,7 @@ void main() {
         backend: backend,
       );
 
-      expect(find.text('A private home for the two of you.'), findsOneWidget);
+      expect(find.text('Your private space for two.'), findsOneWidget);
       expect(
         find.text('Signing in opens in an upcoming version of Sirf Hum.'),
         findsOneWidget,
@@ -97,7 +97,7 @@ void main() {
       await tester.tap(find.text('Sign out'));
       await tester.pumpAndSettle();
       expect(session.signOuts, 1);
-      expect(find.text('A private home for the two of you.'), findsOneWidget);
+      expect(find.text('Your private space for two.'), findsOneWidget);
     });
   });
 
@@ -165,7 +165,7 @@ void main() {
       await tester.tap(find.text('Sign out'));
       await tester.pumpAndSettle();
       expect(session.signOuts, 1);
-      expect(find.text('A private home for the two of you.'), findsOneWidget);
+      expect(find.text('Your private space for two.'), findsOneWidget);
     });
 
     testWidgets('Firebase failed to start: honest copy, no dead button', (
@@ -176,7 +176,7 @@ void main() {
       expect(find.text('Sirf Hum couldn’t start.'), findsOneWidget);
       expect(find.byType(FilledButton), findsNothing);
       expect(find.byType(NavigationBar), findsNothing);
-      expect(find.text('A private home for the two of you.'), findsNothing);
+      expect(find.text('Your private space for two.'), findsNothing);
       expectNoSecretsOnScreen(tester);
     });
 

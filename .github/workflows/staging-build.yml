@@ -101,8 +101,12 @@ jobs:
       - name: Verify the staging signing certificate
         run: |
           apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)"
-          "$apksigner" verify --print-certs "$APK" | grep -qi "SHA-256 digest: $STAGING_CERT_SHA256" \
+          certs="$("$apksigner" verify --print-certs "$APK")"
+          grep -qi "SHA-256 digest: $STAGING_CERT_SHA256" <<<"$certs" \
             || { echo "::error::APK is not signed with the registered staging key"; exit 1; }
+          # Public fingerprint. Google sign-in's Android OAuth client is
+          # keyed on the SHA-1: register it on the staging app only (D-150).
+          grep -i "SHA-1 digest" <<<"$certs" | head -n 1 >> "$GITHUB_STEP_SUMMARY"
       - name: Verify crypto core is bundled for every ABI
         run: |
           for abi in arm64-v8a armeabi-v7a x86_64; do
@@ -116,8 +120,12 @@ jobs:
           so="$(mktemp)"
           unzip -p "$APK" lib/arm64-v8a/libapp.so > "$so"
           grep -aq '1:203770631547:android:' "$so" || { echo "::error::staging Android app ID not embedded"; exit 1; }
+          # D-150: Google sign-in, when configured, uses staging's client.
+          if grep -aq 'apps\.googleusercontent\.com' "$so"; then
+            grep -aq '203770631547-[a-z0-9]*\.apps\.googleusercontent\.com' "$so" || { echo "::error::Google client is not staging's"; exit 1; }
+          fi
           for number in 244475624083 627383930881; do
-            if grep -aq "1:$number:" "$so"; then echo "::error::another environment's app ID is embedded"; exit 1; fi
+            if grep -aq -e "1:$number:" -e "$number-" "$so"; then echo "::error::another environment's app or OAuth client ID is embedded"; exit 1; fi
           done
           sha256sum "$APK"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

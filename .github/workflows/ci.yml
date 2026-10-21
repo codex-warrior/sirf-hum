@@ -300,7 +300,7 @@ jobs:
         run: node tool/check_web_headers.mjs
       - name: Environment config isolation (tool/check_env_config.mjs)
         working-directory: .
-        run: node --test tool/test_check_env_config.mjs tool/test_app_links.mjs
+        run: node --test tool/test_check_env_config.mjs tool/test_app_links.mjs tool/test_production_build.mjs
 
   # Known-vulnerability gate for the Dart/Flutter dependencies (Prompt 17B,
   # D-133) and, since Prompt 18, the locked Gradle release classpaths

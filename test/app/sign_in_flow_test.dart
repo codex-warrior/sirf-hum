@@ -81,8 +81,10 @@ void main() {
         ],
       );
 
+      await tester.tap(find.text('Continue with Email'));
+      await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'a@example.com');
-      await tester.tap(find.text('Send sign-in link'));
+      await tester.tap(find.text('Send link'));
       await tester.pumpAndSettle();
       expect(signIn.sent, ['a@example.com']);
       expect(find.textContaining('Check your email'), findsOneWidget);
@@ -110,8 +112,10 @@ void main() {
           authLinkDomainProvider.overrideWithValue(_domain),
         ],
       );
+      await tester.tap(find.text('Continue with Email'));
+      await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'nope');
-      await tester.tap(find.text('Send sign-in link'));
+      await tester.tap(find.text('Send link'));
       await tester.pumpAndSettle();
       expect(signIn.sent, isEmpty);
       expect(

@@ -5,8 +5,8 @@ import 'package:sirf_hum_crypto/sirf_hum_crypto.dart';
 /// Firebase Auth implementation of [AccountSession] (D-107).
 ///
 /// `authStateChanges` emits the restored session first, which is the app's
-/// only "auth restoration" path. Sign-in itself is not implemented: the
-/// sign-in method is an open product decision.
+/// only "auth restoration" path, whichever provider signed in (Google or
+/// email link, D-150): the session sees an account, never a provider.
 class FirebaseAccountSession implements AccountSession {
   FirebaseAccountSession({FirebaseAuth? auth})
     : _auth = auth ?? FirebaseAuth.instance;

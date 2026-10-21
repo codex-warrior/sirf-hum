@@ -6,24 +6,34 @@
 enum AppEnvironment {
   development(
     firebaseProjectId: 'sirf-hum-dev',
+    firebaseProjectNumber: '627383930881',
     androidApplicationId: 'com.sirfhum.app.dev',
   ),
   staging(
     firebaseProjectId: 'sirf-hum-staging',
+    firebaseProjectNumber: '203770631547',
     androidApplicationId: 'com.sirfhum.app.staging',
   ),
   production(
     firebaseProjectId: 'sirf-hum-prod',
+    firebaseProjectNumber: '244475624083',
     androidApplicationId: 'com.sirfhum.app',
   );
 
   const AppEnvironment({
     required this.firebaseProjectId,
+    required this.firebaseProjectNumber,
     required this.androidApplicationId,
   });
 
   /// The only Firebase project this environment may connect to.
   final String firebaseProjectId;
+
+  /// That project's number (public; same table as
+  /// `tool/check_env_config.mjs`). It prefixes the project's Firebase app
+  /// IDs, its messaging sender ID and its OAuth client IDs, so it catches a
+  /// config that mixes two projects.
+  final String firebaseProjectNumber;
 
   /// The Android identity of this environment (D-022; `applicationId` plus
   /// the flavor suffix in `android/app/build.gradle.kts`). Sign-in links

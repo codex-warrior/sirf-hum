@@ -8,6 +8,7 @@ import 'package:sirf_hum/security/account/account_session.dart';
 import 'package:sirf_hum/security/couple/couple_profiles.dart';
 import 'package:sirf_hum/security/couple/pairing.dart';
 import 'package:sirf_hum/session/session_state.dart';
+import 'package:sirf_hum/session/sign_in_controller.dart';
 import 'package:sirf_hum_crypto/sirf_hum_crypto.dart';
 
 /// Ports, overridden in `main.dart` with the Firebase implementations. The
@@ -81,7 +82,13 @@ class SessionController extends Notifier<SessionState> {
     await _resolve(account, generation);
   }
 
-  Future<void> signOut() => ref.read(accountSessionProvider).signOut();
+  /// Ends the account session, then forgets the Google account choice so
+  /// the next "Continue with Google" asks again (D-150). Device keys and
+  /// trust are untouched: signing out is not revocation.
+  Future<void> signOut() async {
+    await ref.read(accountSessionProvider).signOut();
+    await ref.read(googleSignInProvider)?.forget();
+  }
 
   void _onAccount(AccountId? account) {
     if (account != null && account == _account && state is! SessionSignedOut) {

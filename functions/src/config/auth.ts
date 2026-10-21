@@ -1,7 +1,10 @@
 /**
- * Which account a callable request may act for (D-138, D-149).
+ * Which account a callable request may act for (D-138, D-149, D-150).
  *
- * Sign-in is email link only, which always yields a verified email. But
+ * Sign-in is Google or email link; both yield a verified email for real
+ * users, and neither grants anything beyond naming the account: the
+ * provider is deliberately not read here or anywhere else (device trust is
+ * device-key proofs). But
  * Firebase Auth cannot offer email links without the Email/Password
  * provider, so anyone with the public API key can still create a
  * *password* account for an address they do not control. Such an account

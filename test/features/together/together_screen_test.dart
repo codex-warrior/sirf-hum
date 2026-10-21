@@ -204,7 +204,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(text('You’re together.'), findsNothing);
     expect(find.textContaining('Ravi'), findsNothing);
-    expect(text('A private home for the two of you.'), findsOneWidget);
+    expect(text('Your private space for two.'), findsOneWidget);
   });
 
   testWidgets('Home → Together reaches the hub', (tester) async {

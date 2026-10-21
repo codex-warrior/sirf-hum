@@ -5,6 +5,7 @@ export 'package:sirf_hum/design_system/components/app_page.dart';
 export 'package:sirf_hum/design_system/components/couple_mark.dart';
 export 'package:sirf_hum/design_system/components/empty_state.dart';
 export 'package:sirf_hum/design_system/components/error_state.dart';
+export 'package:sirf_hum/design_system/components/google_mark.dart';
 export 'package:sirf_hum/design_system/components/notice.dart';
 export 'package:sirf_hum/design_system/components/scannable_code.dart';
 export 'package:sirf_hum/design_system/components/section.dart';
