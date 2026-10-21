@@ -9,10 +9,10 @@
  *   requestUnpairChallenge   single-use nonce bound to (account, device,
  *                            couple)
  *   unpairCouple             verifies, in one transaction, the challenge,
- *                            the device (active NOW), the couple (active,
- *                            the caller a member, the caller's partner
- *                            record naming it) and the device proof
- *                            (purpose `unpair` = 8) over:
+ *                            the couple (active, the caller a member), the
+ *                            device (active NOW) and the device proof
+ *                            (purpose `unpair` = 8), and only then reads
+ *                            the couple's conversations (P3-15), over:
  *
  *   SHA-256( "SirfHum-Unpair-v1" | u8 1 | nonce[32] | u32 len | account
  *          | device id[16] | couple id[16] )
@@ -189,43 +189,57 @@ export async function unpairCouple(
       tx.get(deviceRef(db, accountId, deviceId)),
       tx.get(coupleRef(db, coupleId)),
     ]);
-    const members = couple.get('members') as unknown;
-    const memberList = Array.isArray(members) ? members.filter((m): m is string => typeof m === 'string') : [];
-    // Every read before the first write (Firestore transactions).
-    const partners = memberList.length === 2 ? await Promise.all(memberList.map((m) => tx.get(partnerRef(db, m)))) : [];
-    const conversations = couple.exists ? await coupleConversations(db, tx, coupleId, partners, list) : [];
 
+    // P3-15 (Prompt 18, D-144): authorize BEFORE touching the couple's
+    // conversations. Until the challenge, couple membership, device and
+    // proof all hold, the caller causes no listing and no lineage walk and
+    // learns nothing about the lineage's length. Firestore needs every read
+    // before the first write, so a refusal returns here, before any further
+    // read, and only then consumes the challenge.
+    const refusal = ((): DeviceFailure | null => {
+      if (
+        challenge.get('accountId') !== accountId ||
+        challenge.get('deviceId') !== deviceId ||
+        challenge.get('purpose') !== UNPAIR_PURPOSE ||
+        challenge.get('coupleId') !== coupleId
+      ) {
+        return 'challenge_invalid';
+      }
+      const expiresAt = challenge.get('expiresAt') as unknown;
+      if (!(expiresAt instanceof Timestamp) || expiresAt.toMillis() <= now.getTime()) return 'challenge_expired';
+      const coupleState = coupleFailure(couple, accountId);
+      if (coupleState !== null) return coupleState;
+      if (!device.exists) return 'device_not_found';
+      if (device.get('status') !== 'active') return 'device_not_active';
+      try {
+        const signed = unpairAuthorizationChallenge({
+          nonce: Buffer.from(challenge.get('challenge') as Uint8Array),
+          accountId,
+          deviceId: Buffer.from(deviceId, 'hex'),
+          coupleId: Buffer.from(coupleId, 'hex'),
+        });
+        const cert = verifyDeviceProof(ProofPurpose.unpair, accountId, Buffer.from(device.get('certificate') as Uint8Array), signed, proof);
+        if (cert.deviceId.toString('hex') !== deviceId) return 'certificate_invalid';
+      } catch (error) {
+        if (error instanceof InvalidCertificateError) return 'certificate_invalid';
+        if (error instanceof InvalidProofError) return 'proof_invalid';
+        throw error;
+      }
+      return null;
+    })();
     if (!challenge.exists) return 'challenge_invalid';
-    tx.delete(challengeRef); // single-use whatever the outcome
-    if (
-      challenge.get('accountId') !== accountId ||
-      challenge.get('deviceId') !== deviceId ||
-      challenge.get('purpose') !== UNPAIR_PURPOSE ||
-      challenge.get('coupleId') !== coupleId
-    ) {
-      return 'challenge_invalid';
-    }
-    const expiresAt = challenge.get('expiresAt') as unknown;
-    if (!(expiresAt instanceof Timestamp) || expiresAt.toMillis() <= now.getTime()) return 'challenge_expired';
-    const coupleState = coupleFailure(couple, accountId);
-    if (coupleState !== null) return coupleState;
-    if (!device.exists) return 'device_not_found';
-    if (device.get('status') !== 'active') return 'device_not_active';
-    try {
-      const signed = unpairAuthorizationChallenge({
-        nonce: Buffer.from(challenge.get('challenge') as Uint8Array),
-        accountId,
-        deviceId: Buffer.from(deviceId, 'hex'),
-        coupleId: Buffer.from(coupleId, 'hex'),
-      });
-      const cert = verifyDeviceProof(ProofPurpose.unpair, accountId, Buffer.from(device.get('certificate') as Uint8Array), signed, proof);
-      if (cert.deviceId.toString('hex') !== deviceId) return 'certificate_invalid';
-    } catch (error) {
-      if (error instanceof InvalidCertificateError) return 'certificate_invalid';
-      if (error instanceof InvalidProofError) return 'proof_invalid';
-      throw error;
+    if (refusal !== null) {
+      tx.delete(challengeRef); // single-use whatever the outcome
+      return refusal;
     }
 
+    // Authorized: now every remaining read, still before the first write.
+    // The couple is active with exactly these two members (checked above).
+    const members = (couple.get('members') as unknown[]).filter((m): m is string => typeof m === 'string');
+    const partners = members.length === 2 ? await Promise.all(members.map((m) => tx.get(partnerRef(db, m)))) : [];
+    const conversations = await coupleConversations(db, tx, coupleId, partners, list);
+
+    tx.delete(challengeRef);
     tx.update(couple.ref, { status: 'dissolved', dissolvedAt: FieldValue.serverTimestamp(), dissolvedByDeviceId: deviceId });
     for (const c of conversations) {
       if (c.get('state') !== 'closed') tx.update(c.ref, { state: 'closed', closedAt: FieldValue.serverTimestamp() });
