@@ -86,7 +86,7 @@ Finding IDs P17-xx: [PROMPT-17-SECURITY-REVIEW](PROMPT-17-SECURITY-REVIEW.md),
 | P3-5 | Notification timing visible to FCM and onlookers (incl. security alerts, D-132) | E11, E40, E75 |
 | P3-6 | Plaintext in the Dart heap cannot be reliably wiped | E23, E46, E67 |
 | P3-7 | Reads without rate limits (`listDeviceApprovalRequests`, `getPairingState`) | P17-14 |
-| P3-8 | Dev-only `@grpc/grpc-js` advisories in the rules-test harness | P17-15 |
+| P3-8 | Dev-only `@grpc/grpc-js` advisories in the rules-test harness (GHSA-m9gg-hp2v-232j high, GHSA-f596-whhp-79r4 low; Dependabot alerts 1, 2) | P17-15. **Fixed in Prompt 18:** `firebase/package.json` overrides `@grpc/grpc-js` to 1.13.7 (`@firebase/firestore` 4.18.0 pins `~1.9`); `npm audit` 5 high → 0; rules tests 61 + 20 pass. Dev-only, never shipped; remove the override when `firebase` lifts its pin |
 | P3-9 | RUSTSEC-2026-0330/0331 (uncompiled `libcrux-kem`), RUSTSEC-2026-0173 (compile-time `proc-macro-error2`): re-verified each CI run; remove with the next OpenMLS upgrade | D-068 |
 | P3-10 | Server controls lineage ordering/completeness | E28, D-084 |
 | P3-11 | A stolen unlocked active device can approve/reject/revoke/cancel a reset; only-device-stolen-without-recovery-key case | E25, D-081 |
@@ -97,7 +97,7 @@ Finding IDs P17-xx: [PROMPT-17-SECURITY-REVIEW](PROMPT-17-SECURITY-REVIEW.md),
 
 ## Closed in Prompt 18
 
-P3-15 (D-144), P2-3 (D-141), P2-6 (D-142); implementation evidence only,
+P3-15 (D-144), P2-3 (D-141), P2-6 (D-142), P3-8 (D-142, override); implementation evidence only,
 independent review is P0-1.
 
 ## Closed in Prompt 17

@@ -96,7 +96,7 @@ still needs the owner's written acceptance at launch.
 | P3-5 Notification timing | **PASS** (documented) | E11, E40, E75, D-132 |
 | P3-6 Dart heap plaintext | **PASS** (documented) | E23, E46, E67 |
 | P3-7 Unthrottled reads | **PASS** (documented) | P17-14 |
-| P3-8 Dev-only grpc-js advisories | **PASS** (documented) | P17-15 |
+| P3-8 Dev-only grpc-js advisories | **PASS** (fixed in Prompt 18) | `overrides` → 1.13.7; `npm audit` 0; rules tests 61 + 20 (D-142) |
 | P3-9 RUSTSEC-2026-0330/0331/0173 exceptions | **PASS** (re-verified every CI run) | `tool/crypto_audit.sh`; no compatible OpenMLS upgrade removes them (re-checked 2026-10-21) |
 | P3-10 Server controls lineage ordering | **PASS** (documented) | D-084, R `documented_limit_peers_rely_on_server_ordering_for_revoked_approvers` |
 | P3-11 Stolen unlocked active device | **PASS** (documented) | D-081 |
