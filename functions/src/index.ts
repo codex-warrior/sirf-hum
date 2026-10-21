@@ -21,6 +21,7 @@ import { onInit } from 'firebase-functions/v2/core';
 import { HttpsError, onCall, type FunctionsErrorCode } from 'firebase-functions/v2/https';
 import * as logger from 'firebase-functions/logger';
 import { defineString } from 'firebase-functions/params';
+import { verifiedUid } from './config/auth';
 import { setGlobalOptions } from 'firebase-functions/v2';
 import {
   assertProjectMatches,
@@ -150,7 +151,7 @@ async function guarded<T>(event: string, run: () => Promise<T>): Promise<T> {
 const deviceCallOptions = { enforceAppCheck: true } as const;
 
 const callable = <T>(event: string, run: (uid: string | undefined, data: unknown, now: Date) => Promise<T>) =>
-  onCall(deviceCallOptions, (request) => guarded(event, () => run(request.auth?.uid, request.data, new Date())));
+  onCall(deviceCallOptions, (request) => guarded(event, () => run(verifiedUid(request.auth), request.data, new Date())));
 
 const done = { ok: true } as const;
 
