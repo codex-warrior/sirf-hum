@@ -581,6 +581,122 @@ fn trust_policy_survives_restart_exactly() {
     );
 }
 
+// ------------------------------------------------------ Prompt 17 review
+
+/// D-122: A1 revokes A2, but A3 (approved by A1 earlier) has not refreshed
+/// lineage, so its own `approve_device` guard does not know. A2's holder
+/// certifies a fresh device ID with A2's retained PIK and A3 approves it.
+/// Before D-122 the chain verified, the static verifier listed the new
+/// device as proven, and only `apply_lineage` skipped it (and it could then
+/// approve others). One PIK may certify one device: the chain is invalid.
+#[test]
+fn a_revoked_pik_cannot_return_through_an_unaware_approver() {
+    let mut w = world();
+    let mut a3 = device("accountA");
+    let a1_a3 = approve(&mut w.a1, &a3);
+    let rev = revoke(&w.a1, &w.a2);
+    let (reborn, _) = forge(&w.a2, DeviceId([0x5a; 16]));
+    let reborn = reborn.encode();
+    let a3_reborn = Link {
+        approver: cert(&a3),
+        new: reborn.clone(),
+        expires: EXP,
+        sig: a3.approve_device(&reborn, &CH, EXP).unwrap(),
+    };
+    let lineage = blob(
+        "accountA",
+        &cert(&w.a1),
+        &[&w.a1_a2, &a1_a3, &a3_reborn],
+        &[&rev],
+    );
+    assert_eq!(
+        crate::lineage::verify_encoded(w.b1.state.provider.crypto(), &lineage).unwrap_err(),
+        CoreError::TrustChainInvalid
+    );
+    assert_eq!(
+        w.b1.trust_lineage(&lineage, 5).unwrap_err(),
+        CoreError::TrustChainInvalid
+    );
+    // The root's PIK is no exception.
+    let (twin, _) = forge(&w.a1, DeviceId([0x5b; 16]));
+    let twin = twin.encode();
+    let a3_twin = Link {
+        approver: cert(&a3),
+        new: twin.clone(),
+        expires: EXP,
+        sig: a3.approve_device(&twin, &CH, EXP).unwrap(),
+    };
+    assert_eq!(
+        w.b1.trust_lineage(&blob("accountA", &cert(&w.a1), &[&a1_a3, &a3_twin], &[]), 5)
+            .unwrap_err(),
+        CoreError::TrustChainInvalid
+    );
+    // A refused lineage changes nothing: the last good one still holds.
+    let kp = w.a2.key_package().unwrap();
+    assert!(check(&mut w.b1, &kp).is_ok());
+}
+
+/// D-079, documented limit (Prompt 17): an older copy of the whole state
+/// is NOT detected. The restored files forget a revocation and the newer
+/// trust epoch, so stale server views are accepted again, until the next
+/// refresh with the server's current lineage re-learns the revocation. If
+/// this test starts failing because the restore IS detected, update D-079.
+#[test]
+fn documented_limit_a_restored_older_state_is_not_detected_until_refreshed() {
+    let store = SharedStore::default();
+    let keys = EphemeralTestKeyStore::new();
+    let mut b1 = CryptoCore::open(Box::new(store.clone()), &keys).unwrap();
+    b1.create_identity(AccountId::new("accountB").unwrap())
+        .unwrap();
+    let mut a1 = device("accountA");
+    let mut a2 = device("accountA");
+    let link = approve(&mut a1, &a2);
+    b1.trust_verified_person_key(pik(&a1)).unwrap();
+    b1.trust_lineage(&blob("accountA", &cert(&a1), &[&link], &[]), 3)
+        .unwrap();
+    b1.observe_trust_epoch(3).unwrap();
+    let snapshot: Vec<(String, Vec<u8>)> = store
+        .list("")
+        .unwrap()
+        .into_iter()
+        .map(|name| {
+            let record = store.get(&name).unwrap().unwrap();
+            (name, record)
+        })
+        .collect();
+
+    let rev = revoke(&a1, &a2);
+    let current = blob("accountA", &cert(&a1), &[&link], &[&rev]);
+    b1.trust_lineage(&current, 4).unwrap();
+    b1.observe_trust_epoch(4).unwrap();
+    let kp = a2.key_package().unwrap();
+    assert_eq!(
+        check(&mut b1, &kp).unwrap_err(),
+        CoreError::UnauthorizedDevice
+    );
+    drop(b1);
+
+    // Someone with write access to the app's files puts the old copy back
+    // (same device: the store key is unchanged).
+    let mut files = store.clone();
+    files.wipe_all().unwrap();
+    for (name, record) in &snapshot {
+        files.put(name, record).unwrap();
+    }
+    let mut b1 = CryptoCore::open(Box::new(store), &keys).unwrap();
+    assert!(check(&mut b1, &kp).is_ok(), "revocation forgotten");
+    assert_eq!(b1.observe_trust_epoch(3).unwrap(), 3, "floor rolled back");
+    b1.trust_lineage(&blob("accountA", &cert(&a1), &[&link], &[]), 3)
+        .unwrap();
+    // What bounds it: the server's current lineage re-learns the
+    // revocation, permanently.
+    b1.trust_lineage(&current, 4).unwrap();
+    assert_eq!(
+        check(&mut b1, &kp).unwrap_err(),
+        CoreError::UnauthorizedDevice
+    );
+}
+
 #[test]
 fn version_1_state_loads_with_person_keys_as_anchors() {
     let store = SharedStore::default();

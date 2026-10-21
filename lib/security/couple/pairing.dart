@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:sirf_hum/core/logging/app_logger.dart';
 import 'package:sirf_hum/core/logging/log_value.dart';
 import 'package:sirf_hum/security/device/device_registration.dart';
+import 'package:sirf_hum/security/messaging/lifecycle_authorization.dart';
 import 'package:sirf_hum_crypto/sirf_hum_crypto.dart';
 
 /// One signed pairing step (D-101). Each is authorized by this device's key
@@ -29,10 +30,17 @@ enum PairingFailure {
 
   /// This account already takes part in another open pairing.
   pairingInProgress,
+
+  /// The code the inviter entered is not the one the invitee's phone shows
+  /// (D-131). After three, the pairing is [pairingInvalidated].
+  confirmationCodeInvalid,
   alreadyPaired,
 
   /// An identity reset is pending on this account (D-082).
   identityResetPending,
+
+  /// Unpairing (D-136): unknown couple, not a member, or already dissolved.
+  coupleUnavailable,
 
   /// This device is not active, or its proof or challenge was refused.
   deviceNotTrusted,
@@ -52,8 +60,10 @@ enum PairingFailure {
     'pairing_expired' => pairingExpired,
     'pairing_invalidated' => pairingInvalidated,
     'pairing_in_progress' => pairingInProgress,
+    'confirmation_code_invalid' => confirmationCodeInvalid,
     'already_paired' => alreadyPaired,
     'identity_reset_pending' => identityResetPending,
+    'couple_unavailable' => coupleUnavailable,
     'device_not_active' ||
     'device_not_found' ||
     'proof_invalid' ||
@@ -176,8 +186,11 @@ sealed class PairingState {
           _ => throw const PairingException(PairingFailure.unavailable),
         },
         pairingId: id(data['pairingId']),
-        code: switch (data['confirmationCode']) {
-          final String c when _code.hasMatch(c) => c,
+        // D-131: only the invitee's phone shows the code; the inviter must
+        // enter what the invitee reads out, so it never receives it.
+        code: switch ((data['role'], data['confirmationCode'])) {
+          ('invitee', final String c) when _code.hasMatch(c) => c,
+          ('inviter', null) => null,
           _ => throw const PairingException(PairingFailure.unavailable),
         },
         partnerDisplayName: switch (data['partnerDisplayName']) {
@@ -204,7 +217,9 @@ class PairingInvited extends PairingState {
   final DateTime expiresAt;
 }
 
-/// Someone accepted; the inviter decides. Both sides show [code].
+/// Someone accepted; the inviter decides. The invitee's phone shows [code];
+/// the inviter types what the invitee reads out (D-131), so for the inviter
+/// [code] is null.
 class PairingAwaitingConfirmation extends PairingState {
   const PairingAwaitingConfirmation({
     required this.isInviter,
@@ -216,7 +231,7 @@ class PairingAwaitingConfirmation extends PairingState {
 
   final bool isInviter;
   final String pairingId;
-  final String code;
+  final String? code;
   final String? partnerDisplayName;
   final DateTime expiresAt;
 
@@ -245,13 +260,28 @@ abstract interface class PairingBackend {
 
   Future<PairingAcceptance> accept(SignedPairingStep step, String token);
 
-  Future<CoupleMembership> confirm(SignedPairingStep step, String pairingId);
+  /// [code]: the six digits the inviter entered (D-131).
+  Future<CoupleMembership> confirm(
+    SignedPairingStep step,
+    String pairingId,
+    String code,
+  );
 
   Future<void> reject(SignedPairingStep step, String pairingId);
 
   Future<void> cancel(SignedPairingStep step, String pairingId);
 
   Future<PairingState> state();
+
+  /// A single-use challenge for this device to end [coupleId] (D-136).
+  Future<PairingChallenge> requestUnpairChallenge({
+    required String deviceIdHex,
+    required String coupleId,
+  });
+
+  /// Ends the couple. [step]'s proof is purpose `unpair` over
+  /// `unpairAuthorizationChallenge`, not over the raw challenge.
+  Future<void> unpair(SignedPairingStep step, String coupleId);
 }
 
 /// A challenge answered with this device's key (64-byte proof).
@@ -303,12 +333,19 @@ class PairingService {
     );
   }
 
-  /// The inviter confirms the account that accepted (after comparing codes).
-  Future<CoupleMembership> confirm(String pairingId) => _run(
-    PairingStep.confirm,
-    (s) => _backend.confirm(s, pairingId),
-    pairingId: pairingId,
-  );
+  /// The inviter confirms the account that accepted, with the six-digit
+  /// [code] the invitee read out from their phone (D-131). A malformed code
+  /// is refused here without a server step.
+  Future<CoupleMembership> confirm(String pairingId, String code) {
+    if (!RegExp(r'^\d{6}$').hasMatch(code)) {
+      throw const PairingException(PairingFailure.invalidRequest);
+    }
+    return _run(
+      PairingStep.confirm,
+      (s) => _backend.confirm(s, pairingId, code),
+      pairingId: pairingId,
+    );
+  }
 
   /// The inviter refuses the account that accepted.
   Future<void> reject(String pairingId) => _run(
@@ -325,6 +362,63 @@ class PairingService {
   );
 
   Future<PairingState> state() => _backend.state();
+
+  /// Ends the couple [coupleId], unilaterally, from this device (Prompt 17C,
+  /// D-136). The device key signs a proof (purpose `unpair`) over a
+  /// single-use challenge bound to [account], this device and the couple, so
+  /// a Firebase session or password alone can never unpair. Irreversible:
+  /// the couple is dissolved, its conversations closed, partner access ends
+  /// for both accounts. What each phone already decrypted stays on it.
+  Future<void> unpair({
+    required AccountId account,
+    required String coupleId,
+  }) async {
+    if (!RegExp(r'^[0-9a-f]{32}$').hasMatch(coupleId)) {
+      throw const PairingException(PairingFailure.invalidRequest);
+    }
+    try {
+      core.checkAccount(account);
+      final identity = core.publicIdentity();
+      final device = _deviceHex;
+      final c = await _backend.requestUnpairChallenge(
+        deviceIdHex: device,
+        coupleId: coupleId,
+      );
+      await _backend.unpair(
+        SignedPairingStep(
+          deviceIdHex: device,
+          challengeId: c.challengeId,
+          proof: core.deviceProof(
+            DeviceProofPurpose.unpair,
+            unpairAuthorizationChallenge(
+              nonce: c.challenge,
+              accountId: account.value,
+              deviceId: identity.deviceId.bytes,
+              coupleId: _bytesOfHex(coupleId),
+            ),
+          ),
+        ),
+        coupleId,
+      );
+      _logUnpair('ok');
+    } on PairingException catch (e) {
+      _logUnpair(e.failure.name);
+      rethrow;
+    } on ArgumentError {
+      _logUnpair(PairingFailure.invalidRequest.name);
+      throw const PairingException(PairingFailure.invalidRequest);
+    }
+  }
+
+  static Uint8List _bytesOfHex(String hex) => Uint8List.fromList([
+    for (var i = 0; i < hex.length; i += 2)
+      int.parse(hex.substring(i, i + 2), radix: 16),
+  ]);
+
+  static void _logUnpair(String outcome) => AppLogger.info(
+    'couple_unpair',
+    fields: {'outcome': SafeLogString(outcome)},
+  );
 
   Future<T> _run<T>(
     PairingStep step,

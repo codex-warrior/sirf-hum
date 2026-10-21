@@ -26,7 +26,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { type DocumentReference, type DocumentSnapshot, FieldValue, type Firestore, Timestamp } from 'firebase-admin/firestore';
-import { InvalidCertificateError, verifyCertificate } from './certificate';
+import { type DeviceCertificate, InvalidCertificateError, verifyCertificate } from './certificate';
 import {
   Collections,
   DEVICE_ID_PATTERN,
@@ -45,7 +45,7 @@ import {
 import { CHALLENGE_BYTES, InvalidProofError, PROOF_BYTES, ProofPurpose, verifyDeviceProof } from './proof';
 import { bumpEpoch } from './epoch';
 import { consume, requireBudget } from './rateLimit';
-import { challengeFailure, keyIndexId, pendingFailure, recordFailure } from './registration';
+import { activationIndexes, anyIndexTaken, challengeFailure, claimIndexes, pendingFailure, recordFailure } from './registration';
 import {
   InvalidStatementError,
   RECOVERY_KEY_BYTES,
@@ -224,20 +224,19 @@ async function activateApproved(
   activation: Activation,
   trustFields: Record<string, unknown> = {},
 ): Promise<DeviceFailure | null> {
-  let deviceSignatureKey: Buffer;
+  let cert: DeviceCertificate;
   try {
-    deviceSignatureKey = verifyCertificate(device.get('certificate') as Uint8Array).deviceSignatureKey;
+    cert = verifyCertificate(device.get('certificate') as Uint8Array);
   } catch {
     return 'certificate_invalid';
   }
   const deviceId = device.id;
-  const idRef = db.collection(Collections.deviceIdIndex).doc(deviceId);
-  const keyRef = db.collection(Collections.deviceKeyIndex).doc(keyIndexId(deviceSignatureKey));
-  const [idIndex, keyIndex] = await Promise.all([tx.get(idRef), tx.get(keyRef)]);
-  if (idIndex.exists || keyIndex.exists) return 'duplicate_device';
+  // D-122: also refuses a person key any device ever activated with, e.g. a
+  // revoked device's retained PIK approved by a device that did not know.
+  const indexes = activationIndexes(db, deviceId, cert);
+  if (await anyIndexTaken(tx, indexes)) return 'duplicate_device';
   const epoch = bumpEpoch(tx, trust.ref, trust, trustFields);
-  tx.create(idRef, { accountId });
-  tx.create(keyRef, { accountId, deviceId });
+  claimIndexes(tx, indexes, accountId, deviceId);
   tx.update(device.ref, {
     status: 'active',
     activatedAt: FieldValue.serverTimestamp(),
@@ -319,21 +318,62 @@ export async function approveDevice(db: Firestore, uid: string | undefined, data
   }
 }
 
-/** Closes a request and rejects its device (terminal). */
-export async function rejectDeviceApproval(db: Firestore, uid: string | undefined, data: unknown, _now: Date): Promise<void> {
+/**
+ * Closes a request and rejects its device (terminal). Since Prompt 17B
+ * (D-129, finding P17-07) an ACTIVE device of the account must prove
+ * possession of its key over a single-use challenge bound to this request
+ * (proof purpose `approval_rejection` = 6): a password alone can no longer
+ * reject — and so permanently block — the owner's new devices.
+ */
+export async function rejectDeviceApproval(db: Firestore, uid: string | undefined, data: unknown, now: Date): Promise<void> {
   const accountId = requireAccount(uid);
-  const requestId = requirePattern(input(data).requestId, RECORD_ID_PATTERN);
+  const args = input(data);
+  const requestId = requirePattern(args.requestId, RECORD_ID_PATTERN);
+  const rejecterId = requirePattern(args.deviceId, DEVICE_ID_PATTERN);
+  const challengeId = requirePattern(args.challengeId, RECORD_ID_PATTERN);
+  const proof = requireBytes(args.proof, PROOF_BYTES);
+  await requireBudget(db, accountId, 'verificationFailure', now);
+
+  const challengeRef = db.collection(Collections.challenges).doc(challengeId);
   const failure = await db.runTransaction(async (tx): Promise<DeviceFailure | null> => {
-    const request = await tx.get(requestRef(db, requestId));
-    if (!request.exists || request.get('accountId') !== accountId) return 'request_invalid';
-    const device = await tx.get(deviceRef(db, accountId, request.get('deviceId') as string));
+    const [challenge, request, rejecter] = await Promise.all([
+      tx.get(challengeRef),
+      tx.get(requestRef(db, requestId)),
+      tx.get(deviceRef(db, accountId, rejecterId)),
+    ]);
+    // Every read before the first write (Firestore transactions).
+    const ownRequest = request.exists && request.get('accountId') === accountId;
+    const device = ownRequest ? await tx.get(deviceRef(db, accountId, request.get('deviceId') as string)) : null;
+    if (!challenge.exists) return 'challenge_invalid';
+    tx.delete(challengeRef); // single-use whatever the outcome
+    const state = challengeFailure(challenge, accountId, rejecterId, 'approval_rejection', now);
+    if (state !== null) return state;
+    if (challenge.get('requestId') !== requestId) return 'challenge_invalid';
+    if (!rejecter.exists || rejecter.get('status') !== 'active') return 'approver_not_trusted';
+    try {
+      verifyDeviceProof(
+        ProofPurpose.approvalRejection,
+        accountId,
+        Buffer.from(rejecter.get('certificate') as Uint8Array),
+        Buffer.from(challenge.get('challenge') as Uint8Array),
+        proof,
+      );
+    } catch (error) {
+      if (error instanceof InvalidCertificateError) return 'certificate_invalid';
+      if (error instanceof InvalidProofError) return 'proof_invalid';
+      throw error;
+    }
+    if (!ownRequest || device === null) return 'request_invalid';
     tx.delete(request.ref);
     if (device.exists && device.get('status') === 'pending') {
       tx.update(device.ref, { status: 'rejected', rejectedAt: FieldValue.serverTimestamp(), expiresAt: FieldValue.delete() });
     }
     return null;
   });
-  if (failure !== null) throw new DeviceError(failure);
+  if (failure !== null) {
+    if (failure === 'proof_invalid' || failure === 'certificate_invalid') await recordFailure(db, accountId, now);
+    throw new DeviceError(failure);
+  }
 }
 
 /** An active device registers (or replaces) the account's recovery key. */

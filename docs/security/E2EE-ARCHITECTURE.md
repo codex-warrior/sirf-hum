@@ -329,10 +329,11 @@ Visible by design:
 - MLS group ID, epoch numbers and sender leaf index (the sender identity
   inside `PrivateMessage` is encrypted, but the uploading `uid`/device is
   visible to the server);
-- message and handshake timestamps, sizes (padded), frequency;
+- message and handshake timestamps, sizes (padded to 256-byte blocks since
+  Prompt 17, D-126; exact before), frequency;
 - FCM tokens;
 - IP addresses (Google);
-- media object sizes (bucketed) and counts.
+- media object sizes (exact: bucketing is deferred, D-099) and counts.
 
 E2EE **does not** hide timing, device, delivery or relationship metadata.
 Minimization (padding, coarse timestamps, short retention) reduces it but

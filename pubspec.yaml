@@ -39,6 +39,12 @@ dependencies:
   # Picker, no storage permission). Its temporary copies are deleted after
   # encryption. Imported only by features/moments/data.
   image_picker: ^1.2.4
+  # SHA-256 for the commit-authorization binding (Prompt 17B, D-127) and the
+  # partner safety number (D-128). dart-lang/crypto, already in the lockfile
+  # as a transitive dependency; a hash function only, no new primitive.
+  crypto: ^3.0.6
+  qr: 4.0.0
+  mobile_scanner: 7.4.2
 
 dev_dependencies:
   flutter_lints: ^6.0.0

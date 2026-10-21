@@ -88,6 +88,13 @@ async function approveNew(acct, approver, d) {
   return request;
 }
 
+/** A trusted device rejects a request (D-129). */
+async function rejectSigned(acct, rejecter, request) {
+  const c = await issueDeviceChallenge(db, acct, { deviceId: rejecter.hex, purpose: 'approval_rejection', requestId: request.requestId }, now());
+  const { signature } = makeProof({ device: rejecter.device, accountId: acct, deviceId: rejecter.deviceId, certificate: rejecter.certificate, challenge: fromB64(c.challenge), purpose: 6 });
+  return rejectDeviceApproval(db, acct, { requestId: request.requestId, deviceId: rejecter.hex, challengeId: c.challengeId, proof: b64(signature) }, now());
+}
+
 /** The real, signed revocation path (D-081). */
 async function revoke(acct, revoker, target, { reason = 2, signer, at } = {}) {
   const c = await issueDeviceChallenge(db, acct, { deviceId: revoker.hex, purpose: 'revocation' }, now());
@@ -313,7 +320,7 @@ describe('state machine edges (§8)', () => {
     // Rejected: the rejected device can never be approved.
     const rB = await enroll(acct, B);
     const sigB = approvalSig(acct, A, B, rB);
-    await rejectDeviceApproval(db, acct, { requestId: rB.requestId }, now());
+    await rejectSigned(acct, A, rB);
     await rejectsWith(approve(acct, A, rB, sigB), 'request_invalid');
     await rejectsWith(requestDeviceApproval(db, acct, { deviceId: B.hex }, now()), 'device_not_pending');
     // Expired device (pending past its deadline).
@@ -493,5 +500,77 @@ describe('rate-limit boundaries (§12)', () => {
     }
     await rejectsWith(register(a, newDevice()), 'rate_limited');
     await register(b, newDevice());
+  });
+});
+
+describe('person key uniqueness (Prompt 17, D-122)', () => {
+  /** What a holder of `person`'s PIK can certify: a fresh device ID and key. */
+  function sibling(person) {
+    const device = keyFromSeed(randomBytes(32));
+    const deviceId = randomBytes(16);
+    return { person, device, deviceId, hex: deviceId.toString('hex'), certificate: makeCertificate({ person, device, deviceId }) };
+  }
+
+  async function activate(acct, d) {
+    const c = await issueDeviceChallenge(db, acct, { deviceId: d.hex, purpose: 'activation' }, now());
+    const { signature } = makeProof({ device: d.device, accountId: acct, deviceId: d.deviceId, certificate: d.certificate, challenge: fromB64(c.challenge) });
+    return activateDevice(db, acct, { deviceId: d.hex, challengeId: c.challengeId, proof: b64(signature) }, now());
+  }
+
+  test("a revoked device's PIK never returns under a new device ID, even through an unaware approver", async () => {
+    const acct = account();
+    const [A, B, C] = [newDevice(), newDevice(), newDevice()];
+    await bootstrap(acct, A);
+    await approveNew(acct, A, B);
+    await approveNew(acct, A, C);
+    await revoke(acct, A, B);
+    // B's holder certifies a fresh device ID with B's retained PIK; C has
+    // not refreshed lineage, so only the server stands in the way here.
+    await rejectsWith(register(acct, sibling(B.person)), 'duplicate_device');
+    assert.equal((await db.doc(`personKeyIndex/${registration.personKeyIndexId(B.person.publicKey)}`).get()).get('deviceId'), B.hex);
+  });
+
+  test('two pending devices sharing a PIK: the second activation is refused, whoever approves it', async () => {
+    const acct = account();
+    const [A, C] = [newDevice(), newDevice()];
+    await bootstrap(acct, A);
+    await approveNew(acct, A, C);
+    // Both registered while the PIK was still unused (registration cannot
+    // see the future), so activation must re-check.
+    const X = newDevice();
+    const twin = sibling(X.person);
+    await register(acct, X);
+    await register(acct, twin);
+    const first = await enroll(acct, X, { registered: true });
+    await approve(acct, A, first, approvalSig(acct, A, X, first));
+    const second = await enroll(acct, twin, { registered: true });
+    await rejectsWith(approve(acct, C, second, approvalSig(acct, C, twin, second)), 'duplicate_device');
+    assert.equal((await record(acct, twin)).status, 'pending');
+    assert.equal((await record(acct, X)).status, 'active');
+  });
+
+  test('a PIK is global: another account cannot activate a device with it, even when registered first', async () => {
+    const [mine, theirs] = [account(), account()];
+    const A = newDevice();
+    const copy = sibling(A.person);
+    await register(mine, A);
+    await register(theirs, copy); // both pending, neither activated yet
+    await activate(mine, A);
+    await rejectsWith(activate(theirs, copy), 'duplicate_device');
+    assert.equal((await record(theirs, copy)).status, 'pending');
+    assert.equal(await trustOf(theirs), undefined, 'the refused bootstrap created no trust');
+    await rejectsWith(register(theirs, sibling(A.person)), 'duplicate_device');
+  });
+
+  test("after an identity reset the old root's PIK cannot root the new identity", async () => {
+    const acct = account();
+    const A = newDevice();
+    await bootstrap(acct, A);
+    const r = await requestIdentityReset(db, acct, {}, now());
+    await completeIdentityReset(db, acct, {}, new Date(r.effectiveAtMillis + 1000));
+    await rejectsWith(register(acct, sibling(A.person)), 'duplicate_device');
+    const N = newDevice();
+    await bootstrap(acct, N);
+    assert.equal((await trustOf(acct)).firstDeviceId, N.hex);
   });
 });

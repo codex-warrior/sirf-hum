@@ -158,6 +158,10 @@ fn proof_purposes_are_separate_signed_domains() {
         ProofPurpose::Enrollment,
         ProofPurpose::PushToken,
         ProofPurpose::Pairing,
+        ProofPurpose::Commit,
+        ProofPurpose::ApprovalRejection,
+        ProofPurpose::ConversationRecovery,
+        ProofPurpose::Unpair,
     ];
     for made in purposes {
         let proof = alice.core.device_proof(made, &challenge).unwrap();
@@ -220,15 +224,29 @@ fn challenge_must_be_exactly_32_bytes() {
         CoreError::InvalidInput
     );
     // Prompt 08 added purpose 2 (enrollment), Prompt 11 purpose 3 (push
-    // token, D-098), Prompt 12 purpose 4 (pairing, D-102); anything else
-    // stays invalid.
+    // token, D-098), Prompt 12 purpose 4 (pairing, D-102), Prompt 17B
+    // purposes 5 (commit, D-127) and 6 (approval rejection, D-129), Prompt
+    // 17C 7 (conversation recovery, D-135) and 8 (unpair, D-136); anything
+    // else stays invalid.
     assert_eq!(ProofPurpose::from_u32(2).unwrap(), ProofPurpose::Enrollment);
     assert_eq!(ProofPurpose::from_u32(3).unwrap(), ProofPurpose::PushToken);
     assert_eq!(ProofPurpose::from_u32(4).unwrap(), ProofPurpose::Pairing);
+    assert_eq!(ProofPurpose::from_u32(5).unwrap(), ProofPurpose::Commit);
     assert_eq!(
-        ProofPurpose::from_u32(5).unwrap_err(),
-        CoreError::InvalidInput
+        ProofPurpose::from_u32(6).unwrap(),
+        ProofPurpose::ApprovalRejection
     );
+    assert_eq!(
+        ProofPurpose::from_u32(7).unwrap(),
+        ProofPurpose::ConversationRecovery
+    );
+    assert_eq!(ProofPurpose::from_u32(8).unwrap(), ProofPurpose::Unpair);
+    for invalid in [9, 10, u32::MAX] {
+        assert_eq!(
+            ProofPurpose::from_u32(invalid).unwrap_err(),
+            CoreError::InvalidInput
+        );
+    }
 }
 
 #[test]

@@ -1,7 +1,8 @@
 # E2EE Test Plan
 
 Status: **Plan (Prompt 04); crypto-core foundation tests exist (Prompt 06,
-below).** Passing them is not an E2EE claim (see gates).
+below); security-review tests added (Prompt 17).** Passing them is not an
+E2EE claim (see gates).
 
 Principle: never prove only that our code agrees with itself. Correctness
 evidence comes from:
@@ -189,6 +190,40 @@ release build, `cargo test --release --test media -- --ignored --nocapture`.
 (Blaze BLOCKED); OEM background-delivery behaviour; physical-device
 throughput; objects over 64 MiB (refused by design).
 
+## Security review tests (exist; Prompt 17)
+
+Added by the Prompt 17 review; each was shown to fail on the code before
+its fix (or, for documented limits, pins today's behaviour so a change is
+noticed). Full mapping of adversarial properties to tests:
+[TEST-MATRIX](../security/audit/TEST-MATRIX.md).
+
+- **Rust** `a_revoked_pik_cannot_return_through_an_unaware_approver`
+  (D-122): a chain in which one PIK certifies two devices is invalid.
+- **Rust** `documented_limit_a_restored_older_state_is_not_detected_until_refreshed`
+  (D-079): exactly what a restored older state does, and that the next
+  current lineage re-learns the revocation.
+- **Rust** `ciphertext_length_hides_the_message_length_within_a_block`
+  (D-126): 256-byte padding for creator and joiner; exact payloads back.
+- **Emulator** `person key uniqueness (Prompt 17, D-122)`: revoked PIK under
+  a new device ID; two pending devices sharing a PIK; a PIK across accounts;
+  the old root PIK after an identity reset.
+- **Rules** `documented limit: rules authorize accounts, not devices` (E77);
+  `personKeyIndex` is client-unreachable.
+- **Dart (native, CI)** `a commit nobody can validate wins the epoch: every
+  device fails closed, none resets or skips it` (P17-05): pins fail-closed
+  behaviour; the stall itself is blocker P1-3.
+
+**Not covered:** an on-device backup/restore test of D-123; recovery from a
+stalled conversation (P17-05: the mechanism does not exist yet).
+
+## Security blocker remediation tests (exist; Prompt 17B)
+
+See [TEST-MATRIX](../security/audit/TEST-MATRIX.md) "Prompt 17B": device-bound
+commits (D-127), partner verification (D-128), rejection proof (D-129),
+forced code comparison (D-131), reset alerts (D-132). Each fix's old
+behaviour is asserted to fail (the Prompt 17 documented-limit tests were
+flipped, not deleted).
+
 ## Decision-gate tests (exist; experimental; regression suite)
 
 `prototypes/mls-decision-gate` (`.github/workflows/prototypes.yml`), run
@@ -204,3 +239,10 @@ against OpenMLS 0.9.1 **and** mls-rs 0.56.0, natively and on wasm32:
 
 They probe library behaviour in our model. Cryptographic correctness comes
 from the upstream vectors and independent review.
+
+## Prompt 17C: conversation recovery and unpairing
+
+Adversarial tests for D-135 and D-136 at every boundary (Rust, Functions
+emulator and unit, Security Rules, Dart with fakes and native in CI). The
+property-to-test map is in
+[TEST-MATRIX](../security/audit/TEST-MATRIX.md#conversation-recovery-and-unpairing-prompt-17c).

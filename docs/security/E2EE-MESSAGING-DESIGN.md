@@ -365,7 +365,9 @@ sender's next `refreshTrust`.
 - device IDs, certificates and the trust lineage (public);
 - conversation ID, MLS group ID (the same), epochs;
 - per message: ID, sender account and device, epoch, ciphertext size,
-  server time;
+  server time. Since Prompt 17 every PrivateMessage is padded to 256-byte
+  blocks (D-126), so the size reveals the length only to within a block
+  (before, exactly);
 - commits and Welcomes (MLS handshake bytes; public-key encrypted where MLS
   encrypts them);
 - KeyPackages (public);
@@ -454,3 +456,36 @@ measured (emulator only, no deployment).
   epoch rule relies on Firestore evaluating rule reads inside the write.
 - Web: no private messaging (D-046); the stub fails closed.
 - Dart heap copies of plaintext cannot be wiped (CRYPTO-CORE-ARCHITECTURE).
+
+## Prompt 17B: device-bound commits (D-127)
+
+Since Prompt 17B clients no longer write commits, Welcomes or the epoch.
+`MessagingService._submit` asks `requestCommitChallenge` for a single-use
+nonce, derives the commit authorization challenge
+(`lib/security/messaging/commit_authorization.dart`, binding account,
+device, conversation, both epochs, protocol, and the exact commit and
+Welcome bytes), signs it in the core with device-proof purpose 5 and calls
+`submitMlsCommit`, which verifies everything and applies first-commit-wins
+in one transaction. Refused or unreachable: the following `sync` discards
+the staged commit as before. A Firebase session alone can no longer move a
+conversation's epoch. Conversation recovery after a trusted device's
+invalid commit is designed in D-127 and not built (P1-3b).
+
+## Prompt 17C: conversation recovery (D-135)
+
+When a trusted device wins an epoch with a commit nobody can process
+(`stateDiverged`), `MessagingService.recover()` asks
+`requestRecoveryChallenge` for a nonce bound to the conversation, its
+stalled epoch and the account's trust epoch, signs
+`recoveryAuthorizationChallenge` (`lib/security/messaging/lifecycle_authorization.dart`)
+in the core with device-proof purpose 7 and calls `recoverConversation`.
+The server retires the conversation (`state: 'retired'`, `successorId`;
+readable, never writable) and creates its successor (new ID = new MLS group
+ID, `predecessorId`, epoch 0); both partner records move to it. Every
+device then sees `MessagingFailure.retired`, follows
+`MessagingService.successor()` only when the successor names this
+conversation as predecessor with the same members, and builds the new group
+from verified lineage like a new couple's. Old history stays; queued
+messages stay in the old conversation and are never re-sent automatically.
+The Rust test `recovery_reprovisions_a_new_group_old_history_stays_and_old_commit_cannot_replay`
+shows old commits cannot enter the new group.

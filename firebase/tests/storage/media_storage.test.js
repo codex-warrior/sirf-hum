@@ -159,6 +159,23 @@ describe('reading a ciphertext object', () => {
     await assertSucceeds(getMetadata(ref(asUser(B), path())));
   });
 
+  // Prompt 17C (D-136): after unpairing, neither former partner can fetch
+  // the couple's media from the server; a retired conversation (recovery,
+  // D-135) is still the same couple's and stays readable.
+  test("a closed conversation's media is unreadable by both members; a retired one stays readable", async () => {
+    await stored(CLOSED);
+    await assertFails(getBytes(ref(asUser(A), path(CLOSED))));
+    await assertFails(getBytes(ref(asUser(B), path(CLOSED))));
+    await assertFails(getMetadata(ref(asUser(A), path(CLOSED))));
+    const RETIRED = 'dddd0000dddd0000dddd0000dddd0000';
+    await seed(`conversations/${RETIRED}`, {
+      schemaVersion: 1, protocolVersion: 1, ciphersuite: 1, members: [A, B], pairingId: 'p-media', state: 'retired', epoch: 3, createdAt: Timestamp.now(),
+    });
+    await stored(RETIRED);
+    await assertSucceeds(getBytes(ref(asUser(B), path(RETIRED))));
+    await assertFails(put(asUser(A), path(RETIRED, 'ffff0000ffff0000ffff0000ffff0000'), bytes(), meta(A1)), 'no new objects');
+  });
+
   test('outsiders, anonymous callers and other conversations cannot', async () => {
     await stored();
     await stored(OTHER);

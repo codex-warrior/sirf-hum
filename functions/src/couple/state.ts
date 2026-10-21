@@ -11,6 +11,9 @@ export const PAIRING_SCHEMA_VERSION = 1;
 export const COUPLE_SCHEMA_VERSION = 1;
 
 /** Server-authoritative lifetimes. Clients only display them. */
+/** Wrong codes an inviter may enter before the pairing is invalidated (D-131). */
+export const MAX_CONFIRMATION_ATTEMPTS = 3;
+
 export const PairingTTL = {
   /** An unredeemed invitation (Prompt 04 default: 24 h). */
   invitationMs: 24 * 60 * 60 * 1000,
@@ -98,6 +101,12 @@ export type PairingFailure =
   | 'pairing_invalidated'
   /** The account already takes part in another open pairing. */
   | 'pairing_in_progress'
+  /**
+   * The inviter entered a code that is not the one the invitee's phone shows
+   * (Prompt 17B, D-131). After MAX_CONFIRMATION_ATTEMPTS the pairing is
+   * invalidated instead (`pairing_invalidated`).
+   */
+  | 'confirmation_code_invalid'
   | 'already_paired'
   /** The account has a pending identity reset (D-082): no pairing. */
   | 'identity_reset_pending';

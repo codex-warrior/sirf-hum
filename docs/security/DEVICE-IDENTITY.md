@@ -74,7 +74,7 @@ Rules:
 | Reinstall (Android) | Uninstalling deletes the Keystore key and the no-backup files: **a new device** | No secure state survives |
 | Reinstall (iOS) | App files are deleted but Keychain items survive. With no state, the stale key is discarded and replaced (key rotation): **a new device** | We never pretend identity survives a reinstall |
 | App data cleared | Same as reinstall: **a new device** | No secure state survives |
-| Migration to a new phone | Not migrated: no-backup storage, `ThisDeviceOnly` Keychain, excluded directories. The new phone is **a new device**; adding it to groups is future work (device approval) | Keys never leave a device |
+| Migration to a new phone | Not migrated: no-backup storage, `ThisDeviceOnly` Keychain, excluded directories. Since Prompt 17 the app opts out of cloud backup and device transfer entirely, so not even the Firebase session moves (D-123). The new phone is **a new device**, approved by a trusted device or the recovery key | Keys never leave a device |
 | Cloned or restored app state | Sealed state without this device's store key fails closed as `LocalIdentityCorrupted(undecryptable)`. Nothing is wiped automatically | Copies are useless without the platform key |
 | Compromised device | See §9. The fix is revocation, then a new identity | Not preventable by storage |
 
@@ -196,6 +196,7 @@ Server-only collections (Admin SDK; rules deny every client):
 | `rateLimits/{accountId}__{operation}` | `windowStart`, `count` | Per-account fixed-window limits (D-077) |
 | `deviceIdIndex/{deviceId}` | `accountId` | A device ID is activated at most once, globally, forever |
 | `deviceKeyIndex/{sha256(deviceKey)}` | `accountId`, `deviceId` | A device public key is activated at most once, globally, forever |
+| `personKeyIndex/{sha256(PIK)}` | `accountId`, `deviceId` | A person key is activated on at most one device, globally, forever (D-122, Prompt 17): a revoked device's PIK never returns under a new device ID or as a new root |
 
 ## 5. Security Rules
 
@@ -396,7 +397,10 @@ an *account session* (non-cryptographic), which is not a device identity.
 - **Rate limits and expiry:** added in Prompt 08 (D-077, D-078). The
   scheduled cleanup needs Blaze; lazy expiry works without it. Prompt 12
   adds the pairing limits `pairing`, `pairingInvitation` and
-  `pairingRedeemFailure` (D-103) and proof purpose 4 (D-102).
+  `pairingRedeemFailure` (D-103) and proof purpose 4 (D-102). Later
+  purposes: 5 `commit` (D-127), 6 `approval_rejection` (D-129),
+  7 `conversation_recovery` (D-135) and 8 `unpair` (D-136), with limits
+  `commit`, `conversationRecovery` (3/24 h) and `unpair` (5/24 h).
 - **Local rollback:** not provided (D-079 open, MULTI-DEVICE-TRUST §10).
   The trust epoch (D-083) only refuses older *server* views.
   Restoring a whole older slot directory *together with* its key isn't

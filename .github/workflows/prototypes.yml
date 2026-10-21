@@ -35,8 +35,8 @@ jobs:
     name: Scenarios + interop + benchmarks (native)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master (= v1) at pin time
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
       - name: Runner
@@ -59,8 +59,8 @@ jobs:
     name: Scenarios on wasm32 (Node) + wasm size
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master (= v1) at pin time
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: wasm32-unknown-unknown
@@ -85,11 +85,11 @@ jobs:
       matrix:
         backend: [openmls, mlsrs]
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master (= v1) at pin time
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
-      - uses: dart-lang/setup-dart@v1
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
         with:
           sdk: 3.11.3
       - run: cargo build --locked --release -p sh-crypto-ffi-spike --no-default-features --features ${{ matrix.backend }}
@@ -110,8 +110,8 @@ jobs:
       matrix:
         backend: [openmls, mlsrs]
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master (= v1) at pin time
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
@@ -151,13 +151,13 @@ jobs:
       run:
         working-directory: upstream
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: ${{ matrix.repo }}
           ref: ${{ matrix.ref }}
           path: upstream
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master (= v1) at pin time
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
       - name: Record the exact upstream commit

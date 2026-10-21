@@ -73,7 +73,9 @@ describe('pairing secrets and bindings', () => {
 
   test('purpose 4 (pairing) is its own signed domain (D-070, D-102)', () => {
     assert.equal(ProofPurpose.pairing, 4);
-    assert.deepEqual(Object.values(ProofPurpose), [1, 2, 3, 4]);
+    // Every purpose, including commit = 5, approvalRejection = 6 (D-127,
+    // D-129), conversationRecovery = 7 and unpair = 8 (D-135, D-136).
+    assert.deepEqual(Object.values(ProofPurpose), [1, 2, 3, 4, 5, 6, 7, 8]);
     const d = makeDevice(0x21, 0x22, 'e1e2e3e4e5e6e7e8e9eaebecedeeeff0');
     const challenge = Buffer.alloc(32, 9);
     for (const made of Object.values(ProofPurpose)) {

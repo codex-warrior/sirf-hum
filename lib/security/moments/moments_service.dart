@@ -381,6 +381,8 @@ class MomentsService implements MomentsBackend {
       MessagingFailure.notJoined ||
       MessagingFailure.commitPending ||
       MessagingFailure.untrustedMember ||
+      // Recovery (D-135): the app opens the successor conversation.
+      MessagingFailure.retired ||
       MessagingFailure.stateDiverged => MomentFailure.notReady,
       MessagingFailure.outboxFull => MomentFailure.outboxFull,
       MessagingFailure.rejected => MomentFailure.rejected,

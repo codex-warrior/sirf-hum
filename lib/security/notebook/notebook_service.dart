@@ -363,6 +363,8 @@ class NotebookService implements NotebookBackend {
       MessagingFailure.notJoined ||
       MessagingFailure.commitPending ||
       MessagingFailure.untrustedMember ||
+      // Recovery (D-135): the app opens the successor conversation.
+      MessagingFailure.retired ||
       MessagingFailure.stateDiverged => NotebookFailure.notReady,
       MessagingFailure.outboxFull => NotebookFailure.outboxFull,
       MessagingFailure.rejected => NotebookFailure.rejected,

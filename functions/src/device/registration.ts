@@ -16,8 +16,15 @@
  * wrappers live in ../index.ts.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { type DocumentSnapshot, FieldValue, type Firestore, Timestamp } from 'firebase-admin/firestore';
-import { InvalidCertificateError, MAX_CERTIFICATE_BYTES, verifyCertificate } from './certificate';
+import {
+  type DocumentReference,
+  type DocumentSnapshot,
+  FieldValue,
+  type Firestore,
+  Timestamp,
+  type Transaction,
+} from 'firebase-admin/firestore';
+import { type DeviceCertificate, InvalidCertificateError, MAX_CERTIFICATE_BYTES, verifyCertificate } from './certificate';
 import {
   Collections,
   DEVICE_ID_PATTERN,
@@ -41,7 +48,14 @@ import { CHALLENGE_BYTES, InvalidProofError, PROOF_BYTES, ProofPurpose, verifyDe
 import { bumpEpoch } from './epoch';
 import { consume, requireBudget } from './rateLimit';
 
-export const CHALLENGE_PURPOSES = ['activation', 'recovery_registration', 'revocation', 'reset_cancel'] as const;
+export const CHALLENGE_PURPOSES = [
+  'activation',
+  'recovery_registration',
+  'revocation',
+  'reset_cancel',
+  /** Prompt 17B, D-129: an active device rejecting one approval request. */
+  'approval_rejection',
+] as const;
 export type ChallengePurpose = (typeof CHALLENGE_PURPOSES)[number];
 
 export interface IssuedChallenge {
@@ -63,6 +77,44 @@ export const bootstrapAllowed = (trust: DocumentSnapshot): boolean =>
 
 export const keyIndexId = (deviceSignatureKey: Buffer): string =>
   createHash('sha256').update(deviceSignatureKey).digest('hex');
+
+/**
+ * Every device has its own PIK (D-074) and a PIK certifies exactly one
+ * device (D-085), so a person key is activated at most once, ever (D-122).
+ * Without this, a revoked device's retained PIK could certify a fresh
+ * device ID that an approver who had not yet learned of the revocation
+ * approves, or root a new identity after a reset; peers refuse such chains,
+ * so the server must not list them as active either.
+ */
+export const personKeyIndexId = (personKey: Buffer): string =>
+  createHash('sha256').update(personKey).digest('hex');
+
+/** The uniqueness indexes an activation claims, all created in its transaction. */
+export interface ActivationIndexes {
+  readonly deviceId: DocumentReference;
+  readonly deviceKey: DocumentReference;
+  readonly personKey: DocumentReference;
+}
+
+export function activationIndexes(db: Firestore, deviceId: string, cert: DeviceCertificate): ActivationIndexes {
+  return {
+    deviceId: db.collection(Collections.deviceIdIndex).doc(deviceId),
+    deviceKey: db.collection(Collections.deviceKeyIndex).doc(keyIndexId(cert.deviceSignatureKey)),
+    personKey: db.collection(Collections.personKeyIndex).doc(personKeyIndexId(cert.personKey)),
+  };
+}
+
+/** True when any of the device ID, device key or person key was ever activated. */
+export async function anyIndexTaken(tx: Transaction, indexes: ActivationIndexes): Promise<boolean> {
+  const snaps = await Promise.all([tx.get(indexes.deviceId), tx.get(indexes.deviceKey), tx.get(indexes.personKey)]);
+  return snaps.some((s) => s.exists);
+}
+
+export function claimIndexes(tx: Transaction, indexes: ActivationIndexes, accountId: string, deviceId: string): void {
+  tx.create(indexes.deviceId, { accountId });
+  tx.create(indexes.deviceKey, { accountId, deviceId });
+  tx.create(indexes.personKey, { accountId, deviceId });
+}
 
 /** Counts a failed verification toward the account's failure budget. */
 export async function recordFailure(db: Firestore, accountId: string, now: Date): Promise<void> {
@@ -101,11 +153,10 @@ export async function registerDevice(
     throw new DeviceError('invalid_argument');
   }
   const certificate = requireBytesUpTo(args.certificate, MAX_CERTIFICATE_BYTES);
-  let deviceSignatureKey: Buffer;
+  let cert: DeviceCertificate;
   try {
-    const cert = verifyCertificate(certificate);
+    cert = verifyCertificate(certificate);
     if (cert.deviceId.toString('hex') !== deviceId) throw new DeviceError('certificate_invalid');
-    deviceSignatureKey = cert.deviceSignatureKey;
   } catch (error) {
     if (error instanceof InvalidCertificateError) throw new DeviceError('certificate_invalid');
     throw error;
@@ -118,14 +169,14 @@ export async function registerDevice(
     const ref = deviceRef(db, accountId, deviceId);
     // The pending count is read inside the transaction, so concurrent
     // registrations cannot exceed the cap (Prompt 09 race fix).
-    const [existing, idIndex, keyIndex, pending] = await Promise.all([
+    const [existing, indexed, pending] = await Promise.all([
       tx.get(ref),
-      tx.get(db.collection(Collections.deviceIdIndex).doc(deviceId)),
-      tx.get(db.collection(Collections.deviceKeyIndex).doc(keyIndexId(deviceSignatureKey))),
+      anyIndexTaken(tx, activationIndexes(db, deviceId, cert)),
       tx.get(devices.where('status', '==', 'pending')),
     ]);
-    // An existing record (even revoked) or an activated ID/key is never reused.
-    if (existing.exists || idIndex.exists || keyIndex.exists) throw new DeviceError('duplicate_device');
+    // An existing record (even revoked) or an activated ID, device key or
+    // person key is never reused (activation re-checks: D-122).
+    if (existing.exists || indexed) throw new DeviceError('duplicate_device');
     if (pending.size >= MAX_PENDING_DEVICES) throw new DeviceError('too_many_pending');
     tx.create(ref, {
       schemaVersion: DEVICE_SCHEMA_VERSION,
@@ -160,6 +211,8 @@ export async function issueDeviceChallenge(
   if (typeof purpose !== 'string' || !(CHALLENGE_PURPOSES as readonly string[]).includes(purpose)) {
     throw new DeviceError('invalid_argument');
   }
+  // A rejection challenge is bound to the one request it may close.
+  const requestId = purpose === 'approval_rejection' ? requirePattern(args.requestId, RECORD_ID_PATTERN) : undefined;
   await requireBudget(db, accountId, 'verificationFailure', now);
   await consume(db, accountId, 'challenge', now);
 
@@ -181,6 +234,7 @@ export async function issueDeviceChallenge(
     accountId,
     deviceId,
     purpose,
+    ...(requestId === undefined ? {} : { requestId }),
     challenge,
     expiresAt: Timestamp.fromMillis(expiresAtUnix * 1000),
   });
@@ -237,7 +291,7 @@ export async function activateDevice(db: Firestore, uid: string | undefined, dat
       challengeFailure(challengeSnap, accountId, deviceId, 'activation', now) ?? pendingFailure(deviceSnap, now);
     if (outcome === null && !bootstrapAllowed(trust)) outcome = 'approval_required';
 
-    let keyId: string | undefined;
+    let indexes: ActivationIndexes | undefined;
     if (outcome === null) {
       try {
         const cert = verifyDeviceProof(
@@ -248,30 +302,25 @@ export async function activateDevice(db: Firestore, uid: string | undefined, dat
           proof,
         );
         if (cert.deviceId.toString('hex') !== deviceId) outcome = 'certificate_invalid';
-        else keyId = keyIndexId(cert.deviceSignatureKey);
+        else indexes = activationIndexes(db, deviceId, cert);
       } catch (error) {
         if (error instanceof InvalidCertificateError) outcome = 'certificate_invalid';
         else if (error instanceof InvalidProofError) outcome = 'proof_invalid';
         else throw error;
       }
     }
-    const idIndexRef = db.collection(Collections.deviceIdIndex).doc(deviceId);
-    const keyIndexRef = keyId === undefined ? undefined : db.collection(Collections.deviceKeyIndex).doc(keyId);
-    if (outcome === null && keyIndexRef !== undefined) {
-      const [idIndex, keyIndex] = await Promise.all([tx.get(idIndexRef), tx.get(keyIndexRef)]);
-      if (idIndex.exists || keyIndex.exists) outcome = 'duplicate_device';
-    }
+    // A reused person key cannot root a new identity after a reset either.
+    if (outcome === null && indexes !== undefined && (await anyIndexTaken(tx, indexes))) outcome = 'duplicate_device';
 
     tx.delete(challengeRef);
     if (outcome === 'device_expired') tx.update(devRef, { status: 'expired' });
-    if (outcome !== null || keyIndexRef === undefined) return outcome;
+    if (outcome !== null || indexes === undefined) return outcome;
     const epoch = bumpEpoch(tx, trustRef(db, accountId), trust, {
       initializedAt: FieldValue.serverTimestamp(),
       firstDeviceId: deviceId,
       bootstrapOpen: false,
     });
-    tx.create(idIndexRef, { accountId });
-    tx.create(keyIndexRef, { accountId, deviceId });
+    claimIndexes(tx, indexes, accountId, deviceId);
     tx.update(devRef, {
       status: 'active',
       activatedAt: FieldValue.serverTimestamp(),

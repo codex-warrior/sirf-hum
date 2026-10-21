@@ -27,6 +27,9 @@ class FakeRegistry implements DeviceRegistry {
 
   /// Account trust epoch; tests may lower it to simulate a rolled-back view.
   int trustEpoch = 0;
+
+  /// Completed identity resets (D-082), as `accountTrust.identityEpoch`.
+  int identityEpoch = 0;
   DateTime? resetEffectiveAt;
   String? firstDeviceId;
 
@@ -78,8 +81,9 @@ class FakeRegistry implements DeviceRegistry {
   Future<ActivationChallenge> requestChallenge(
     AccountId account,
     String deviceIdHex,
-    ChallengePurpose purpose,
-  ) async {
+    ChallengePurpose purpose, {
+    String? requestId,
+  }) async {
     calls.add('challenge:${purpose.name}');
     _maybeFail();
     if (purpose == ChallengePurpose.activation && trustInitialized) {
@@ -196,8 +200,22 @@ class FakeRegistry implements DeviceRegistry {
   }
 
   @override
-  Future<void> reject(AccountId account, String requestId) async {
+  Future<void> reject(
+    AccountId account,
+    String requestId, {
+    required String rejecterDeviceIdHex,
+    required String challengeId,
+    required Uint8List proof,
+  }) async {
     calls.add('reject');
+    _maybeFail();
+    if (statuses[rejecterDeviceIdHex] != DeviceStatus.active ||
+        _challenges.remove(challengeId) == null) {
+      throw const DeviceRegistryException(
+        DeviceRegistryFailure.approverNotTrusted,
+      );
+    }
+    submitted['reject'] = proof;
     final r = requests.remove(requestId)!;
     statuses[r.deviceId] = DeviceStatus.rejected;
   }
@@ -240,6 +258,7 @@ class FakeRegistry implements DeviceRegistry {
     _maybeFail();
     return AccountTrustState(
       trustEpoch: trustEpoch,
+      identityEpoch: identityEpoch,
       resetEffectiveAt: resetEffectiveAt,
     );
   }
@@ -307,6 +326,7 @@ class FakeRegistry implements DeviceRegistry {
     links.clear();
     revocations.clear();
     recoveryPublicKey = null;
+    identityEpoch++;
     trustEpoch++;
   }
 

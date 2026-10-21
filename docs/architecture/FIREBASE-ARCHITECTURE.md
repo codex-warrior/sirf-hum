@@ -35,7 +35,7 @@ products are not used without a Decision Log entry.
 | **Cloud Storage** | Encrypted media blobs | Moments | Ciphertext only; names/paths must not leak content |
 | **Cloud Functions** | Trusted server logic: pairing invariants, LiveKit token minting, notification fan-out, scheduled cleanup, subscription verification | Identity onward | Never needs content keys |
 | **Cloud Messaging (FCM)** | Wake-up / notification delivery | Messaging | Privacy-safe payloads (below) |
-| **App Check** | Reduce abuse from non-genuine clients | Wired, not enforced (Prompt 02) | Defence in depth, not authorization, not encryption |
+| **App Check** | Reduce abuse from non-genuine clients | Wired (Prompt 02). Firestore/Storage: not enforced (console). Callables: `enforceAppCheck: true` **in code**, so a Functions deploy rejects every client until attestation is configured (Prompt 17, P17-10) | Defence in depth, not authorization, not encryption |
 | **Security Rules** | Server-side authorization for Firestore/Storage | Every phase | Default deny; tested in emulator |
 | **Crashlytics** | Crash diagnostics on Android/iOS | Wired (Prompt 02) | Not on web. Receives only sanitized `AppLogger` records; errors as `RedactedError(type)` (D-027) |
 | **Hosting** | Serves the Flutter web app (target `app`) | Configured (Prompt 02) | Security headers set; CSP pending |
@@ -93,7 +93,9 @@ D-070).
 | `deviceApprovalRequests/{id}` | None | `requestDeviceApproval` / `proveDeviceEnrollment`; consumed by approval, rejection or recovery |
 | `accountTrust/{uid}` | Owner and partner (D-086): read. No write | Bootstrap marker (`firstDeviceId`, `bootstrapOpen`), `trustEpoch` (D-083), `identityEpoch` and `reset` (D-082), recovery key **public** half with its registration evidence |
 | `rateLimits/{uid}__{op}` | None | Per-account rate limits (D-077) |
-| `deviceIdIndex/{deviceId}`, `deviceKeyIndex/{sha256}` | None | Global uniqueness of activated device IDs and keys, kept forever |
+| `deviceIdIndex/{deviceId}`, `deviceKeyIndex/{sha256}`, `personKeyIndex/{sha256}` | None | Global uniqueness of activated device IDs, device keys and person keys (D-122), kept forever |
+| `conversations/{c}`, `…/commits/*`, `…/welcomes/*` | Members read; **nobody writes** (Prompt 17B) | Written only by `submitMlsCommit` after a device-key proof (D-127) |
+| `conversations/{c}` state `retired` / `closed` (Prompt 17C) | `retired`: members read, no writes; `closed`: no reads of contents or media, no writes | `recoverConversation` (purpose 7, D-135) retires and creates the successor; `unpairCouple` (purpose 8, D-136) dissolves the couple, closes its conversations and deletes `accountPartners`; `notifyOnCoupleChange` sends silent syncs |
 
 Callables:
 

@@ -232,6 +232,23 @@ pub enum ProofPurpose {
     /// The server binds the challenge to the step and its subject. A new
     /// accepted value only: ABI v6 functions and formats are unchanged.
     Pairing = 4,
+    /// An active device authorizing one MLS commit of a conversation
+    /// (Prompt 17B, D-127). The signed challenge is derived from a
+    /// single-use server nonce and the commit's binding (account, device,
+    /// conversation, epochs, protocol, commit and Welcome digests), so a
+    /// Firebase session without this key cannot move a conversation's epoch.
+    Commit = 5,
+    /// An active device rejecting a pending device's approval request
+    /// (Prompt 17B, D-129). The server binds the challenge to the request.
+    ApprovalRejection = 6,
+    /// An active device retiring a stalled conversation and re-provisioning
+    /// a new MLS group for the same couple (Prompt 17C, D-135). The signed
+    /// challenge binds the conversation, its epoch and the account's trust
+    /// epoch.
+    ConversationRecovery = 7,
+    /// An active device ending its account's couple (Prompt 17C, D-136). The
+    /// signed challenge binds the couple.
+    Unpair = 8,
 }
 
 impl ProofPurpose {
@@ -241,6 +258,10 @@ impl ProofPurpose {
             2 => Ok(ProofPurpose::Enrollment),
             3 => Ok(ProofPurpose::PushToken),
             4 => Ok(ProofPurpose::Pairing),
+            5 => Ok(ProofPurpose::Commit),
+            6 => Ok(ProofPurpose::ApprovalRejection),
+            7 => Ok(ProofPurpose::ConversationRecovery),
+            8 => Ok(ProofPurpose::Unpair),
             _ => Err(CoreError::InvalidInput),
         }
     }
@@ -682,6 +703,12 @@ pub struct RevocationEvidence<'a> {
 /// (server-asserted revocations, e.g. identity reset; honoured because
 /// revocation only reduces trust).
 ///
+/// Every device in a chain has its own PIK (D-074) and a PIK certifies
+/// exactly one device ID (D-085), so a chain in which one person key
+/// certifies two devices is invalid as a whole (Prompt 17, D-122): it is how
+/// a revoked device's retained PIK would re-enter through an approver that
+/// had not yet learned of the revocation.
+///
 /// Returns the certificates still trusted, in chain order. Fails closed on
 /// any broken link. Freshness (expiry) is enforced by the server at the
 /// time of use; peers check the expiry is not before the certificate was
@@ -808,7 +835,9 @@ pub fn verify_lineage_detailed(
         let (new_bytes, expires_at) = new_cert;
         let cert = DeviceCertificate::decode(new_bytes).map_err(invalid)?;
         if expires_at < cert.issued_at_unix
-            || chain.iter().any(|(_, c)| c.device_id == cert.device_id)
+            || chain
+                .iter()
+                .any(|(_, c)| c.device_id == cert.device_id || c.person_key == cert.person_key)
         {
             return Err(CoreError::TrustChainInvalid);
         }

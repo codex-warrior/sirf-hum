@@ -3,7 +3,7 @@
 The index of record. Each section summarises what is **decided** and links
 to the detailed source of truth. Updated at the end of every phase.
 
-Last updated: **Prompt 16 — 2026-10-20**.
+Last updated: **Prompt 17 — 2026-10-20**.
 
 ## 1. Vision
 
@@ -48,6 +48,29 @@ area. → [ARCHITECTURE](architecture/ARCHITECTURE.md)
 
 Clients untrusted; server-side authorization; default-deny rules; explicit
 trust boundaries and threat actors. → [THREAT-MODEL](security/THREAT-MODEL.md)
+
+**Prompt 17 security review (internal, not an audit):** security-gap
+matrix, threat status for every ID, P0–P3 production blockers and the
+independent-review package → [audit/README](security/audit/README.md)
+(D-122–D-126). Fixed: PIK reuse across devices, Android backup, CI
+supply-chain pinning, unpadded MLS messages. Open P1s include partner PIK
+verification, forced pairing-code comparison, device-bound commit
+authorization and unpairing. **Security blockers remain; no production
+security claim is allowed (P0).**
+
+**Prompt 17B remediation** ([PROMPT-17B-REMEDIATION](security/audit/PROMPT-17B-REMEDIATION.md),
+D-127–D-134): device-bound MLS commits (a password can no longer stall a
+conversation), partner verification by safety number and QR, the inviter
+enters the pairing code, trusted-device rejection, identity-reset alerts,
+Dart advisory scanning and GitHub security controls. Still open: conversation
+re-provisioning, unpairing (D-134), deployment, sign-in, independent review.
+
+**Prompt 17C closure** ([PROMPT-17C-CLOSURE](security/audit/PROMPT-17C-CLOSURE.md),
+D-135, D-136): device-bound conversation recovery (retire and re-provision a
+new MLS group) and unilateral, device-bound unpairing. **Sirf Hum is not yet
+production E2EE; independent security/cryptographic review is still
+required.** Deployment, sign-in, App Check and production configuration are
+Prompt 18.
 
 ## 8. E2EE architecture
 

@@ -86,10 +86,12 @@ class CallablePairingBackend implements PairingBackend {
   Future<CoupleMembership> confirm(
     SignedPairingStep step,
     String pairingId,
+    String code,
   ) async {
     final data = await _call('confirmPairing', {
       ..._signed(step),
       'pairingId': pairingId,
+      'confirmationCode': code,
     });
     final (couple, conversation) = (data['coupleId'], data['conversationId']);
     if (couple is! String || conversation is! String) throw _unavailable;
@@ -107,6 +109,28 @@ class CallablePairingBackend implements PairingBackend {
   @override
   Future<PairingState> state() async =>
       PairingState.parse(await _call('getPairingState', const {}));
+
+  @override
+  Future<PairingChallenge> requestUnpairChallenge({
+    required String deviceIdHex,
+    required String coupleId,
+  }) async {
+    final data = await _call('requestUnpairChallenge', {
+      'deviceId': deviceIdHex,
+      'coupleId': coupleId,
+    });
+    final id = data['challengeId'];
+    final challenge = data['challenge'];
+    if (id is! String || challenge is! String) throw _unavailable;
+    return PairingChallenge(
+      challengeId: id,
+      challenge: base64Decode(challenge),
+    );
+  }
+
+  @override
+  Future<void> unpair(SignedPairingStep step, String coupleId) =>
+      _call('unpairCouple', {..._signed(step), 'coupleId': coupleId});
 
   static const _unavailable = PairingException(PairingFailure.unavailable);
 

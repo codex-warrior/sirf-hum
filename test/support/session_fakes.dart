@@ -93,8 +93,11 @@ class FakePairingBackend implements PairingBackend {
       throw StateError('no signed pairing step from the UI');
 
   @override
-  Future<CoupleMembership> confirm(SignedPairingStep step, String id) =>
-      throw StateError('no signed pairing step from the UI');
+  Future<CoupleMembership> confirm(
+    SignedPairingStep step,
+    String id,
+    String code,
+  ) => throw StateError('no signed pairing step from the UI');
 
   @override
   Future<void> reject(SignedPairingStep step, String id) =>
@@ -102,6 +105,16 @@ class FakePairingBackend implements PairingBackend {
 
   @override
   Future<void> cancel(SignedPairingStep step, String id) =>
+      throw StateError('no signed pairing step from the UI');
+
+  @override
+  Future<PairingChallenge> requestUnpairChallenge({
+    required String deviceIdHex,
+    required String coupleId,
+  }) => throw StateError('no signed pairing step from the UI');
+
+  @override
+  Future<void> unpair(SignedPairingStep step, String coupleId) =>
       throw StateError('no signed pairing step from the UI');
 }
 
@@ -131,7 +144,8 @@ PairingAwaitingConfirmation awaiting({required bool isInviter}) =>
     PairingAwaitingConfirmation(
       isInviter: isInviter,
       pairingId: testPairingId,
-      code: '482913',
+      // D-131: the inviter's phone never receives the code.
+      code: isInviter ? null : '482913',
       partnerDisplayName: 'Ravi',
       expiresAt: DateTime.utc(2026, 10, 20),
     );

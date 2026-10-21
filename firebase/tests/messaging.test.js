@@ -229,9 +229,53 @@ describe('messages (D-089)', () => {
     await assertFails(sendAs(A, { senderDeviceId: 'not-hex' }), 'malformed device id');
   });
 
+  // Prompt 17 review (THREAT-MODEL E77): Firebase Auth identifies the
+  // ACCOUNT, never the device. For MESSAGES the rules still check only that
+  // the claimed sender is an active device of the caller's account, so a
+  // session left on revoked device A2 may write as active A1; MLS refuses
+  // it on receipt (D-089), so that is noise, not a confidentiality issue.
+  // COMMITS were the sharp edge (P17-05): filler bytes used to win the
+  // epoch and stall every device. Since Prompt 17B (D-127) commits are
+  // server-only behind a device-key proof, so this half has flipped.
+  test('documented limit: messages are authorized per account; commits no longer are', async () => {
+    await provision();
+    await assertSucceeds(sendAs(A, { senderDeviceId: A1 }), 'any session of A may claim A1 for a message');
+    // commitDoc's `commit` is bytes(500): filler, not an MLS commit.
+    await assertFails(commitBatch(A, { commit: { senderDeviceId: A1 } }), 'a session alone cannot move the epoch');
+  });
+
   test('6. a closed conversation accepts nothing', async () => {
     await provision({ state: 'closed' });
     await assertFails(sendAs(A));
+  });
+
+  // Prompt 17C. Unpairing (D-136) closes the conversation: its contents
+  // become unreadable for both former partners, while the document still
+  // tells their devices it closed. Recovery (D-135) retires it: the couple
+  // still reads its own history, but nothing new can be written.
+  test('closed (unpaired): contents unreadable, document readable, nothing writable', async () => {
+    await provision({ state: 'closed' });
+    await seed(`${conv()}/messages/${MID}`, { ...message(), serverTime: Timestamp.now() });
+    await seed(`${conv()}/commits/1`, { ...commitDoc(), createdAt: Timestamp.now() });
+    await seed(`${conv()}/welcomes/${B1}_1`, { ...welcomeDoc(), createdAt: Timestamp.now() });
+    await seed(`${conv()}/keyPackages/${A1}`, { schemaVersion: 1, accountId: A, deviceId: A1, keyPackage: bytes(100), updatedAt: Timestamp.now() });
+    for (const who of [A, B]) {
+      await assertSucceeds(getDoc(doc(asUser(who), conv())), 'learns it closed');
+      for (const sub of [`messages/${MID}`, 'commits/1', `welcomes/${B1}_1`, `keyPackages/${A1}`]) {
+        await assertFails(getDoc(doc(asUser(who), `${conv()}/${sub}`)), `${who} ${sub}`);
+      }
+    }
+    await assertFails(getDocs(collection(asUser(A), `${conv()}/messages`)));
+    await assertFails(setDoc(doc(asUser(A), `${conv()}/keyPackages/${A1}`), { schemaVersion: 1, accountId: A, deviceId: A1, keyPackage: bytes(100), updatedAt: serverTimestamp() }));
+  });
+
+  test('retired (recovered): the couple still reads its history; nothing new is written', async () => {
+    await provision({ state: 'retired' });
+    await seed(`${conv()}/messages/${MID}`, { ...message(), serverTime: Timestamp.now() });
+    await assertSucceeds(getDoc(doc(asUser(B), `${conv()}/messages/${MID}`)));
+    await assertFails(sendAs(A, {}, MID2));
+    await assertFails(setDoc(doc(asUser(A), `${conv()}/keyPackages/${A1}`), { schemaVersion: 1, accountId: A, deviceId: A1, keyPackage: bytes(100), updatedAt: serverTimestamp() }));
+    await assertFails(getDoc(doc(asUser(X), `${conv()}/messages/${MID}`)));
   });
 
   test('7–9. ciphertext, sender, ID, epoch and conversation cannot be edited', async () => {
@@ -312,73 +356,40 @@ describe('messages (D-089)', () => {
 
 // ----------------------------------------------------------------- commits
 
-describe('commits: first commit wins (D-088)', () => {
-  test('a member commits the current epoch atomically with the epoch bump', async () => {
+// Since Prompt 17B (D-127) only submitConversationCommit writes commits,
+// Welcomes and the epoch, after verifying a device-key proof
+// (functions/test/emulator/commit.test.mjs). Every client write that the
+// D-088 rules used to accept is now refused, whatever its shape.
+describe('commits, Welcomes and the epoch are server-only (D-127)', () => {
+  test('no client batch can commit an epoch, even a well-formed one from an active device', async () => {
     await provision({ epoch: 1 });
-    await assertSucceeds(commitBatch(A, { epoch: 1 }));
-    const after = await getDoc(doc(asUser(B), conv()));
-    if (after.data().epoch !== 2) throw new Error('epoch not advanced');
-    // Messages at the old epoch are now refused; the new one is accepted.
-    await assertFails(sendAs(B, { senderDeviceId: B1, epoch: 1 }));
-    await assertSucceeds(sendAs(B, { senderDeviceId: B1, epoch: 2 }));
-  });
-
-  test('a second commit for the same epoch loses', async () => {
-    await provision({ epoch: 1 });
-    await assertSucceeds(commitBatch(A, { epoch: 1 }));
-    await assertFails(commitBatch(B, { epoch: 1, commit: { senderDeviceId: B1 } }));
-    // ...and cannot be squeezed in without a bump either.
-    await assertFails(commitBatch(B, { epoch: 1, commit: { senderDeviceId: B1 }, bump: false }));
-  });
-
-  test('forged commits are refused', async () => {
-    await provision({ epoch: 1 });
-    await assertFails(commitBatch(A, { epoch: 1, bump: false }), 'no epoch bump');
-    await assertFails(commitBatch(A, { epoch: 1, bumpTo: 3 }), 'skips an epoch');
-    await assertFails(commitBatch(A, { epoch: 0, bumpTo: 2 }), 'stale epoch');
-    await assertFails(commitBatch(A, { epoch: 2, bumpTo: 2 }), 'future epoch');
+    await assertFails(commitBatch(A, { epoch: 1 }), 'well-formed, active device, current epoch');
+    await assertFails(commitBatch(B, { epoch: 1, commit: { senderDeviceId: B1 } }), 'the partner');
+    await assertFails(commitBatch(A, { epoch: 1, welcomes: [{ targetDeviceId: B1 }] }), 'with Welcomes');
+    await assertFails(commitBatch(A, { epoch: 1, bump: false }), 'commit alone');
     await assertFails(commitBatch(A, { commit: { senderDeviceId: A2 } }), 'revoked device');
-    await assertFails(commitBatch(A, { commit: { senderDeviceId: B1 } }), "another account's device");
-    await assertFails(commitBatch(A, { commit: { senderAccountId: B } }), 'forged account');
-    await assertFails(commitBatch(A, { commit: { commit: bytes(131073) } }), 'oversized');
-    await assertFails(commitBatch(A, { commit: { plaintext: 'x' } }), 'extra field');
     await assertFails(commitBatch(X, { commit: { senderDeviceId: X1 } }), 'outsider');
-    // An epoch bump without any commit.
-    await assertFails(updateDoc(doc(asUser(A), conv()), { epoch: 2 }));
+    await assertFails(updateDoc(doc(asUser(A), conv()), { epoch: 2 }), 'epoch alone');
+    await assertFails(setDoc(doc(asUser(A), `${conv()}/welcomes/${B1}_1`), welcomeDoc()), 'Welcome alone');
+    const after = await getDoc(doc(asUser(B), conv()));
+    if (after.data().epoch !== 1) throw new Error('epoch moved');
   });
 
-  test('commits are immutable once accepted', async () => {
-    await provision({ epoch: 1 });
-    await assertSucceeds(commitBatch(A, { epoch: 1 }));
+  test('server-written commits and Welcomes are member-readable and immutable', async () => {
+    await provision({ epoch: 2 });
+    await seed(`${conv()}/commits/1`, { ...commitDoc(), createdAt: Timestamp.now() });
+    await seed(`${conv()}/welcomes/${B1}_1`, { ...welcomeDoc(), createdAt: Timestamp.now() });
     const ref = doc(asUser(A), `${conv()}/commits/1`);
     await assertFails(updateDoc(ref, { commit: bytes(500, 7) }));
     await assertFails(deleteDoc(ref));
+    await assertFails(deleteDoc(doc(asUser(B), `${conv()}/welcomes/${B1}_1`)));
     await assertSucceeds(getDoc(doc(asUser(B), `${conv()}/commits/1`)));
-    await assertFails(getDoc(doc(asUser(X), `${conv()}/commits/1`)));
-  });
-});
-
-describe('welcomes', () => {
-  test('only beside their own accepted commit', async () => {
-    await provision({ epoch: 1 });
-    await assertSucceeds(commitBatch(A, { epoch: 1, welcomes: [{ targetDeviceId: B1 }, { targetDeviceId: X1 }] }));
     await assertSucceeds(getDoc(doc(asUser(B), `${conv()}/welcomes/${B1}_1`)));
-    // Alone, later, or for another epoch: refused.
-    const lone = welcomeDoc({ epoch: 2, targetDeviceId: B1 });
-    await assertFails(setDoc(doc(asUser(A), `${conv()}/welcomes/${B1}_2`), lone));
-    await assertFails(setDoc(doc(asUser(A), `${conv()}/welcomes/${B1}_1`), welcomeDoc()));
+    await assertFails(getDoc(doc(asUser(X), `${conv()}/commits/1`)));
     await assertFails(getDoc(doc(asUser(X), `${conv()}/welcomes/${B1}_1`)));
-  });
-
-  test("a welcome must name its commit's sender and the right document ID", async () => {
-    await provision({ epoch: 1 });
-    await assertFails(commitBatch(A, { epoch: 1, welcomes: [{ senderDeviceId: 'abababababababababababababababab' }] }));
-    const db = asUser(A);
-    const batch = writeBatch(db);
-    batch.set(doc(db, `${conv()}/commits/1`), commitDoc());
-    batch.update(doc(db, conv()), { epoch: 2 });
-    batch.set(doc(db, `${conv()}/welcomes/${B1}_9`), welcomeDoc());
-    await assertFails(batch.commit());
+    // Messages follow the server's epoch: old refused, current accepted.
+    await assertFails(sendAs(B, { senderDeviceId: B1, epoch: 1 }));
+    await assertSucceeds(sendAs(B, { senderDeviceId: B1, epoch: 2 }));
   });
 });
 

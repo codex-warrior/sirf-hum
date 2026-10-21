@@ -32,8 +32,10 @@ import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/fire
 import { getMessaging } from 'firebase-admin/messaging';
 import {
   onCommitCreated,
+  onCoupleChanged,
   onDeviceStatusChanged,
   onMessageCreated,
+  onTrustChanged,
   type PushSender,
   type SendResult,
 } from './notification/fanout';
@@ -48,6 +50,9 @@ import {
   requestPairingChallenge as requestPairingStepChallenge,
 } from './couple/pairing';
 import { PairingError, type PairingFailure } from './couple/state';
+import { requestCommitChallenge as commitChallenge, submitConversationCommit as submitCommit } from './conversation/commit';
+import { recoverConversation as recover17c, requestRecoveryChallenge as recoveryChallenge } from './conversation/recovery';
+import { requestUnpairChallenge as unpairChallenge, unpairCouple as unpair } from './couple/unpair';
 import { cleanupExpired } from './device/cleanup';
 import { DeviceError, type DeviceFailure } from './device/common';
 import { activateDevice as activate, issueDeviceChallenge as issueChallenge, registerDevice as register } from './device/registration';
@@ -102,6 +107,10 @@ const FAILURE_CODES: Record<DeviceFailure, FunctionsErrorCode> = {
   reset_not_ready: 'failed-precondition',
   rate_limited: 'resource-exhausted',
   device_not_active: 'failed-precondition',
+  commit_conflict: 'aborted',
+  conversation_unavailable: 'not-found',
+  conversation_changed: 'aborted',
+  couple_unavailable: 'not-found',
 };
 
 const PAIRING_FAILURE_CODES: Record<PairingFailure, FunctionsErrorCode> = {
@@ -111,6 +120,7 @@ const PAIRING_FAILURE_CODES: Record<PairingFailure, FunctionsErrorCode> = {
   pairing_expired: 'deadline-exceeded',
   pairing_invalidated: 'aborted',
   pairing_in_progress: 'failed-precondition',
+  confirmation_code_invalid: 'permission-denied',
   already_paired: 'already-exists',
   identity_reset_pending: 'failed-precondition',
 };
@@ -215,6 +225,22 @@ export const cleanupExpiredDeviceRecords = onSchedule({ schedule: 'every 24 hour
   logger.info('device_cleanup', { ...result });
 });
 
+// --------------------------------------- MLS commits (Prompt 17B, D-127)
+
+/**
+ * The only way a conversation's epoch moves: a commit authorized by the
+ * device key of an active member device. Clients can no longer write
+ * commits, Welcomes or the epoch (rules), so a Firebase session alone can
+ * never stall a conversation.
+ */
+export const requestCommitChallenge = callable('commit_challenge_issued', (uid, data, now) =>
+  commitChallenge(getFirestore(), uid, data, now),
+);
+
+export const submitMlsCommit = callable('commit_submitted', (uid, data, now) =>
+  submitCommit(getFirestore(), uid, data, now),
+);
+
 // ------------------------------------------------ couple pairing (Prompt 12)
 
 /**
@@ -257,6 +283,35 @@ export const cancelPairing = audited('pairing_cancelled', async (uid, data, now)
 });
 
 export const getPairingState = callable('pairing_state_read', (uid, _data, now) => pairingState(getFirestore(), uid, now));
+
+// ------------------------------- conversation recovery (Prompt 17C, D-135)
+
+/**
+ * Retires a stalled conversation and re-provisions a new MLS group for the
+ * same couple, after a device-key proof (purpose 7) bound to the
+ * conversation, its epoch and the account's trust epoch. The only callable
+ * that creates a conversation besides the pairing confirmation, and only
+ * for an existing, active couple.
+ */
+export const requestRecoveryChallenge = callable('recovery_challenge_issued', (uid, data, now) =>
+  recoveryChallenge(getFirestore(), uid, data, now),
+);
+
+export const recoverConversation = audited('conversation_recovered', (uid, data, now) =>
+  recover17c(getFirestore(), uid, data, now),
+);
+
+// ------------------------------------------- unpairing (Prompt 17C, D-136)
+
+/** Either partner, unilaterally, from an active device (purpose 8). */
+export const requestUnpairChallenge = callable('unpair_challenge_issued', (uid, data, now) =>
+  unpairChallenge(getFirestore(), uid, data, now),
+);
+
+export const unpairCouple = audited('couple_unpaired', async (uid, data, now) => {
+  await unpair(getFirestore(), uid, data, now);
+  return done;
+});
 
 // ------------------------------------------------ notifications (Prompt 11)
 
@@ -302,6 +357,32 @@ export const notifyOnCommit = onDocumentCreated('conversations/{conversationId}/
   const doc = event.data;
   if (doc === undefined) return;
   const result = await onCommitCreated(getFirestore(), fcm, event.params.conversationId, String(doc.get('senderDeviceId')), new Date());
+  logger.info('push_fanout', { ...result });
+});
+
+/**
+ * Identity reset alerts (Prompt 17B, D-132): reads only the reset status of
+ * the account trust record; the payload is the constant security alert.
+ */
+export const notifyOnTrustChange = onDocumentUpdated('accountTrust/{accountId}', async (event) => {
+  const change = event.data;
+  if (change === undefined) return;
+  const result = await onTrustChanged(
+    getFirestore(),
+    fcm,
+    event.params.accountId,
+    change.before.get('reset'),
+    change.after.get('reset'),
+    new Date(),
+  );
+  logger.info('push_fanout', { ...result });
+});
+
+/** Unpairing (D-136): both accounts' devices sync silently. Reads status and members only. */
+export const notifyOnCoupleChange = onDocumentUpdated('couples/{coupleId}', async (event) => {
+  const change = event.data;
+  if (change === undefined) return;
+  const result = await onCoupleChanged(getFirestore(), fcm, change.before.get('status'), change.after.get('status'), change.after.get('members'), new Date());
   logger.info('push_fanout', { ...result });
 });
 

@@ -486,3 +486,12 @@ format, key or rule changed.
   resume.
 - Notification timing is visible to Google (FCM) and to anyone looking at
   the lock screen.
+
+## Prompt 17B: security alerts (D-132)
+
+A third constant kind, `a`, is sent when an identity reset is requested (to
+the account's active devices) or completed (to the partner's): visible
+"Sirf Hum" / "Review a security change", its own notification slot,
+`visibility: private`, no identifiers. A cancelled reset syncs the account's
+devices silently. The trigger reads only the reset status of
+`accountTrust/{uid}`.

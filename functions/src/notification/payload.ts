@@ -12,14 +12,17 @@ import type { TokenMessage } from 'firebase-admin/messaging';
 /**
  * `message`: something new from the partner (visible, generic text).
  * `sync`: silent wake-up (own device sent something, a commit, a revocation).
+ * `alert`: an account security change (identity reset requested or
+ * completed, Prompt 17B, D-132): visible, generic, names nothing.
  */
-export type PushKind = 'message' | 'sync';
+export type PushKind = 'message' | 'sync' | 'alert';
 
 export const NOTIFICATION_TITLE = 'Sirf Hum';
 export const NOTIFICATION_BODY = 'You have a new message';
+export const ALERT_BODY = 'Review a security change';
 
 /** Wire value of the kind in `data.k`. */
-export const KIND_CODES: Record<PushKind, string> = { message: 'm', sync: 's' };
+export const KIND_CODES: Record<PushKind, string> = { message: 'm', sync: 's', alert: 'a' };
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -42,9 +45,10 @@ export function pushMessage(token: string, kind: PushKind): TokenMessage {
       ttl: 24 * HOUR_MS,
       notification: {
         title: NOTIFICATION_TITLE,
-        body: NOTIFICATION_BODY,
-        // One notification at a time: a new one replaces the old.
-        tag: 'sh',
+        body: kind === 'alert' ? ALERT_BODY : NOTIFICATION_BODY,
+        // One message notification at a time: a new one replaces the old.
+        // A security alert has its own slot, so a message never hides it.
+        tag: kind === 'alert' ? 'sh_a' : 'sh',
         // Hidden on a secure lock screen, although it is generic anyway.
         visibility: 'private',
       },

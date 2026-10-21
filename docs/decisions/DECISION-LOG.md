@@ -111,6 +111,21 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-119 | Notebook payload v1 (kind 4: create / update / remove ops) and assembly rules (server order, last change wins, terminal remove, shared editing) | Accepted (development); **unreviewed** | 2026-10-20 |
 | D-120 | Future and Us product model: four Future kinds, planned/done, never "missed"; story, little things, rituals, together since; V1 limits; no scores, streaks, reminders or calendars | Accepted (development) | 2026-10-20 |
 | D-121 | Notebook client behaviour: one ID-free controller for Future and Us; no production backend yet; web fails closed | Accepted; backend wiring **Blocked** (D-107, D-025) | 2026-10-20 |
+| D-122 | A person key (PIK) belongs to one device, ever: server `personKeyIndex` and a lineage rule rejecting chains where one PIK certifies two devices | Accepted (development); needs independent review | 2026-10-20 |
+| D-123 | Android: no app data in OS cloud backup or device-to-device transfer | Accepted | 2026-10-20 |
+| D-124 | CI/CD supply chain: actions pinned to commit SHAs, exact firebase-tools, inputs passed as env, npm audit gate for Functions | Accepted | 2026-10-20 |
+| D-125 | Prompt 17 security review: findings, audit package and P0–P3 production-blocker classification are the release gate of record | Accepted | 2026-10-20 |
+| D-126 | MLS PrivateMessages padded to 256-byte blocks (`padding_size`); the server learns lengths only to within a block | Accepted (development); needs independent review | 2026-10-20 |
+| D-127 | Device-bound MLS commit authorization: commits, Welcomes and the epoch are server-written only after a device-key proof (purpose 5) over the commit's binding | Accepted (development); needs independent review | 2026-10-20 |
+| D-128 | Partner identity verification: safety number + QR over both root PIKs; trust only by explicit confirmation; reported revocations always applied | Accepted (development); needs independent review | 2026-10-20 |
+| D-129 | Rejecting a pending device needs an active device's proof (purpose 6) bound to the request | Accepted | 2026-10-20 |
+| D-130 | `qr` + `mobile_scanner` (Android only, CAMERA permission) for the safety-number code; `crypto` direct | Accepted | 2026-10-20 |
+| D-131 | Forced pairing-code comparison: only the invitee sees the code, the inviter enters it, 3 wrong codes end the pairing (amends D-101) | Accepted (development) | 2026-10-20 |
+| D-132 | Content-free identity-reset alerts (kind `a`) to the account and, on completion, the partner | Accepted (development) | 2026-10-20 |
+| D-133 | OSV-Scanner for Dart lockfiles in CI; GitHub secret scanning, push protection, Dependabot alerts and a `main` ruleset | Accepted | 2026-10-20 |
+| D-134 | Unpairing needs its own security decision; not implemented | **Superseded by D-136** | 2026-10-20 |
+| D-135 | Conversation recovery: an active device (proof purpose 7) retires a stalled conversation and re-provisions a new MLS group for the same couple; history kept, nothing re-sent | Accepted (development); needs independent review | 2026-10-21 |
+| D-136 | Secure unpairing: either partner unilaterally, from an active device (proof purpose 8); couple dissolved, conversations closed, partner access ended | Accepted (development); needs independent review | 2026-10-21 |
 
 ---
 
@@ -988,7 +1003,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
   - The token is generated on the server, not the device, which guarantees its entropy.
   - Adds the inviter's confirmation step.
   - PIK fingerprint verification stays a later UX step. The comparison code is a human check, not cryptographic verification.
-- **Status:** Accepted for development · 2026-10-19.
+- **Status:** Accepted for development · 2026-10-19. **Amended by D-131** (2026-10-20): only the invitee sees the code; the inviter enters it.
 
 ### D-102 — Every pairing step is signed by an active device (proof purpose 4)
 - **Decision:**
@@ -1176,3 +1191,157 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
   - Production wires no `NotebookBackend` (`notebookBackendProvider` is `null`), for the same reasons as D-116; Future and Us show honest entry states. The fake backend lives under `test/` only.
   - Web shows the shells, names and sign-out, never the notebook (D-046).
 - **Status:** Accepted · 2026-10-20. Backend wiring: **Blocked** (D-107, D-025).
+
+### D-122 — A person key belongs to one device, ever (Prompt 17)
+- **Problem (Prompt 17 finding P17-01):** D-074 gives every device its own PIK and D-085 says a PIK certifies exactly one device ID, but nothing enforced it end to end:
+  - the server indexed device IDs and device keys (D-069), not person keys;
+  - `approve_device` refuses a revoked PIK only when the approver *already knows* of the revocation;
+  - the lineage verifier rejected duplicate device IDs, not a PIK certifying a second device.
+
+  So a revoked device's retained PIK could certify a fresh device ID that an approver who had not refreshed lineage approved; the server activated it. Peers' MLS trust skipped it (revoked PIK), but the static `verifyLineage` listed it as proven, and devices *it* approved became lineage-trusted. After an identity reset, the old root's PIK could also root the new identity.
+- **Decision:**
+  - **Server:** a server-only `personKeyIndex/{sha256(PIK)}` is created in the same transaction as every activation (bootstrap, approval, recovery), next to `deviceIdIndex` and `deviceKeyIndex`. Registration and activation refuse a PIK that was ever activated, in any account, with the existing `duplicate_device`.
+  - **Device (Rust lineage):** a chain in which one person key certifies two devices is `trust_chain_invalid` as a whole, like a duplicate device ID.
+  - No format, ABI, statement, primitive or pin changes. Golden vectors are unaffected (each vector device has its own PIK).
+- **Why fail the whole chain:** an honest server can no longer produce one, so such a chain means server misbehaviour; every other lineage defect already fails closed.
+- **Tests:** Rust `a_revoked_pik_cannot_return_through_an_unaware_approver` (fails on the old verifier); emulator `person key uniqueness (Prompt 17, D-122)` (4 tests, each fails on the old server code); rules: `personKeyIndex` is client-unreachable.
+- **Status:** Accepted for development · 2026-10-20. Needs independent review with the rest of the lineage design.
+
+### D-123 — No app data in OS backups or device transfers (Android)
+- **Problem (P17-02):** the manifest left Auto Backup on (the default) with no extraction rules. The crypto slots were already safe (`noBackupFilesDir`, D-066; a copied wrapped key is useless without this phone's Keystore), but the Firebase Auth session (shared preferences) and the Firestore offline cache (relationship metadata, device directory, ciphertext) could go to Google cloud backup or to a new phone by device-to-device transfer.
+- **Decision:** `android:allowBackup="false"` and `android:fullBackupContent="false"` (Android ≤ 11: cloud and adb backup), plus `android:dataExtractionRules` excluding every domain for both `cloud-backup` and `device-transfer` (Android 12+, where transfer ignores `allowBackup`).
+- **Consequence:** a new or restored phone starts signed out and is a new device (D-071): it is approved by a trusted device or the recovery key. This was already the trust model; the change removes the restored *session*, which was never trust.
+- **Not claimed:** protection from a rooted device or from the OS vendor; this governs only the app's backup participation.
+- **Status:** Accepted · 2026-10-20. Verified by the CI Android builds (manifest merge); no on-device backup test exists.
+
+### D-124 — CI/CD supply-chain hardening
+- **Problem (P17-03, P17-04):** workflow actions were referenced by mutable tags (`@v4`, `@v2`) and one by a branch (`dtolnay/rust-toolchain@master`); `firebase-tools` was installed unpinned in the job that holds deploy credentials; the production gate spliced the free-text `confirm` input into a shell script.
+- **Decision:**
+  - every action is pinned to a full commit SHA, with the version as a comment; pins are updated deliberately, in a PR;
+  - `firebase-tools` is pinned to an exact version in CI and Deploy;
+  - workflow inputs reach shell steps only as environment variables;
+  - the Functions CI job runs `npm audit --omit=dev --audit-level=low`, the npm counterpart of `tool/crypto_audit.sh` (D-068), for the code that runs on the server.
+- **Not covered (tracked in the Prompt 17 blocker list):** branch protection and GitHub secret scanning are repository settings (owner action); Dart and Gradle dependencies have no advisory gate yet.
+- **Status:** Accepted · 2026-10-20
+
+### D-125 — Prompt 17 security review and production-blocker classification
+- **Decision:** the Prompt 17 review ([audit package](../security/audit/README.md)) is the security baseline of record:
+  - the security-gap matrix and findings P17-01…P17-19 ([PROMPT-17-SECURITY-REVIEW](../security/audit/PROMPT-17-SECURITY-REVIEW.md));
+  - the P0–P3 classification ([PRODUCTION-BLOCKERS](../security/audit/PRODUCTION-BLOCKERS.md)): no production security claim while any P0 is open, and no production E2EE while any P1 is open;
+  - the threat-model status table (THREAT-MODEL, "Prompt 17 status review").
+- **Changes made:** D-122, D-123, D-124, D-126 and documentation corrections. No primitive, statement format, ABI or pin changed; D-126 sets a standard MLS framing option.
+- **Not a claim:** this is an internal engineering review. It is not an independent audit and does not make Sirf Hum production E2EE.
+- **Status:** Accepted · 2026-10-20
+
+### D-126 — MLS message padding (Prompt 17)
+- **Problem (P17-19):** THREAT-MODEL E2/E12 and E2EE-ARCHITECTURE §8 listed "padded sizes" as a mitigation, but the core never set OpenMLS `padding_size`, whose default is 0. Every PrivateMessage therefore revealed its exact content length to the server: a text message, a moment caption, a notebook record. Measured: "ok" and a 150-byte payload gave 219- and 368-byte ciphertexts.
+- **Decision:** both group configurations (create and join) set `padding_size = 256`. Each device pads what it sends; RFC 9420 §6.3.1 zero padding, stripped by every receiver, so the wire format, ABI and interoperability are unchanged. It applies to application messages and to handshake messages (D-055).
+- **Bounds:** payloads stay ≤ 16 KiB and ciphertexts ≤ 32 KiB (`MAX_MESSAGE_CIPHERTEXT_BYTES`, rules) with ≤ 255 added bytes. Groups created before this change keep their stored configuration (development only; nothing is deployed).
+- **What it is not:** length *hiding*. The server still learns the length to within 256 bytes, the message count and timing. Media objects are a separate format with exact sizes (E45, D-099). A finer scheme (e.g. Padmé buckets) would need custom padding and review.
+- **Tests:** `ciphertext_length_hides_the_message_length_within_a_block` (creator and joiner; fails without the change).
+- **Status:** Accepted for development · 2026-10-20. Needs independent review with the rest of the MLS configuration (D-054).
+
+### D-127 — Device-bound MLS commit authorization (Prompt 17B)
+- **Problem (P17-05, high):** clients wrote `commits/{epoch}`, the Welcomes and the epoch move themselves, and the rules could only check the account. Any Firebase session of either partner (a password thief, a session left on a revoked or stolen phone) could win an epoch with bytes no device can process: every device then failed closed and the conversation stalled permanently.
+- **Decision:**
+  - The rules deny every client write to `conversations/{c}` (including `epoch`), `commits/*` and `welcomes/*`. Members still read them.
+  - Two callables are the only writers: `requestCommitChallenge` (single-use 32-byte nonce bound to account, device, conversation and `fromEpoch`; 5 minutes; rate limit `commit` 60/h) and `submitMlsCommit`.
+  - The device signs, with its **device key** and the D-070 proof format under the new purpose **`commit` = 5**, a challenge derived from the nonce and the commit's binding: `SHA-256("SirfHum-CommitAuthorization-v1" | 1 | nonce | len|account | device | conversation | fromEpoch | toEpoch | protocol | SHA-256(commit) | SHA-256(n | n × (target | SHA-256(welcome))))`.
+  - In one transaction the server checks the challenge (account, device, purpose, conversation, epoch, expiry; consumed whatever the outcome), the device (`active` now, of the caller's account), the conversation (active, caller a member), the proof against the stored certificate, and only then first-commit-wins (epoch unchanged, no commit yet). It writes the commit (sender from the verified values), the epoch move and the Welcomes together.
+  - The server hashes opaque bytes and never parses or decrypts MLS. Staged-commit semantics are unchanged (stage → submit → confirm/discard by the server's `commits/{epoch}`).
+- **Reuses:** the device certificate, the device-proof format and the challenge pattern of D-070, D-098 and D-102. No new primitive, statement format, ABI function or pin; one additive proof purpose (an older native library refuses it: fails closed).
+- **What it does not stop:** a *trusted, active* device (a modified partner client, or a compromised phone) can still commit something the others reject. Recovery: see "Conversation recovery" below.
+- **Conversation recovery (design, not built):** when devices hold `stateDiverged` for the current epoch, any active member device may call a future `reprovisionConversation` with the same device-bound authorization. In one transaction the server marks the conversation `retired`, creates a new conversation for the same couple (new ID = new MLS group, epoch 0) and points both `accountPartners` records at it. Devices keep the old history locally (sealed), start the new group from verified lineage, and show "Your conversation was restarted". Abuse bound: a rate limit per couple, and an abusive partner who keeps stalling is an unpairing case (D-134). Needs its own review; P1 until built.
+- **Tests:** emulator `device-bound commit authorization (D-127)` (9); rules `commits, Welcomes and the epoch are server-only (D-127)` and the flipped documented-limit test; Functions unit `commit authorization v1` (vector, every bound field, malformed); Dart golden vector; Dart native (CI) password-only / wrong device / revoked / replay / refused-never-advances / cross-account.
+- **Status:** Accepted for development · 2026-10-20. Needs independent review. Deployment needs Blaze (D-025).
+
+### D-128 — Partner identity verification: safety number and QR (Prompt 17B)
+- **Problem (P17-09, high):** nothing in the app could anchor a partner's root person key, so messaging could not start in production, and a future UX risked silent trust-on-first-use of server data.
+- **Decision:**
+  - **What is verified:** each person's **root PIK** (the anchor of their signed lineage, D-084/D-085) bound to their account. Every other device of a person is trusted only by signatures from that root, so one comparison covers devices added later.
+  - **Safety number:** `fingerprint = SHA-256("SirfHum-SafetyNumber-v1" | 1 | len|account | len|root PIK)`; 30 digits per person (six 5-byte chunks, each mod 100000), the account that sorts first first: 60 digits, 12 groups, identical on both phones. **QR:** `SHSN1:` + upper-case hex of both 32-byte fingerprints (QR alphanumeric mode).
+  - **Trust changes only by explicit confirmation:** "The numbers match" (after a confirmation dialog) or a scanned code equal to the shown number anchors the partner's root (`trustVerifiedPersonKey`, sealed in the core, survives restarts), and only if the server still presents that same root (`changedWhileShown` otherwise).
+  - **Status is computed, never stored apart from the core:** verified = the partner's current lineage applies from an anchored root whose root device is still trusted. A new root (reset, substitution) is not anchored → "Not verified"; a revoked root can never be anchored again.
+  - **Own root:** a device anchors its own account's root automatically only from a lineage that proves the device itself (a chain containing this device can only descend from this person's real root).
+  - **Revocations always land:** when a partner's lineage cannot be applied, every device the server reports `revoked` is revoked locally (only removes trust). This closes a gap: an identity reset's revocations previously reached peers only after the new identity was verified.
+  - **UI:** Us → Safety → "Safety number" (Verified / Not verified) → a pushed page with the number, the code, "The numbers match", "Scan their code", "They don't match". Web says it happens on the phone. Production wires no backend yet (D-116), so it shows an honest "on its way" state.
+- **Not claimed:** verification does not make Sirf Hum production E2EE or audited; it authenticates the partner's identity key only.
+- **Tests:** safety-number format (7); controller and screen (13, incl. sign-out and account switch during async work, wrong QR, mismatch, changed while shown, revoked); native service (10, CI): correct verification, wrong QR, server substitution, new device, changed identity, revoked root, restart, account switch, unavailable partner.
+- **Status:** Accepted for development · 2026-10-20. Needs independent review (number construction, own-root rule).
+
+### D-129 — Rejecting a pending device needs a trusted device (Prompt 17B)
+- **Problem (P17-07):** `rejectDeviceApproval` accepted a Firebase session alone: a password thief could permanently block the owner's new devices (terminal `rejected`), against D-081's principle.
+- **Decision:** the rejecter must be an **active** device of the account and sign a single-use challenge (`issueDeviceChallenge` purpose `approval_rejection`, bound to the request ID) with its device key under the new proof purpose **`approval_rejection` = 6**. Failed proofs count toward the shared failure budget; challenges are rate-limited at issue. Pending, revoked and other accounts' devices cannot reject.
+- **Tests:** emulator `rejection needs a trusted device (D-129)` (2) and the updated rejection tests; Dart trust-service test (native).
+- **Status:** Accepted · 2026-10-20
+
+### D-130 — QR rendering and scanning dependencies (Prompt 17B)
+- **Decision:** `qr` 4.0.0 (pure Dart, renders the code in the design-system `ScannableCode`, always dark-on-light) and `mobile_scanner` 7.4.2 (Android CameraX + on-device ML Kit barcode reading; frames never leave the phone). `mobile_scanner` is imported only by `features/verification/data/camera_qr_code_scanner.dart` and wired in `main.dart` on Android only. It adds the `CAMERA` permission to the merged Android manifest, requested only when the person taps "Scan their code".
+- **Also:** `crypto` (dart-lang, already locked transitively) became a direct dependency for SHA-256 (D-127, D-128).
+- **Status:** Accepted · 2026-10-20
+
+### D-131 — Forced pairing-code comparison (amends D-101)
+- **Problem (P17-08):** `getPairingState` gave the inviter the same code the claimant saw and `confirmPairing` took no code, so confirming did not prove any comparison happened; an intercepted link plus a careless inviter paired a stranger.
+- **Decision (amends D-101):** only the **invitee's** phone shows the six-digit code. The inviter must **enter** the code the invitee reads out; `confirmPairing` requires it, compares in constant time, and after **3** wrong codes invalidates the pairing (`confirmation_code_mismatch`, locks released, code deleted). A wrong code returns `confirmation_code_invalid`. The Dart client refuses a malformed code without a server step and treats a server that hands the inviter a code as broken.
+- **Still true:** the comparison is a human check, not cryptographic verification; the partner's identity is authenticated by D-128.
+- **Tests:** emulator `forced code comparison (D-131)` (5: intercepted invitation, three wrong codes, one mistake allowed, malformed codes, invitee cannot confirm); Dart parse and service tests.
+- **Status:** Accepted for development · 2026-10-20
+
+### D-132 — Content-free identity-reset alerts (Prompt 17B)
+- **Problem:** D-082 left reset notifications OPEN: a reset requested with only the password raised no signal.
+- **Decision:** a Firestore trigger on `accountTrust/{uid}` reads only the reset status and sends the new constant kind `a` (visible: "Sirf Hum" / "Review a security change", its own notification slot, `visibility: private`, no IDs):
+  - reset **requested** → every active device of the account (so it can be cancelled from any trusted phone);
+  - reset **completed** → the partner's active devices (they must verify the new identity, D-128);
+  - reset **cancelled** → the account's devices sync silently.
+- **Tests:** payload unit test; emulator `identity reset alerts (D-132)` (3); the static guards (reads only `reset`, logs counts only).
+- **Status:** Accepted for development · 2026-10-20. Deployment needs Blaze (Eventarc).
+
+### D-133 — Dependency advisories for Dart and GitHub security controls (Prompt 17B)
+- **Decision:**
+  - CI job `dart-advisories` runs OSV-Scanner 2.6.0 (checksum-verified, pinned) on `pubspec.lock` and the crypto package's lockfile. Rust keeps `cargo audit` with its three documented, re-verified ignores (D-068); Functions keep `npm audit` (D-124).
+  - Gradle has no lockfile, so it is covered only by GitHub's dependency graph and Dependabot alerts until Gradle dependency locking is adopted.
+  - On the public repository the owner authorized enabling GitHub secret scanning, push protection, Dependabot alerts and a ruleset on `main` (PR required, required status checks, no force-push or deletion). Repository privacy is not a security boundary.
+- **Status:** Accepted · 2026-10-20
+
+### D-134 — Unpairing needs its own security decision (Prompt 17B)
+- **Decision:** unpairing is **not implemented** in Prompt 17B. It must be unilateral and instant (T10), and that touches decisions not yet made: what happens to shared history (open decision 6), MLS removal of the other person's devices versus retiring the conversation, rules for a dissolved couple, re-pairing (a new group, never reused, D-044), content-free notification to the other person, and the account-deletion flow (D-105). A rushed version would risk an account-takeover path (a password alone dissolving a couple) or silent retention.
+- **Required properties for the future decision:** device-key authorization (as D-127), no password-only path, server-side end of access for the other account, MLS removal or retirement, honest copy about what the partner keeps.
+- **Status:** **Superseded by D-136** (2026-10-21). Was Open · 2026-10-20.
+
+### D-135 — Conversation recovery: retire and re-provision (Prompt 17C)
+- **Why:** since D-127 only an active device's key can move a conversation's epoch, but a *trusted* device (a bug, a modified partner client, a compromised phone) can still win `commits/{e}` with a commit the other devices cannot process. Every device then fails closed (`stateDiverged`) and the conversation stalls with no way forward. MLS has no "undo" for an accepted epoch, and the server never parses MLS, so the only sound recovery is a **new MLS group** for the same couple.
+- **Authorization:** callables `requestRecoveryChallenge` and `recoverConversation`. The device signs, with its **device key** and the D-070 proof format under the new purpose **`conversation_recovery` = 7**, the derived challenge
+  `SHA-256("SirfHum-ConversationRecovery-v1" | u8 1 | nonce[32] | u32 len | account | device id[16] | conversation id[16] | stalled epoch u64 BE | account trust epoch u64 BE)`.
+  The nonce is single-use, 5 minutes, bound server-side to (account, device, purpose, conversation, epoch, trust epoch). Rate limit `conversationRecovery` 3 per 24 h per account. A Firebase session alone, a revoked, pending or unknown device, or another account cannot recover.
+- **State transition (one transaction):** the server checks the challenge (consumed whatever the outcome), the device (`active`, caller's account), the caller's account trust epoch **equals** the signed one (a trust change in between refuses: recovery never acts on a stale trust view), the conversation (`active`, caller a member, epoch **equals** the signed one, and it is the couple's **current** conversation per both `accountPartners` records), the couple (`active`) and the proof. Then:
+  - old conversation → `state: 'retired'`, `successorId`, `retiredAt`, `retiredByDeviceId`; it accepts no more writes (no messages, commits, key packages, media);
+  - new conversation: new random ID (= new MLS group ID), same members, couple and pairing, `epoch: 0`, `generation` = old + 1, `predecessorId` = old;
+  - both `accountPartners` records point at the new conversation.
+- **Each device:** sees the old conversation `retired` (sync/send fail with `retired`), follows `successorId` only if the successor names it as `predecessorId` (no jumping to an unrelated or older conversation), publishes a fresh KeyPackage there and joins or creates the new group exactly as for a new couple: membership from verified lineage only (D-085), so revoked or unverified devices are never added. Trust state is unchanged (recovery is not a trust event).
+- **Existing encrypted history:** untouched. Each phone keeps the old conversation's sealed history and can still show it; server ciphertext of the retired conversation stays readable by the members (it was always theirs) and is never decrypted or rebuilt by the server.
+- **Pending messages:** messages queued in the old conversation stay sealed on the phone, marked not sent; they are **never** silently re-sent into the new group (that would be a new send the person did not make). The app can offer to send them again.
+- **Offline devices:** on reconnect they find `retired` and the successor; their old MLS state is untouched.
+- **Replay and cross-conversation use:** challenges are single-use and bound to one conversation, epoch and trust epoch; a retired conversation and its epoch never qualify again; the new conversation has a new group ID, so an old (broken) commit cannot be replayed into it (different group, and the commit path is server-only).
+- **States the app distinguishes:** normal commit (accepted); rejected commit (`WriteOutcome.refused`); stalled conversation (`MessagingFailure.stateDiverged`); recovery requested (`MessagingService.recover()`); recovery completed (successor `ConversationId` returned, log `messaging_conversation_recovered`, server audit `conversation_recovered`; old conversation `retired` → `MessagingFailure.retired`, `MessagingService.successor()`); recovery failed (`TransportException` / `MessagingException` category; nothing changed).
+- **Failure behaviour:** any check fails → nothing changes and a category is returned (`conversation_changed` when the epoch or trust epoch moved or the conversation is no longer current, `conversation_unavailable`, device and proof categories).
+- **Abuse bound:** a trusted partner device can retire the conversation; that is a denial of service it could cause anyway (it can stall), bounded by the rate limit and resolved by unpairing (D-136).
+- **Status:** Accepted for development · 2026-10-21. Needs independent review. Deployment needs Blaze.
+
+### D-136 — Secure unpairing (Prompt 17C; supersedes D-134)
+- **Who:** **either partner, unilaterally**, from one of their own **active** devices. Requiring the other's consent would let an abusive partner hold someone in the relationship (T10); so leaving needs no consent, only proof that it is really that person's trusted phone.
+- **Authorization:** `requestUnpairChallenge` + `unpairCouple`; device proof purpose **`unpair` = 8** over `SHA-256("SirfHum-Unpair-v1" | u8 1 | nonce[32] | u32 len | account | device id[16] | couple id[16])`. A password or Firebase session alone **cannot** unpair (no stolen-password path to destroy the relationship); a revoked, pending or unknown device cannot; a challenge for one couple cannot end another. Rate limit `unpair` 5 per 24 h.
+- **What happens (one transaction):** the couple → `status: 'dissolved'` (`dissolvedAt`, `dissolvedByDeviceId`; the ID is never reused); every conversation of the couple (active or retired) → `state: 'closed'`; both `accountPartners` records are deleted.
+- **Consequences:**
+  - *Removed partner's devices:* stay trusted **on their own account** (device trust is per account); they lose all access to the couple: the rules deny reads of a closed conversation's documents and media, and partner reads (profile, device directory) end with `accountPartners`.
+  - *Shared history:* each phone keeps what it already decrypted, sealed in its own history; it cannot be recalled from the other phone (stated plainly in the product). Server ciphertext is retained, unreadable by clients, until a retention decision (P2-8).
+  - *Future messages:* none: a closed conversation accepts no writes, and its MLS group never gets another epoch.
+  - *Moments, Future + Us:* they live in the conversation, so the same as history.
+  - *Pending invitations:* none can exist while paired (one couple per account); after unpairing either account may invite anyone.
+  - *Recovery keys and devices:* unaffected (account-level).
+  - *Reinstall:* a new device of the same account; no couple.
+  - *Re-pairing:* only through the full two-consent flow (D-101, D-131) with a new couple, conversation and MLS group (D-044). The old couple never comes back.
+  - *Reversible:* no.
+  - *Notifications:* silent content-free sync wake-ups to the active devices of both accounts, so both apps update; no visible alert naming the event (safety: the leaving person decides what to tell the other).
+- **Concurrency:** one transaction over the couple, both partner records and every conversation of the couple. The conversation IDs are listed outside the transaction (a collection query inside it would lock the whole range) and each conversation is then read **in** the transaction; completeness comes from following the partners' current conversation back through `predecessorId`, since any conversation created after the listing is a recovery successor that the partner records point to. If the walk reaches its bound with conversations still unread, the transaction **fails closed** (nothing written) rather than dissolve with one missed. The listing is injectable (`unpairCouple(…, list)`) so tests can simulate a conversation created after it. A racing recovery writes those partner records and so forces a retry; a racing commit, recovery or pairing step that commits later sees the dissolved couple, the closed conversation or the missing partner record and fails closed (emulator tests: concurrent unpair, unpair vs recovery, vs pairing, vs device approval).
+- **Client:** `PairingService.unpair(account, coupleId)`: the device key signs inside the Rust core; a malformed couple ID or another account never reaches the server.
+- **Status:** Accepted for development · 2026-10-21. Needs independent review (abusive-partner review in particular). D-134 is superseded.

@@ -10,6 +10,8 @@ import 'package:sirf_hum/app/environment_guard.dart';
 import 'package:sirf_hum/core/logging/app_logger.dart';
 import 'package:sirf_hum/features/moments/application/moment_photo_picker.dart';
 import 'package:sirf_hum/features/moments/data/system_photo_picker.dart';
+import 'package:sirf_hum/features/verification/application/verification_controller.dart';
+import 'package:sirf_hum/features/verification/data/camera_qr_code_scanner.dart';
 import 'package:sirf_hum/infrastructure/firebase/app_check_bootstrap.dart';
 import 'package:sirf_hum/infrastructure/firebase/callable_pairing_backend.dart';
 import 'package:sirf_hum/infrastructure/firebase/crash_reporting.dart';
@@ -62,6 +64,9 @@ Future<void> main() async {
           momentPhotoPickerProvider.overrideWithValue(
             const SystemPhotoPicker(),
           ),
+        // Nor private keys, so no safety-number scanning there (D-128).
+        if (!kIsWeb)
+          qrCodeScannerProvider.overrideWithValue(const CameraQrCodeScanner()),
       ],
       child: const SirfHumApp(),
     ),

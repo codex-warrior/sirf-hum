@@ -131,12 +131,33 @@ class DeviceTrustService {
     _log('device_approved', 'approved');
   }
 
-  /// Rejects a request: the device becomes `rejected` (terminal).
+  /// Rejects a request: the device becomes `rejected` (terminal). Signed by
+  /// this active device's key over a challenge bound to the request (D-129):
+  /// a password alone can no longer block the owner's new devices.
   Future<void> reject({
+    required CryptoCore core,
     required AccountId account,
     required ApprovalCandidate candidate,
   }) async {
-    await _registry.reject(account, candidate.request.requestId);
+    await _requireTrusted(core, account);
+    final own = _ownId(core);
+    final requestId = candidate.request.requestId;
+    final c = await _registry.requestChallenge(
+      account,
+      own,
+      ChallengePurpose.approvalRejection,
+      requestId: requestId,
+    );
+    await _registry.reject(
+      account,
+      requestId,
+      rejecterDeviceIdHex: own,
+      challengeId: c.challengeId,
+      proof: core.deviceProof(
+        DeviceProofPurpose.approvalRejection,
+        c.challenge,
+      ),
+    );
     _log('device_rejected', 'rejected');
   }
 

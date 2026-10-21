@@ -123,7 +123,11 @@ Security Rules do not provide E2EE. The layers stay separate:
 **Current status:**
 - App Check is wired in the client and its API is enabled in all three
   projects.
-- **Enforcement is OFF for every service.**
+- **Enforcement is OFF for Firestore and Storage** (console settings).
+  **Callables enforce it in code** (`enforceAppCheck: true` on every
+  callable), so the first Functions deploy rejects every client until
+  attestation and debug tokens exist (Prompt 17 correction, P17-10;
+  blocker P1-8).
 - **Not yet done:**
   - Play Integrity linking needs the app on Google Play.
   - App Attest needs the Apple team ID.
@@ -294,9 +298,21 @@ All of these must hold for a production deploy:
 When the account moves to a plan that supports them, add required reviewers
 on `production` and branch protection on `main` (D-038).
 
+**Prompt 17 (P17-13):** the repository is currently **public**, and public
+repositories get rulesets/branch protection, secret scanning, push
+protection and Dependabot alerts on the free plan. **Enabled in Prompt 17B
+(owner-authorized, D-133):** secret scanning, push protection, Dependabot
+alerts, and ruleset "main: PR + CI required" (pull request required, the
+ten CI checks required, no force pushes, no deletion, no bypass actors).
+Visibility: make the repository private before the first production
+release (PROMPT-17B-REMEDIATION §5); privacy is not a security boundary.
+
 Rules:
 - Use **Workload Identity Federation**, never service-account JSON keys.
 - Never put credentials in workflow YAML.
+- Pin every action to a full commit SHA (tag as a comment) and every tool a
+  workflow installs to an exact version; pass workflow inputs to shell steps
+  only through `env:` (D-124).
 - Production secrets exist only in the `production` environment.
 - Future secrets (Android upload keystore, App Store Connect API key, LiveKit
   API secret for Functions) follow the same per-environment pattern;

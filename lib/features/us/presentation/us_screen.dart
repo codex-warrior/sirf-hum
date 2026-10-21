@@ -7,6 +7,9 @@ import 'package:sirf_hum/features/notebook/domain/notebook_state.dart';
 import 'package:sirf_hum/features/notebook/presentation/notebook_copy.dart';
 import 'package:sirf_hum/features/notebook/presentation/notebook_editor_screen.dart';
 import 'package:sirf_hum/features/notebook/presentation/notebook_status.dart';
+import 'package:sirf_hum/features/verification/application/verification_controller.dart';
+import 'package:sirf_hum/features/verification/domain/verification_state.dart';
+import 'package:sirf_hum/features/verification/presentation/verification_screen.dart';
 import 'package:sirf_hum/security/couple/couple_profiles.dart';
 import 'package:sirf_hum/security/notebook/notebook.dart';
 import 'package:sirf_hum/security/notebook/notebook_payload.dart';
@@ -48,6 +51,7 @@ class UsScreen extends ConsumerWidget {
             areaName: 'Us',
             empty: const _Empty(),
           ),
+        const _SafetySection(),
         AppSection(
           title: 'Account',
           child: Align(
@@ -87,6 +91,46 @@ class UsScreen extends ConsumerWidget {
     if (confirmed ?? false) {
       await ref.read(sessionProvider.notifier).signOut();
     }
+  }
+}
+
+/// Whether this phone has verified the partner (D-128), one tap from the
+/// comparison page. Says "Not verified" plainly; never a score.
+class _SafetySection extends ConsumerWidget {
+  const _SafetySection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(partnerVerificationProvider);
+    final (icon, subtitle) = switch (state) {
+      VerificationReady(verified: true) => (Icons.verified_user, 'Verified'),
+      VerificationReady() => (Icons.shield_outlined, 'Not verified'),
+      VerificationLoading() => (Icons.shield_outlined, 'Checking…'),
+      VerificationUnavailable(
+        reason: VerificationUnavailableReason.needsPhone,
+      ) =>
+        (Icons.shield_outlined, 'On your phone'),
+      VerificationUnavailable() => (Icons.shield_outlined, 'Not available yet'),
+      VerificationFailed() => (Icons.shield_outlined, "Couldn't check"),
+    };
+    return AppSection(
+      title: 'Safety',
+      child: ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(
+          icon,
+          color: state is VerificationReady && state.verified
+              ? context.colors.success
+              : context.colors.textSecondary,
+        ),
+        title: const Text('Safety number'),
+        subtitle: Text(subtitle),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const VerificationScreen()),
+        ),
+      ),
+    );
   }
 }
 

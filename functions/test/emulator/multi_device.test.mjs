@@ -97,6 +97,13 @@ async function approveNew(acct, approver, d) {
 /** Setup only: puts a device into `revoked` directly. The real, signed path (D-081) is tested in hardening.test.mjs. */
 const revoke = (acct, d) => db.doc(`users/${acct}/devices/${d.hex}`).update({ status: 'revoked', revokedAt: Timestamp.now(), revokedReason: 'user_removed' });
 
+/** What a trusted device does to reject a request (D-129): a challenge bound to the request, a purpose-6 proof. */
+async function rejectSigned(acct, rejecter, request, { signer = rejecter.device, purpose = 6 } = {}) {
+  const c = await issueDeviceChallenge(db, acct, { deviceId: rejecter.hex, purpose: 'approval_rejection', requestId: request.requestId }, now());
+  const { signature } = makeProof({ device: signer, accountId: acct, deviceId: rejecter.deviceId, certificate: rejecter.certificate, challenge: Buffer.from(c.challenge, 'base64'), purpose });
+  return rejectDeviceApproval(db, acct, { requestId: request.requestId, deviceId: rejecter.hex, challengeId: c.challengeId, proof: b64(signature) }, now());
+}
+
 async function registerRecovery(acct, registrar, recovery) {
   const c = await issueDeviceChallenge(db, acct, { deviceId: registrar.hex, purpose: 'recovery_registration' }, now());
   const { signature } = makeRecoveryRegistration({ registrar, recovery, accountId: acct, challenge: Buffer.from(c.challenge, 'base64'), expiresAtUnix: c.expiresAtUnix });
@@ -197,7 +204,7 @@ describe('enrollment and approval', () => {
     const [A, B] = [newDevice(), newDevice()];
     await bootstrap(acct, A);
     const request = await enroll(acct, B);
-    await rejectDeviceApproval(db, acct, { requestId: request.requestId }, now());
+    await rejectSigned(acct, A, request);
     assert.equal(await statusOf(acct, B), 'rejected');
     await rejectsWith(requestDeviceApproval(db, acct, { deviceId: B.hex }, now()), 'device_not_pending');
     await rejectsWith(approve(acct, A, request, approvalSignature(acct, A, B, request)), 'request_invalid');
@@ -276,8 +283,56 @@ describe('stale and forged approvals (§13)', () => {
     await bootstrap(attacker, X);
     await rejectsWith(approve(attacker, X, request, approvalSignature(attacker, X, B, request)), 'request_invalid');
     assert.equal((await listDeviceApprovalRequests(db, attacker, now())).length, 0);
-    await rejectsWith(rejectDeviceApproval(db, attacker, { requestId: request.requestId }, now()), 'request_invalid');
+    await rejectsWith(rejectSigned(attacker, X, request), 'request_invalid');
     assert.equal(await statusOf(acct, B), 'pending');
+  });
+});
+
+// Prompt 17B, P17-07 / D-129. Before, any signed-in session (a password
+// alone) could move the owner's pending devices to terminal `rejected`.
+describe('rejection needs a trusted device (D-129)', () => {
+  test('a password alone cannot reject a pending device', async () => {
+    const acct = account();
+    const [A, B] = [newDevice(), newDevice()];
+    await bootstrap(acct, A);
+    const request = await enroll(acct, B);
+    // The old call shape: no device, no proof.
+    await rejectsWith(rejectDeviceApproval(db, acct, { requestId: request.requestId }, now()), 'invalid_argument');
+    // A real challenge for A, but signed without A's key.
+    await rejectsWith(rejectSigned(acct, A, request, { signer: keyFromSeed(randomBytes(32)) }), 'proof_invalid');
+    // A's key, but another purpose (an enrollment proof) over the same challenge.
+    await rejectsWith(rejectSigned(acct, A, request, { purpose: 2 }), 'proof_invalid');
+    assert.equal(await statusOf(acct, B), 'pending');
+    // ...and B can still be approved.
+    await approve(acct, A, request, approvalSignature(acct, A, B, request));
+    assert.equal(await statusOf(acct, B), 'active');
+  });
+
+  test('pending, revoked and other-request challenges cannot reject; a challenge is used once', async () => {
+    const acct = account();
+    const [A, B, C, R] = [newDevice(), newDevice(), newDevice(), newDevice()];
+    await bootstrap(acct, A);
+    await approveNew(acct, A, R);
+    const requestB = await enroll(acct, B);
+    const requestC = await enroll(acct, C);
+    // The pending device itself has no authority.
+    await rejectsWith(issueDeviceChallenge(db, acct, { deviceId: B.hex, purpose: 'approval_rejection', requestId: requestC.requestId }, now()), 'approver_not_trusted');
+    // A revoked device has none either.
+    await revoke(acct, R);
+    await rejectsWith(issueDeviceChallenge(db, acct, { deviceId: R.hex, purpose: 'approval_rejection', requestId: requestB.requestId }, now()), 'approver_not_trusted');
+    // A challenge bound to request C cannot reject request B.
+    const forC = await issueDeviceChallenge(db, acct, { deviceId: A.hex, purpose: 'approval_rejection', requestId: requestC.requestId }, now());
+    const { signature } = makeProof({ device: A.device, accountId: acct, deviceId: A.deviceId, certificate: A.certificate, challenge: Buffer.from(forC.challenge, 'base64'), purpose: 6 });
+    const forB = { requestId: requestB.requestId, deviceId: A.hex, challengeId: forC.challengeId, proof: b64(signature) };
+    await rejectsWith(rejectDeviceApproval(db, acct, forB, now()), 'challenge_invalid');
+    // Consumed by that attempt: replaying it for C fails too.
+    await rejectsWith(rejectDeviceApproval(db, acct, { ...forB, requestId: requestC.requestId }, now()), 'challenge_invalid');
+    // A challenge without a request is refused at issue.
+    await rejectsWith(issueDeviceChallenge(db, acct, { deviceId: A.hex, purpose: 'approval_rejection' }, now()), 'invalid_argument');
+    assert.equal(await statusOf(acct, B), 'pending');
+    assert.equal(await statusOf(acct, C), 'pending');
+    await rejectSigned(acct, A, requestB);
+    assert.equal(await statusOf(acct, B), 'rejected');
   });
 });
 

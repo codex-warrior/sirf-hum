@@ -26,6 +26,8 @@ the task — they replace restating the spec in prompts:
 | Messaging (conversations, MLS commits, envelopes, local history, trust unit) | `docs/security/E2EE-MESSAGING-DESIGN.md` (D-085–D-091) |
 | Couple, pairing, account profile | `docs/security/COUPLE-AND-PAIRING.md` (D-100–D-105) |
 | Encrypted media, Storage, push notifications, FCM tokens | `docs/security/E2EE-MEDIA-AND-NOTIFICATIONS.md` (D-093–D-099); D-093 investigation: `docs/security/D-093-SECURITY-REVIEW.md` |
+| Security review, production blockers, audit package, metadata exposure | `docs/security/audit/README.md` (Prompts 17/17B, D-122–D-134; P0–P3 in `PRODUCTION-BLOCKERS.md`) |
+| Partner verification (safety number, QR), commit authorization | `docs/decisions/DECISION-LOG.md` D-127, D-128; `lib/security/verification/`, `lib/security/messaging/commit_authorization.dart` |
 | Experiments | `prototypes/` is isolated and never imported by the app (D-052) |
 | Analytics | `docs/security/ANALYTICS-POLICY.md` |
 | Tests | `docs/testing/TESTING-STRATEGY.md` |
