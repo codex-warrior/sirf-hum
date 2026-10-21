@@ -126,6 +126,15 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-134 | Unpairing needs its own security decision; not implemented | **Superseded by D-136** | 2026-10-20 |
 | D-135 | Conversation recovery: an active device (proof purpose 7) retires a stalled conversation and re-provisions a new MLS group for the same couple; history kept, nothing re-sent | Accepted (development); needs independent review | 2026-10-21 |
 | D-136 | Secure unpairing: either partner unilaterally, from an active device (proof purpose 8); couple dissolved, conversations closed, partner access ended | Accepted (development); needs independent review | 2026-10-21 |
+| D-137 | Production launch gate: production deploys only through the Deploy workflow; Functions and Hosting to production refused until `config/launch_gate.json` is `open` (changed only by a reviewed PR after the launch gate passes) | Accepted | 2026-10-21 |
+| D-138 | Production sign-in provider: email link (passwordless) as the only provider, with email-enumeration protection; Auth stays account identity, never device trust | **Proposed — needs owner approval**; nothing enabled | 2026-10-21 |
+| D-139 | App Check production readiness: production web refuses to start without a reCAPTCHA site key; every callable must enforce App Check (static test); enforcement order and manual steps in APP-CHECK-PRODUCTION | Accepted (development); enforcement **not enabled** | 2026-10-21 |
+| D-140 | Web origin headers: CSP as Report-Only (browser-tested locally), COOP, CORP, wider Permissions-Policy, no-cache for code entry points; pinned by `tool/check_web_headers.mjs` | Accepted; CSP enforcement **deferred** to the staging origin | 2026-10-21 |
+| D-141 | Photo-picker cache sweep at start-up: only `cacheDir/<v4 UUID>/` directories holding regular files (image_picker_android's layout) | Accepted | 2026-10-21 |
+| D-142 | Gradle dependency locking (release runtime classpaths, STRICT) scanned by OSV-Scanner; Gradle wrapper checksum; Dependabot version updates except Cargo and Gradle | Accepted | 2026-10-21 |
+| D-143 | A production release is never silently debug-signed; Play App Signing and build provenance attestations required before production | Accepted; provenance **not built** | 2026-10-21 |
+| D-144 | P3-15: `unpairCouple` authorizes (challenge, couple, device, proof) before listing or walking the couple's conversations | Accepted (development); needs independent review | 2026-10-21 |
+| D-145 | Prompt 18 review readiness: PRODUCTION-LAUNCH-GATE is the launch gate of record (with D-125's blocker classes); the independent review package is the reviewer's entry point | Accepted | 2026-10-21 |
 
 ---
 
@@ -1345,3 +1354,64 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Concurrency:** one transaction over the couple, both partner records and every conversation of the couple. The conversation IDs are listed outside the transaction (a collection query inside it would lock the whole range) and each conversation is then read **in** the transaction; completeness comes from following the partners' current conversation back through `predecessorId`, since any conversation created after the listing is a recovery successor that the partner records point to. If the walk reaches its bound with conversations still unread, the transaction **fails closed** (nothing written) rather than dissolve with one missed. The listing is injectable (`unpairCouple(…, list)`) so tests can simulate a conversation created after it. A racing recovery writes those partner records and so forces a retry; a racing commit, recovery or pairing step that commits later sees the dissolved couple, the closed conversation or the missing partner record and fails closed (emulator tests: concurrent unpair, unpair vs recovery, vs pairing, vs device approval).
 - **Client:** `PairingService.unpair(account, coupleId)`: the device key signs inside the Rust core; a malformed couple ID or another account never reaches the server.
 - **Status:** Accepted for development · 2026-10-21. Needs independent review (abusive-partner review in particular). D-134 is superseded.
+
+### D-137 — Production launch gate and deploy lock (Prompt 18)
+- **Problem:** the Deploy workflow already required `main`, a typed confirmation and WIF credentials bound to repository + `production` environment + `main`, but nothing tied a production deploy to the launch gate, and `tool/deploy.sh` still accepted a production deploy from a laptop with owner credentials. Once Blaze is enabled, one manual run could open production to traffic before the review.
+- **Decision (`tool/deploy.sh`, mirrored in `.github/workflows/deploy.yml`):**
+  - production deploys run only inside GitHub Actions (`GITHUB_ACTIONS=true`); a local production deploy is refused. A guard against accidents, not against the owner: the credentials themselves come only from WIF for the workflow on `main`;
+  - an **allowlist**: with the gate closed, production accepts only `firestore`, `firestore:rules`, `firestore:indexes` and `storage` (rules only restrict access). Every other target, however spelled (whitespace, `functions:<name>`, `extensions`, combined lists), is refused;
+  - the gate is `config/launch_gate.json` → `productionTraffic`; only the exact string `"open"` opens it; a missing or malformed file is closed. It is committed `closed` and may change only by a reviewed PR after every P0 and P1 gate in [PRODUCTION-LAUNCH-GATE](../security/audit/PRODUCTION-LAUNCH-GATE.md) is PASS;
+  - workflow inputs reach shell steps only through `env:` (completes D-124 in Deploy).
+- **Tests:** `tool/test_deploy_guard.sh` (23 hermetic dry-run cases; 20 fail against the previous script), in CI (`security-rules` job) and `tool/verify.sh`.
+- **Status:** Accepted · 2026-10-21.
+
+### D-138 — Production sign-in provider (Prompt 18; follows D-029, D-107)
+- **Decision (proposed):** **email link (passwordless) sign-in** as the single production provider, with Firebase email-enumeration protection on; no email/password, phone or social provider in V1. Firebase Auth identifies the **account** only: it never authorizes a device, a key or a commit (device trust stays with PIKs, certificates and device proofs, D-070, D-127).
+- **Why:** it is within D-029's documented baseline; with no password there is nothing to reuse, stuff or phish, and password reset (which is email control anyway) disappears as a second path. Full analysis: [AUTH-PRODUCTION-DECISION](../architecture/AUTH-PRODUCTION-DECISION.md).
+- **Not done:** no provider is enabled (Firebase Authentication is not even initialized in `sirf-hum-prod`), no sign-in UI exists (D-107). Enabling it is an owner console action plus a UI prompt.
+- **Status:** **Proposed — needs owner approval** · 2026-10-21. P1-7 stays open until it is approved, built and tested.
+
+### D-139 — App Check production readiness (Prompt 18; extends D-028)
+- **Decision:**
+  - production web builds refuse to start without `SH_APPCHECK_WEB_RECAPTCHA_SITE_KEY` (environment guard); before this, App Check was skipped on web with only a warning. Development and staging keep working without one (never lock development out);
+  - every client endpoint must be created through `callable()`/`audited()`, the only `onCall`, which passes `enforceAppCheck: true`; no `onRequest`. A static test pins the 29 callables;
+  - limited-use tokens with replay protection (`consumeAppCheckToken`) are **not** adopted yet: they need client changes and measurement; candidates are pairing and unpair after the staging rollout;
+  - manual steps and enforcement order: [APP-CHECK-PRODUCTION](../architecture/APP-CHECK-PRODUCTION.md).
+- **Unchanged:** App Check is defence in depth, never the authorization; production never accepts the debug provider.
+- **Status:** Accepted for development · 2026-10-21. Console enforcement **not enabled** anywhere (verified: `sirf-hum-prod` has no App Check service configuration).
+
+### D-140 — Web origin security headers (Prompt 18; P2-4)
+- **Decision:** Hosting headers on every path: `Content-Security-Policy-Report-Only` (`default-src 'self'`; scripts only from self + `www.gstatic.com` (CanvasKit, Firebase JS SDK) + reCAPTCHA, with `'wasm-unsafe-eval'` and no `'unsafe-inline'`/`'unsafe-eval'`; `frame-ancestors 'none'`, `object-src 'none'`, `base-uri 'self'`, `form-action 'none'`), `Cross-Origin-Opener-Policy: same-origin-allow-popups`, `Cross-Origin-Resource-Policy: same-origin`, a Permissions-Policy denying camera, microphone, geolocation, display capture, payment, USB, serial, Bluetooth, HID and MIDI, plus the existing `nosniff`, `X-Frame-Options: DENY`, referrer policy and HSTS. `no-cache` on `index.html`, `flutter_bootstrap.js`, `main.dart.js`, `version.json` and the service worker, so a fixed or revoked build reaches every browser on the next load.
+- **Evidence:** a local development web build served with exactly these headers rendered in headless Chrome with **zero** CSP reports; a deliberately strict control policy produced the expected six reports, so the reporting path works. Not exercised: Firebase endpoints (an unconfigured build never loads the Firebase SDK) and reCAPTCHA.
+- **Why Report-Only:** an enforcing CSP that is wrong breaks the app; enforcement waits for reports from the deployed staging origin with Firebase configured. CSP never makes the web client trusted ([WEB-SECURITY](../security/WEB-SECURITY.md)).
+- **Tests:** `tool/check_web_headers.mjs` (CI `security-rules` job, `tool/verify.sh`).
+- **Status:** Accepted · 2026-10-21. P2-4 stays open until the policy is enforced.
+
+### D-141 — Photo-picker cache sweep (Prompt 18; P2-3, E81)
+- **Decision:** at start-up, before `runApp` (so no composer holds a photo), the app deletes every `cacheDir/<lowercase v4 UUID>/` directory that holds only regular files: exactly `image_picker_android` 0.8.13's layout (`FileUtils.getPathFromUri`, whose own TODO recommends clearing picked files at start-up). It never follows links, never descends, never touches other cache entries. The Kotlin side only reports `cacheDir` (channel `com.sirfhum.app/app_cache`); the sweep is Dart so it is unit-tested. Best effort, never throws, logs a count only.
+- **Limits:** no secure wipe (flash storage cannot be reliably overwritten); if the process dies, a copy exists from the pick until the next start. A plugin upgrade that changes the layout would silently disable the sweep, so the plugin version is pinned in review (`pubspec.lock`).
+- **Tests:** `picker_cache_sweeper_test.dart` (unit); on-device `moments_test.dart` (CI emulator: real channel, real cache directory).
+- **Status:** Accepted · 2026-10-21. P2-3 → fixed (implementation).
+
+### D-142 — Gradle locking, scanning and update proposals (Prompt 18; P2-6)
+- **Decision:**
+  - Gradle dependency locking, `STRICT`, for the `*ReleaseRuntimeClasspath` configurations (what ships), in `android/app/gradle.lockfile`; CI fails if the build changes it;
+  - OSV-Scanner scans it with the Dart lockfiles (2026-10-21: 121 + 52 + 184 packages, no advisories);
+  - the Gradle wrapper pins `distributionSha256Sum` (services.gradle.org, cross-checked with gradle.org's checksum page);
+  - Dependabot version updates (monthly, grouped) for GitHub Actions, the two npm projects and pub; **not** Cargo (crypto pins move only by decision, D-054, D-068) and **not** Gradle (locked; moves with Flutter upgrades). Dependabot alerts still cover every ecosystem.
+- **Status:** Accepted · 2026-10-21. P2-6 → fixed.
+
+### D-143 — Release signing and provenance (Prompt 18; P2-11, E14)
+- **Decision:** a `ProductionRelease` assemble/bundle/package task fails without release signing (`android/key.properties`) unless `SH_ALLOW_DEBUG_SIGNED_RELEASE=1` explicitly asks for a non-distributable verification build (CI and `tool/verify.sh` do). CI proves the refusal on every run.
+- **Required before production (not built):** Play App Signing, with the upload key in a managed store and never on a laptop; a release workflow on `main` behind the `production` environment that builds the AAB from a tagged commit and publishes a signed build-provenance attestation (`actions/attest-build-provenance`, SLSA) with the artifact digest; the App Check Play Integrity certificate is the Play app-signing certificate (APP-CHECK-PRODUCTION).
+- **Status:** Accepted · 2026-10-21. P2-11 stays open (no provenance or signing pipeline exists yet).
+
+### D-144 — Unpair authorizes before it walks the lineage (Prompt 18; P3-15)
+- **Finding (P3-15, recorded in the PR #16 description, not in the repository until now):** `unpairCouple` listed the named couple's conversations and walked their `predecessorId` lineage (up to ~64 point reads) **before** verifying the challenge and proof. Any signed-in session could cause those reads, and an over-long lineage answered with an internal error instead of `challenge_invalid`: a one-bit signal. No state change, no data returned, no authorization bypass.
+- **Fix:** the transaction first reads only the challenge, device and couple and decides the outcome (challenge binding, expiry, couple active with the caller a member, device active, purpose-8 proof); a refusal consumes the challenge and returns before any further read. Only an authorized request reads the partner records, lists the conversations and walks the lineage. Authorization, atomicity, the single-use challenge and the E90 completeness argument are unchanged.
+- **Tests:** emulator `P3-15: no listing or lineage walk before the request is authorized` (a spy lister is never called for six kinds of refused request, and is called once authorized) and `P3-15: an over-long lineage answers a forged proof with proof_invalid, not the walk bound`; the 13 earlier unpair tests are unchanged and pass.
+- **Status:** Accepted for development · 2026-10-21. P3-15 → fixed (implementation); in the independent review scope with D-136.
+
+### D-145 — Prompt 18: review readiness and the launch gate of record
+- **Decision:** [PRODUCTION-LAUNCH-GATE](../security/audit/PRODUCTION-LAUNCH-GATE.md) is the launch gate of record: P0–P3 gates, each PASS / FAIL / DEFERRED with evidence and an owner action. [PRODUCTION-BLOCKERS](../security/audit/PRODUCTION-BLOCKERS.md) keeps the D-125 classification. [INDEPENDENT-SECURITY-REVIEW-PACKAGE](../security/audit/INDEPENDENT-SECURITY-REVIEW-PACKAGE.md) is the reviewer's entry point. Prompt 18's target was **"prepared for independent security/cryptographic review"**, not launch.
+- **Status:** Accepted · 2026-10-21. Sirf Hum is not production E2EE; no independent review has happened.

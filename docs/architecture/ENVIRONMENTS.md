@@ -120,6 +120,10 @@ Security Rules do not provide E2EE. The layers stay separate:
   `SH_APPCHECK_WEB_RECAPTCHA_SITE_KEY`. Without it, App Check is skipped on
   web with a warning.
 
+**Production procedure:** [APP-CHECK-PRODUCTION](APP-CHECK-PRODUCTION.md)
+(Prompt 18, D-139; supersedes the step list in 17B §4). Since Prompt 18 a
+production **web** build without a reCAPTCHA site key refuses to start.
+
 **Current status:**
 - App Check is wired in the client and its API is enabled in all three
   projects.
@@ -183,6 +187,11 @@ Security Rules do not provide E2EE. The layers stay separate:
   sink never breaks the app.
 
 ## Authentication foundation (no UI)
+
+**Prompt 18:** production provider proposed: email link, passwordless
+(D-138, [AUTH-PRODUCTION-DECISION](AUTH-PRODUCTION-DECISION.md)); needs
+owner approval; nothing enabled.
+
 
 - The Identity Toolkit API is enabled in all projects.
 - **No sign-in provider is enabled yet.** An enabled provider lets anyone
@@ -294,6 +303,22 @@ All of these must hold for a production deploy:
    `refs/heads/main`.
 5. `tool/deploy.sh` re-checks for a clean tree, `main` and the confirmation,
    and runs the rules tests first.
+6. **Prompt 18 (D-137):** `tool/deploy.sh` refuses production outside
+   GitHub Actions (no laptop deploys), and refuses every production
+   target except Firestore rules/indexes and Storage rules unless
+   `config/launch_gate.json` says `"productionTraffic": "open"`. That file
+   is committed `closed`; opening it is a reviewed PR after every P0 and P1
+   gate in [PRODUCTION-LAUNCH-GATE](../security/audit/PRODUCTION-LAUNCH-GATE.md)
+   passes. Tested by `tool/test_deploy_guard.sh` in CI.
+
+**Verified read-only on 2026-10-21 (Prompt 18):** billing off in all three
+projects; production has no Storage bucket, no Functions, no Security
+Rules release and no initialized Firebase Authentication; production
+Firestore is `asia-south1` with delete protection on and PITR off; no
+user-managed service-account keys anywhere; the production WIF condition
+is exactly as documented above. Details and owner actions:
+[PROMPT-18-BASELINE](../security/audit/PROMPT-18-BASELINE.md),
+[PRODUCTION-LAUNCH-GATE](../security/audit/PRODUCTION-LAUNCH-GATE.md) (P1-INF).
 
 When the account moves to a plan that supports them, add required reviewers
 on `production` and branch protection on `main` (D-038).

@@ -293,6 +293,16 @@ requires external review); prohibited claims listed. Not production E2EE;
 independent review still required. Next: Prompt 18 (deployment, sign-in,
 App Check), only when authorized.
 
+**Prompt 18: Production readiness and review preparation** ([launch gate](../security/audit/PRODUCTION-LAUNCH-GATE.md),
+[review package](../security/audit/INDEPENDENT-SECURITY-REVIEW-PACKAGE.md),
+D-137–D-145): launch gate and production deploy lock, P3-15 fixed,
+App Check and web hardening, picker sweep, Gradle locking, release-signing
+guard, sign-in provider proposed (D-138), data lifecycle classified.
+Target reached: **prepared for independent security/cryptographic
+review**, not launch. Next, only when authorized: the independent review
+(P0) and the owner actions in the launch gate's P1 section (Blaze,
+production rules, sign-in, App Check enforcement, second owner).
+
 ## Proposed sequence
 
 Ordering principle: identity and cryptography come **before** any feature
