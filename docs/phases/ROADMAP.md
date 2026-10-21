@@ -303,6 +303,16 @@ review**, not launch. Next, only when authorized: the independent review
 (P0) and the owner actions in the launch gate's P1 section (Blaze,
 production rules, sign-in, App Check enforcement, second owner).
 
+**Prompt 19: Staging activation** ([staging beta](../STAGING-BETA.md),
+[record](../security/audit/STAGING-BETA.md), D-146, D-147): **blocked.**
+Staging Firestore rules and indexes deployed and verified; a checked
+staging release-build workflow added. Billing turned out to be linked to
+development, not staging, and the app has no sign-in method, so Storage,
+Functions, Auth, App Check and the two-device beta did not happen.
+Production untouched. iOS stays out of scope (D-092). Next, only when
+authorized: the owner actions in the record (§9), then the sign-in prompt
+(D-138) and the beta run.
+
 ## Proposed sequence
 
 Ordering principle: identity and cryptography come **before** any feature

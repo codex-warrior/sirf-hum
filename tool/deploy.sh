@@ -105,6 +105,10 @@ if [[ "$HOSTING" == 1 ]]; then
   CONFIG="config/env/$ENV.json"
   [[ -f "$CONFIG" ]] || { echo "Missing $CONFIG (node tool/generate_env_config.mjs $ENV)." >&2; exit 1; }
   flutter build web --release --dart-define-from-file="$CONFIG"
+  # Android App Links for email sign-in (D-148); served at
+  # /.well-known/assetlinks.json by a firebase.json rewrite.
+  mkdir -p build/web/app-links
+  node tool/app_links.mjs "$ENV" > build/web/app-links/assetlinks.json
 fi
 
 step "Deploying $ONLY to $PROJECT"

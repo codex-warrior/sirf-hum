@@ -21,6 +21,7 @@ import { onInit } from 'firebase-functions/v2/core';
 import { HttpsError, onCall, type FunctionsErrorCode } from 'firebase-functions/v2/https';
 import * as logger from 'firebase-functions/logger';
 import { defineString } from 'firebase-functions/params';
+import { verifiedUid } from './config/auth';
 import { setGlobalOptions } from 'firebase-functions/v2';
 import {
   assertProjectMatches,
@@ -74,6 +75,10 @@ setGlobalOptions({
   region: REGION,
   // Cost guardrail against runaway scaling; raise per function as needed.
   maxInstances: 10,
+  // A fraction of a vCPU per instance (256 MiB → ~1/6), as 1st gen had.
+  // The 2nd-gen default of 1 vCPU each exhausted the regional Cloud Run
+  // CPU quota (20 vCPU) with ~20 warm or deploying functions (Prompt 19).
+  cpu: 'gcf_gen1',
 });
 
 // Runs once per instance at cold start (not during deploy analysis).
@@ -150,7 +155,7 @@ async function guarded<T>(event: string, run: () => Promise<T>): Promise<T> {
 const deviceCallOptions = { enforceAppCheck: true } as const;
 
 const callable = <T>(event: string, run: (uid: string | undefined, data: unknown, now: Date) => Promise<T>) =>
-  onCall(deviceCallOptions, (request) => guarded(event, () => run(request.auth?.uid, request.data, new Date())));
+  onCall(deviceCallOptions, (request) => guarded(event, () => run(verifiedUid(request.auth), request.data, new Date())));
 
 const done = { ok: true } as const;
 

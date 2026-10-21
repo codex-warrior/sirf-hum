@@ -9,7 +9,8 @@ Baseline: branch `security/prompt-17-hardening-audit` (PR #16).
 > (scope, exact versions and commits, the six OpenMLS deviations, STREAM,
 > reviewer questions) and [PRODUCTION-LAUNCH-GATE](PRODUCTION-LAUNCH-GATE.md)
 > (every gate with status and evidence). This file stays as the Prompt 17
-> package and index.
+> package and index. Staging activation (Prompt 19, blocked):
+> [STAGING-BETA](STAGING-BETA.md).
 
 > **SIRF HUM IS NOT YET PRODUCTION E2EE.**
 > **INDEPENDENT SECURITY/CRYPTOGRAPHIC REVIEW IS STILL REQUIRED.**

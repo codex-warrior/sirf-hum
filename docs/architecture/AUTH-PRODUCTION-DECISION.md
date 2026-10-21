@@ -1,7 +1,8 @@
 # Production Authentication Decision
 
-Status: **Proposed (D-138), Prompt 18, 2026-10-21. Needs owner approval.
-Nothing is enabled.** Follows D-029 (no provider before the identity
+Status: **Accepted by the owner (D-138), 2026-10-21. Built for Android in
+Prompt 19 (D-148); staging configuration in progress; production not
+configured.** Follows D-029 (no provider before the identity
 phase; intended baseline "email link or email/password") and D-107
 (session observation only; sign-in method open).
 
@@ -137,7 +138,7 @@ In each project, staging before production:
    Identity Toolkit configuration; production currently answers
    `CONFIGURATION_NOT_FOUND`).
 2. Sign-in method → **Email/Password** provider → enable **Email link
-   (passwordless sign-in)** only; leave "Email/Password" (password) **off**.
+   (passwordless sign-in)** only; leave "Email/Password" (password) **off**. **Correction (Prompt 19, D-149):** the password method cannot be turned off on Firebase Auth while email link is on; callables therefore require `email_verified`, and the app offers no password path.
 3. Settings → **User actions → Email enumeration protection: on**.
 4. Settings → **Authorized domains**: only the Hosting domain(s) of that
    project (remove `localhost` in production).

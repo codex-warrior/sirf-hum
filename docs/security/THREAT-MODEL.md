@@ -361,6 +361,16 @@ mitigated · **P** partially mitigated · **A** accepted · **U** unresolved.
 | R30 | Malicious modified client (E82, E94) | Partner or attacker with a real device | Own account/devices | Server state, partner's view | Skip client checks, call callables directly | Only what the account's own device keys authorize | Server verifies every proof; peers verify lineage and MLS; App Check raises the cost (not a boundary) | A trusted modified partner client can stall or remove (P2-1, D-135) | F suites; `app_check.test.mjs` | **P** |
 | R31 | Accidental production deployment (E91) | Owner, CI misuse | Credentials | Production | Manual deploy before the review | Production traffic too early | D-137 launch gate + workflow-only production deploys | Owner can override by changing the gate in a PR | `tool/test_deploy_guard.sh` | **M** |
 
+### New in Prompt 19
+
+| ID | Threat | Status | Evidence | Residual | Production impact |
+| --- | --- | --- | --- | --- | --- |
+| E100 | An operator command without `--project` acts on the wrong project: `gcloud`'s default on the owner's machine is an unrelated project, and a wrong `--project` could name production | P | `.firebaserc` has no default; `tool/deploy.sh` takes an explicit environment; STAGING-BETA passes `--project` everywhere; production gates (E91) | Raw `gcloud`/`firebase` commands with owner credentials are not guarded | — |
+| E101 | A staging App Check debug token (D-147, proposed) leaks and lets scripts pass attestation in staging | A (if adopted) | Staging only; one token per test phone, deleted at beta end; production refuses the debug provider at start-up; callables still need an account session and device-key proofs | Staging metadata of test accounts reachable to a token holder with a session | none (staging) |
+| E102 | A build handed to a tester carries another environment's Firebase identifiers | M | D-146: `tool/check_env_config.mjs` before the build; the staging workflow checks the compiled Dart code for other projects' app IDs; runtime guard (project ID, flavor) | Checks only the identifiers we know (project IDs and numbers) | — |
+
+| E103 | Password pre-registration of someone else's address (email link needs the Email/Password provider) creates server state before the owner signs in | M | D-149: callables require `email_verified`; Firebase removes the password and revokes sessions at the owner's first link sign-in (verified on staging) | An unverified account can set its own profile display name; Auth quota | — |
+
 ## Assumptions
 
 - Device OS and hardware keystores are not compromised (outside T4).
@@ -392,3 +402,4 @@ mitigated · **P** partially mitigated · **A** accepted · **U** unresolved.
 20. Prompt 17B (2026-10-20): E77 mitigated (D-127); verification (D-128), forced code (D-131), rejection proof (D-129), reset alerts (D-132) built; new E84–E86. Open: conversation re-provisioning (P1-3b), unpairing (D-134), deployment and sign-in.
 21. Prompt 17C (2026-10-21): conversation recovery (D-135) and secure unpairing (D-136) built; E19 and E32 mitigated, T10 and E82 updated; new E87–E90. Open: deployment and sign-in (Prompt 18), independent review (P0-1).
 22. Prompt 18 (2026-10-21): P3-15 fixed (D-144, E92); picker copies swept (E81 → M, D-141); Gradle locked and scanned (D-142); App Check fail-closed on production web and pinned on callables (D-139); production deploy lock (D-137); Report-Only CSP (D-140); new E91–E99 and the consolidated register R1–R31. Open: P0 independent review; P1 deployment, sign-in (D-138 proposed), App Check enforcement, production rules release (E98).
+23. Prompt 19 (2026-10-21): staging Firestore rules deployed (repo rules, verified byte-identical); staging otherwise inactive: billing on development instead of staging (S19-1), no sign-in method (P1-7), no attestation path for a sideloaded build (D-147 proposed). New E100–E102. The staging beta has not run.

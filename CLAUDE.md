@@ -17,6 +17,7 @@ the task — they replace restating the spec in prompts:
 | Together (activities, sessions, presence) | `docs/architecture/TOGETHER-ARCHITECTURE.md` (D-111, D-112) |
 | Moments (memories, manifest, timeline) | `docs/architecture/MOMENTS-ARCHITECTURE.md` (D-113–D-117) |
 | Future, Us (plans, story, little things, rituals; the couple notebook) | `docs/architecture/FUTURE-AND-US-ARCHITECTURE.md` (D-118–D-121) |
+| Staging beta (activation state, owner actions, two-device test plan) | `docs/STAGING-BETA.md`, `docs/security/audit/STAGING-BETA.md` (D-146, D-147) |
 | Environments, deploys, App Check, CI, branches | `docs/architecture/ENVIRONMENTS.md`, `docs/architecture/DEVELOPMENT-ENVIRONMENT.md`, `docs/architecture/ACCOUNT-OWNERSHIP.md` |
 | Firebase, rules, functions, notifications | `docs/architecture/FIREBASE-ARCHITECTURE.md` |
 | Private content, keys, devices | `docs/security/MLS-DECISION.md` (crypto core, conditions), `docs/security/E2EE-ARCHITECTURE.md`, `KEY-MANAGEMENT.md`, `PAIRING-AND-DEVICE-TRUST.md`, `RECOVERY-AND-REVOCATION.md`, `WEB-SECURITY.md` (all in `docs/security/`), `docs/architecture/CRYPTOGRAPHIC-BOUNDARIES.md`, `docs/security/THREAT-MODEL.md` |
