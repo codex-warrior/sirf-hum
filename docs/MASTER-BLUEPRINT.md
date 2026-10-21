@@ -72,6 +72,18 @@ production E2EE; independent security/cryptographic review is still
 required.** Deployment, sign-in, App Check and production configuration are
 Prompt 18.
 
+**Prompt 18 review readiness** ([PRODUCTION-LAUNCH-GATE](security/audit/PRODUCTION-LAUNCH-GATE.md),
+[INDEPENDENT-SECURITY-REVIEW-PACKAGE](security/audit/INDEPENDENT-SECURITY-REVIEW-PACKAGE.md),
+D-137–D-145): production deploys locked behind a launch gate; P3-15 fixed
+(unpair authorizes before it reads the lineage); App Check fail-closed on
+production web and pinned on every callable; Report-Only CSP and security
+headers; picker plaintext copies swept; Gradle locked and scanned;
+production releases never silently debug-signed; sign-in provider proposed
+(email link, owner approval pending); data lifecycle classified
+([DATA-LIFECYCLE](security/DATA-LIFECYCLE.md)). **Prepared for independent
+security/cryptographic review; not production E2EE; no independent review
+has happened; production remains blocked.**
+
 ## 8. E2EE architecture
 
 Requirements: private content is encrypted on the device; the server never

@@ -9,6 +9,7 @@ import 'package:sirf_hum/app/app_providers.dart';
 import 'package:sirf_hum/app/environment_guard.dart';
 import 'package:sirf_hum/core/logging/app_logger.dart';
 import 'package:sirf_hum/features/moments/application/moment_photo_picker.dart';
+import 'package:sirf_hum/features/moments/data/picker_cache_sweeper.dart';
 import 'package:sirf_hum/features/moments/data/system_photo_picker.dart';
 import 'package:sirf_hum/features/verification/application/verification_controller.dart';
 import 'package:sirf_hum/features/verification/data/camera_qr_code_scanner.dart';
@@ -43,6 +44,10 @@ Future<void> main() async {
     );
   }
   CrashReporting.installUncaughtErrorHandlers();
+
+  // Plaintext picker copies a killed process left behind (P2-3, D-141).
+  // Before runApp, so no composer can be holding one yet. Never throws.
+  await const PickerCacheSweeper().sweepAtStartup();
 
   AppLogger.info(
     'app_start',

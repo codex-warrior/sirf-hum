@@ -125,6 +125,65 @@ void main() {
     );
   });
 
+  group('production web App Check (D-139)', () {
+    FirebaseConfig web(String projectId) => FirebaseConfig(
+      projectId: projectId,
+      messagingSenderId: '1',
+      platform: FirebasePlatform.web,
+      apps: const {
+        FirebasePlatform.web: FirebaseAppCredentials(appId: 'w', apiKey: 'k'),
+      },
+    );
+    AppConfig webConfig(AppEnvironment env, {String? siteKey}) => AppConfig(
+      environment: env,
+      firebase: web(env.firebaseProjectId),
+      appCheck: AppCheckConfig(
+        provider: env == AppEnvironment.development
+            ? AppCheckProvider.debug
+            : AppCheckProvider.attestation,
+        webRecaptchaSiteKey: siteKey,
+      ),
+      crashReportingEnabled: false,
+    );
+
+    test('refuses to start without a reCAPTCHA site key', () {
+      final config = webConfig(AppEnvironment.production);
+      expect(environmentViolations(config), hasLength(1));
+      expect(
+        () => ensureEnvironmentIsConsistent(config),
+        throwsA(isA<EnvironmentMismatchError>()),
+      );
+    });
+
+    test('starts with a site key', () {
+      expect(
+        environmentViolations(
+          webConfig(AppEnvironment.production, siteKey: 'site-key'),
+        ),
+        isEmpty,
+      );
+    });
+
+    test('development and staging stay usable without one', () {
+      // Never lock development out; staging measures before enforcing.
+      expect(
+        environmentViolations(webConfig(AppEnvironment.development)),
+        isEmpty,
+      );
+      expect(environmentViolations(webConfig(AppEnvironment.staging)), isEmpty);
+    });
+
+    test('Android production needs no web site key', () {
+      expect(
+        environmentViolations(
+          _config(AppEnvironment.production),
+          nativeFlavor: 'production',
+        ),
+        isEmpty,
+      );
+    });
+  });
+
   test('web builds (no native flavor) are checked by SH_ENV alone', () {
     expect(
       environmentViolations(

@@ -27,6 +27,8 @@ the task — they replace restating the spec in prompts:
 | Couple, pairing, account profile | `docs/security/COUPLE-AND-PAIRING.md` (D-100–D-105) |
 | Encrypted media, Storage, push notifications, FCM tokens | `docs/security/E2EE-MEDIA-AND-NOTIFICATIONS.md` (D-093–D-099); D-093 investigation: `docs/security/D-093-SECURITY-REVIEW.md` |
 | Security review, production blockers, audit package, metadata exposure | `docs/security/audit/README.md` (Prompts 17/17B, D-122–D-134; P0–P3 in `PRODUCTION-BLOCKERS.md`) |
+| Independent review package, launch gate, production readiness | `docs/security/audit/INDEPENDENT-SECURITY-REVIEW-PACKAGE.md`, `docs/security/audit/PRODUCTION-LAUNCH-GATE.md` (D-137–D-145), `docs/security/audit/PROMPT-18-BASELINE.md` |
+| Production auth, App Check, data lifecycle | `docs/architecture/AUTH-PRODUCTION-DECISION.md` (D-138), `docs/architecture/APP-CHECK-PRODUCTION.md` (D-139), `docs/security/DATA-LIFECYCLE.md` |
 | Partner verification (safety number, QR), commit authorization | `docs/decisions/DECISION-LOG.md` D-127, D-128; `lib/security/verification/`, `lib/security/messaging/commit_authorization.dart` |
 | Experiments | `prototypes/` is isolated and never imported by the app (D-052) |
 | Analytics | `docs/security/ANALYTICS-POLICY.md` |
@@ -41,7 +43,7 @@ the task — they replace restating the spec in prompts:
 4. Add/update tests. Run `tool/verify.sh` (and `--all` when touching Functions, rules or platform config).
 5. Report failures honestly. Never disable tests or weaken Security Rules to make things pass.
 6. Never commit secrets. Client config lives in git-ignored `config/env/*.json`.
-7. Never run a bare `firebase deploy` or `firebase use production`. Deploy with `tool/deploy.sh <env>`; production only via the Deploy workflow.
+7. Never run a bare `firebase deploy` or `firebase use production`. Deploy with `tool/deploy.sh <env>`; production only via the Deploy workflow, and production Functions/Hosting only after the launch gate opens (`config/launch_gate.json`, D-137).
 8. Work on `feature/`, `fix/`, `chore/` or `security/` branches and merge via PR after CI passes; never push directly to or force-push `main` (not enforced by GitHub on the current plan, so it is on us).
 
 ## Security non-negotiables

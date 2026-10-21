@@ -7,9 +7,15 @@
 #   tool/deploy.sh staging     [--only ...]
 #   tool/deploy.sh production  [--only ...]
 #
-# Production requires: clean git tree on main, all checks passing, and typing
-# the project ID (or SH_CONFIRM_PRODUCTION=sirf-hum-prod in CI, which runs
-# behind the protected "production" GitHub environment).
+# Production requires: the Deploy workflow (never a laptop), a clean git tree
+# on main, all checks passing, and the typed project ID
+# (SH_CONFIRM_PRODUCTION=sirf-hum-prod, set by the workflow behind the
+# protected "production" GitHub environment). Functions and Hosting, which
+# open production to traffic, additionally need the launch gate in
+# config/launch_gate.json to be "open" (D-137); rules stay deployable, since
+# they only restrict access.
+#
+# SH_DEPLOY_DRY_RUN=1 stops after the gates (tool/test_deploy_guard.sh).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -26,9 +32,40 @@ ONLY='firestore:rules,firestore:indexes'
 if [[ "${1:-}" == '--only' ]]; then
   ONLY="${2:?--only needs a value}"
 fi
+# The Firebase CLI ignores whitespace in --only; so do the gates below.
+ONLY="${ONLY//[[:space:]]/}"
 case ",$ONLY," in *,hosting*) HOSTING=1 ;; *) HOSTING=0 ;; esac
 
 step() { printf '\n==> [%s] %s\n' "$ENV" "$1"; }
+refuse() { echo "Refusing to deploy: $*" >&2; exit 1; }
+
+if [[ "$ENV" == production ]]; then
+  # A guard against accidents, not against the repository owner: the
+  # credentials themselves are only minted for the workflow on main (WIF).
+  [[ "${GITHUB_ACTIONS:-}" == true ]] \
+    || refuse 'production deploys run only through the Deploy workflow (docs/architecture/ENVIRONMENTS.md).'
+  # Anything that serves production traffic waits for the launch gate
+  # (docs/security/audit/PRODUCTION-LAUNCH-GATE.md). Allowlist, so it fails
+  # closed: only Firestore rules/indexes and Storage rules (which restrict
+  # access) pass a closed gate; every other target, however spelled, needs
+  # it open. A missing or malformed file, or any value but exactly "open",
+  # keeps it shut.
+  RESTRICT_ONLY=1
+  IFS=',' read -ra TARGETS <<< "$ONLY"
+  for target in "${TARGETS[@]}"; do
+    [[ "$target" =~ ^(firestore|firestore:rules|firestore:indexes|storage)$ ]] || RESTRICT_ONLY=0
+  done
+  if [[ "$RESTRICT_ONLY" != 1 ]]; then
+    GATE="$(node -e '
+      try {
+        const g = JSON.parse(require("fs").readFileSync("config/launch_gate.json", "utf8"));
+        process.stdout.write(g.productionTraffic === "open" ? "open" : "closed");
+      } catch { process.stdout.write("closed"); }
+    ' 2>/dev/null || echo closed)"
+    [[ "$GATE" == open ]] \
+      || refuse "the production launch gate is closed (config/launch_gate.json); '$ONLY' would open production to traffic."
+  fi
+fi
 
 if [[ "$ENV" != development ]]; then
   step 'Checking git state'
@@ -48,6 +85,11 @@ if [[ "$ENV" == production ]]; then
   if [[ "$CONFIRM" != "$PROJECT" ]]; then
     echo 'Confirmation did not match. Aborting.' >&2; exit 1
   fi
+fi
+
+if [[ "${SH_DEPLOY_DRY_RUN:-}" == 1 ]]; then
+  echo "deploy gates passed for $ENV ($ONLY); dry run, nothing deployed"
+  exit 0
 fi
 
 step 'Security Rules tests (emulators)'

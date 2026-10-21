@@ -1,6 +1,6 @@
 # Web Security
 
-Status: **Assessment and recommendation (Prompt 04).** Labels follow
+Status: **Assessment and recommendation (Prompt 04); implemented state and review added (Prompt 18, D-139, D-140).** Labels follow
 [E2EE-ARCHITECTURE](E2EE-ARCHITECTURE.md#labels).
 
 ## Why web is different
@@ -65,3 +65,87 @@ Non-extractable `CryptoKey`s can still wrap persisted state.
 This is a restricted capability, **not** a weakened promise. When web is
 added for private content, the privacy promise must hold or the difference
 must be disclosed plainly.
+
+## Prompt 18: implemented state and review (2026-10-21)
+
+Everything above remains the design rationale. This section records what
+the web build **actually** does now (D-046 accepted, D-139, D-140).
+
+> **Web does not hold private content and does not do E2EE.** Headers,
+> CSP and App Check reduce the attack surface of an account-management
+> origin; they **do not** make the web client trusted, and none of them is
+> a reason to enable private content on web.
+
+### Fail-closed private-content boundary
+
+| Layer | Behaviour | Evidence |
+| --- | --- | --- |
+| Device identity | Web never gets one; the platform key store reports unsupported | `Web never gets a device identity`; `PlatformSecureKeyStore.isSupported` |
+| Crypto core | Not built for web; `private_content_crypto` refuses on web | `private_content_crypto_test.dart` |
+| Messages, Moments, Future + Us | Controllers never ask the backend on web; screens show the "use your phone" notice | `web never loads moments…`, `web never loads the notebook…`, `web: needs the phone, the backend is never asked` |
+| Photo picker, QR scanner, picker sweep | Not wired on web (`main.dart`, `kIsWeb`) | `main.dart`; `PickerCacheSweeper.isSupported` |
+| Recovery key entry | Not offered on web | RECOVERY-AND-REVOCATION |
+
+### Browser persistence
+
+| Store | What | Assessment |
+| --- | --- | --- |
+| IndexedDB (`firebaseLocalStorageDb`) | Firebase Auth session (refresh token, UID, email) | SDK default (`LOCAL`), not overridden. A stolen session = an account session (AUTH-PRODUCTION-DECISION §3): metadata, no content. Consider `SESSION` persistence when the web sign-in UI is built |
+| Firestore cache | none persisted: offline persistence is off by default on web and the app does not enable it | Reads on web are account-level records only |
+| Service worker | Flutter 3.41 emits a **self-unregistering** stub (`flutter_service_worker.js`): it unregisters itself and reloads clients; no offline cache | Verified in a local production web build |
+| HTTP cache | `index.html`, `flutter_bootstrap.js`, `main.dart.js`, `version.json` and the service worker are `no-cache`, so a fixed or revoked build applies on the next load | `tool/check_web_headers.mjs` |
+| localStorage / cookies set by the app | none | `grep` of `lib/` (no `shared_preferences`, no `package:web` storage) |
+
+No private plaintext is persisted in the browser because no private
+plaintext exists on web.
+
+### Headers (Firebase Hosting, every path)
+
+| Header | Value | Purpose |
+| --- | --- | --- |
+| `Content-Security-Policy-Report-Only` | `default-src 'self'`; `script-src 'self' 'wasm-unsafe-eval' https://www.gstatic.com https://www.google.com/recaptcha/`; `style-src 'self' 'unsafe-inline'`; `img-src 'self' data: blob:`; `font-src 'self' data: https://fonts.gstatic.com`; `connect-src 'self' https://*.googleapis.com https://*.cloudfunctions.net https://www.gstatic.com https://fonts.gstatic.com https://www.google.com`; `worker-src 'self' blob:`; `frame-src` reCAPTCHA only; `frame-ancestors 'none'`; `object-src 'none'`; `base-uri 'self'`; `form-action 'none'`; `manifest-src 'self'` | Script injection and exfiltration limits; **report-only** for now |
+| `X-Frame-Options` | `DENY` | Framing (with `frame-ancestors`) |
+| `X-Content-Type-Options` | `nosniff` | MIME sniffing |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | No paths leak to other origins |
+| `Permissions-Policy` | camera, microphone, geolocation, display-capture, payment, usb, serial, bluetooth, hid, midi all `()` | Web needs none of them; LiveKit on web would need a reviewed change |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | HTTPS only (no `preload` until the domain is final) |
+| `Cross-Origin-Opener-Policy` | `same-origin-allow-popups` | Window isolation; popups kept possible for a future sign-in flow |
+| `Cross-Origin-Resource-Policy` | `same-origin` | Other origins cannot embed our resources |
+
+Why `'unsafe-inline'` for styles: Flutter's engine writes inline styles
+into the DOM (the strict control run below reported `style-src-elem
+inline`). Scripts allow no inline code and no `eval`; only WebAssembly
+compilation (`'wasm-unsafe-eval'`, needed by CanvasKit/skwasm) and the
+Google CDN that serves CanvasKit and the Firebase JS SDK
+(`www.gstatic.com/flutter-canvaskit/<engine>`, `www.gstatic.com/firebasejs/<version>`).
+A compromise of that CDN would compromise the web client: the same class
+of risk as Hosting itself ("Why web is different"). Self-hosting CanvasKit
+(`--no-web-resources-cdn`) and the Firebase SDK would remove it and is
+recommended before enforcement.
+
+### CSP compatibility evidence
+
+A development web build (Flutter 3.41.5, CanvasKit) was served locally
+with exactly the `firebase.json` headers plus a test-only `report-uri`,
+and loaded in headless Chrome:
+
+| Run | Policy | Result |
+| --- | --- | --- |
+| Real | as above | App rendered (welcome screen, CanvasKit, web fonts); **0 reports** |
+| Control | `default-src 'self'; script-src 'self'; connect-src 'self'; font-src 'self'` | 6 reports: CanvasKit script, WebAssembly compile, CanvasKit and two font fetches, inline style; proves the reporting path works |
+
+Not covered: Firebase Auth/Firestore/Functions endpoints and reCAPTCHA
+(an unconfigured development build never loads the Firebase SDK). That is
+why the CSP stays **Report-Only** until staging Hosting, with Firebase
+configured, has produced clean reports (P2-4).
+
+### Remaining web gates
+
+| Gate | State |
+| --- | --- |
+| Enforce CSP (drop `-Report-Only`) after staging reports are clean; add a `report-to` endpoint | **Deferred** (P2-4): needs a deployed staging origin |
+| Self-host CanvasKit and the Firebase JS SDK; then drop `www.gstatic.com` | Recommended before enforcement |
+| Trusted Types | Not attempted: Flutter web's compatibility is unverified |
+| Isolated app origin `app.sirfhum.com`, separate from marketing | Custom domain not attached (ENVIRONMENTS) |
+| App Check on web | Production refuses to start without a reCAPTCHA site key (D-139); enforcement off |
+| Private content on web | **Not planned in V1** (D-046); any future design needs its own review (Option B above) |

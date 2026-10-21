@@ -1,6 +1,6 @@
 # Security Test Matrix
 
-Status: **Prompt 17, 2026-10-20; Prompt 17B; Prompt 17C (2026-10-21).** Adversarial properties → the tests that
+Status: **Prompt 17, 2026-10-20; Prompt 17B; Prompt 17C (2026-10-21); Prompt 18 (2026-10-21).** Adversarial properties → the tests that
 exercise them. **New** marks tests added in Prompt 17; each was shown to fail
 on the pre-Prompt-17 code. Full per-phase lists:
 [E2EE-TEST-PLAN](../../testing/E2EE-TEST-PLAN.md).
@@ -75,8 +75,8 @@ unit (`functions/test`), **S** = Security Rules (`firebase/tests`),
 - No end-to-end forged `media_ref` from another member (D-093 F9).
 - No fuzzing of MLS, lineage or certificate decoders beyond the malformed
   input tests (recommended for the independent review).
-- No test of conversation re-provisioning (P1-3b): designed in D-127, not
-  built.
+- ~~No test of conversation re-provisioning (P1-3b)~~: built and tested in
+  Prompt 17C (D-135, section below).
 - The native Dart verification and messaging tests run only in CI (Linux
   host); this Windows machine has no host build of the core.
 
@@ -94,3 +94,16 @@ unit (`functions/test`), **S** = Security Rules (`firebase/tests`),
 | E90: no conversation missed by unpairing | **17C-final** F `E90: a successor created after the listing is still closed`, `E90: conversations missing from the listing are found through the predecessor chain`, `E90: a lineage beyond the walk bound fails closed; nothing changes`, `E90: repeated unpair/recovery races never leave an open conversation` (mutation-checked: disabling the walk fails the first three) |
 | Removed partner | **17C** F `the removed partner can neither send, approve for the other, nor re-pair without fresh consent` |
 | Derivations agree across TS and Dart | **17C** Fu `lifecycle.test.mjs`; D `lifecycle_authorization_test.dart`; D drift guard `server failure categories cover every server category` |
+
+## Prompt 18
+
+| Property | Tests |
+| --- | --- |
+| P3-15: unpair authorizes before reading the lineage (D-144) | **18** F `P3-15: no listing or lineage walk before the request is authorized` (spy lister never called for a forged proof, unknown challenge, wrong purpose, expired challenge, another account's couple, revoked device; called once authorized), `P3-15: an over-long lineage answers a forged proof with proof_invalid, not the walk bound`; both fail on the pre-Prompt-18 code |
+| Production deploy lock and launch gate (D-137) | **18** `tool/test_deploy_guard.sh` (23 hermetic dry runs: laptop production refused; Functions/Hosting/`extensions`/whitespace/combined lists refused while closed; rules and Storage rules allowed; `Open`, `true`, malformed and missing gate files stay closed; confirmation, `main` and clean-tree gates still apply; 20 fail on the previous script) |
+| App Check on every callable (D-139) | **18** Fu `app_check.test.mjs` (3: single `onCall` with `enforceAppCheck: true`, no `onRequest`, 29 callables through `callable()`/`audited()`; mutation-checked) |
+| Production web never unattested (D-139) | **18** D `production web App Check (D-139)` (4: refuses without site key, starts with one, development and staging not locked out, Android unaffected) |
+| Web header policy (D-140) | **18** `tool/check_web_headers.mjs` (CSP directives, banned script sources, frame/MIME/referrer/permissions/HSTS/COOP/CORP, no-cache entry points; 9 failures on the previous `firebase.json`); manual headless-Chrome run: 0 reports with the policy, 6 with a strict control (WEB-SECURITY) |
+| Picker plaintext copies swept (D-141) | **18** D `picker_cache_sweeper_test.dart` (7: picker-shaped directories removed; other names, wrong UUID version/variant, nested directories, loose files kept; links never followed; missing cache; channel failure; unsupported platforms never ask); I `a leftover photo-picker copy is swept at start-up` (CI emulator, real channel and cache) |
+| Gradle supply chain (D-142) | **18** CI: production release resolves against `android/app/gradle.lockfile` (STRICT) and must not change it; OSV-Scanner on the lockfile; wrapper `distributionSha256Sum` |
+| No silently debug-signed production release (D-143) | **18** CI step `A production release is never silently debug-signed` (Gradle dry run must fail with the signing message); verified locally with and without the opt-in |

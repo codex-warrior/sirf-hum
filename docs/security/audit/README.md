@@ -4,6 +4,13 @@ Prepared in Prompt 17 (2026-10-20, D-125) for an external security and
 cryptography reviewer; updated in Prompt 17B and Prompt 17C (2026-10-21).
 Baseline: branch `security/prompt-17-hardening-audit` (PR #16).
 
+> **Start here since Prompt 18:**
+> [INDEPENDENT-SECURITY-REVIEW-PACKAGE](INDEPENDENT-SECURITY-REVIEW-PACKAGE.md)
+> (scope, exact versions and commits, the six OpenMLS deviations, STREAM,
+> reviewer questions) and [PRODUCTION-LAUNCH-GATE](PRODUCTION-LAUNCH-GATE.md)
+> (every gate with status and evidence). This file stays as the Prompt 17
+> package and index.
+
 > **SIRF HUM IS NOT YET PRODUCTION E2EE.**
 > **INDEPENDENT SECURITY/CRYPTOGRAPHIC REVIEW IS STILL REQUIRED.**
 
@@ -72,7 +79,7 @@ rollback by someone controlling the phone's storage (D-079); web clients
 | # | Area | Read |
 | --- | --- | --- |
 | 1 | System architecture | [ARCHITECTURE](../../architecture/ARCHITECTURE.md), [FIREBASE-ARCHITECTURE](../../architecture/FIREBASE-ARCHITECTURE.md), [CRYPTOGRAPHIC-BOUNDARIES](../../architecture/CRYPTOGRAPHIC-BOUNDARIES.md) |
-| 2 | Threat model | [THREAT-MODEL](../THREAT-MODEL.md) (IDs T1–T12, E1–E90; "Prompt 17 status review", "New in Prompt 17B/17C") |
+| 2 | Threat model | [THREAT-MODEL](../THREAT-MODEL.md) (IDs T1–T12, E1–E99; "Prompt 17 status review", "New in Prompt 17B/17C/18", register R1–R31) |
 | 3 | Trust model | §1–2 above; [MULTI-DEVICE-TRUST](../MULTI-DEVICE-TRUST.md) §1, §11 |
 | 4 | E2EE architecture | [E2EE-ARCHITECTURE](../E2EE-ARCHITECTURE.md), [E2EE-REQUIREMENTS](../E2EE-REQUIREMENTS.md), [MLS-DECISION](../MLS-DECISION.md) |
 | 5 | MLS integration | [CRYPTO-CORE-ARCHITECTURE](../CRYPTO-CORE-ARCHITECTURE.md); review §4.4 |

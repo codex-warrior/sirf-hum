@@ -8,6 +8,9 @@ name: Deploy
 #   - a typed confirmation input equal to the production project ID,
 #   - Workload Identity Federation conditions that only mint production
 #     credentials for this repository, the production environment and main.
+#   - tool/deploy.sh: production only from this workflow, and Functions or
+#     Hosting (production traffic) only while config/launch_gate.json is
+#     "open", which needs a reviewed PR after the launch gate passes (D-137).
 # Required reviewers are NOT available on the current GitHub plan.
 # No service-account keys: Google auth is Workload Identity Federation.
 # Supply chain (Prompt 17, D-124): every action is pinned to a full commit
@@ -67,12 +70,15 @@ jobs:
 
       - name: Resolve targets
         id: targets
+        env:
+          TARGETS: ${{ inputs.targets }}
         run: |
-          case "${{ inputs.targets }}" in
+          case "$TARGETS" in
             rules)     echo "only=firestore:rules,firestore:indexes" >> "$GITHUB_OUTPUT" ;;
             storage)   echo "only=storage" >> "$GITHUB_OUTPUT" ;;
             functions) echo "only=functions" >> "$GITHUB_OUTPUT" ;;
             hosting)   echo "only=hosting:app" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Unknown targets"; exit 1 ;;
           esac
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -94,9 +100,10 @@ jobs:
         if: inputs.targets == 'hosting'
         env:
           SH_ENV_CONFIG_JSON: ${{ secrets.SH_ENV_CONFIG_JSON }}
+          TARGET_ENV: ${{ inputs.environment }}
         run: |
           test -n "$SH_ENV_CONFIG_JSON" || { echo "::error::SH_ENV_CONFIG_JSON secret missing"; exit 1; }
-          printf '%s' "$SH_ENV_CONFIG_JSON" > "config/env/${{ inputs.environment }}.json"
+          printf '%s' "$SH_ENV_CONFIG_JSON" > "config/env/$TARGET_ENV.json"
 
       # Provider and service account are identifiers, not secrets; they live in
       # environment-scoped variables so each environment gets its own identity.
@@ -109,4 +116,6 @@ jobs:
         env:
           # Production gates above already required main + typed confirmation.
           SH_CONFIRM_PRODUCTION: ${{ inputs.environment == 'production' && inputs.confirm || '' }}
-        run: bash tool/deploy.sh "${{ inputs.environment }}" --only "${{ steps.targets.outputs.only }}"
+          TARGET_ENV: ${{ inputs.environment }}
+          ONLY: ${{ steps.targets.outputs.only }}
+        run: bash tool/deploy.sh "$TARGET_ENV" --only "$ONLY"

@@ -263,6 +263,54 @@ describe('secure unpairing (D-136)', () => {
     for (const doc of all.docs) assert.equal(doc.get('state'), 'closed');
   });
 
+  // P3-15 (Prompt 18, D-144): the listing and the lineage walk run only
+  // after the challenge, couple membership, device and proof all hold, so
+  // an unauthorized caller causes no reads of the couple's conversations
+  // and learns nothing about the lineage (no walk-bound signal).
+  test('P3-15: no listing or lineage walk before the request is authorized', async () => {
+    const c = await couple();
+    const other = await couple();
+    let listed = 0;
+    const spy = async (database, id) => {
+      listed += 1;
+      return (await database.collection('conversations').where('coupleId', '==', id).select().get()).docs.map((d) => d.id);
+    };
+    const good = await authorize(c.A, c.A1, c.coupleId);
+    const flipped = Buffer.from(good.proof, 'base64');
+    flipped[0] ^= 1;
+    await rejectsWith(unpair(c.A, { ...good, proof: b64(flipped) }, now(), spy), 'proof_invalid');
+    await rejectsWith(unpair(c.A, { ...(await authorize(c.A, c.A1, c.coupleId)), challengeId: hex16() }, now(), spy), 'challenge_invalid');
+    await rejectsWith(unpair(c.A, await authorize(c.A, c.A1, c.coupleId, { purpose: 7 }), now(), spy), 'proof_invalid');
+    const stale = await authorize(c.A, c.A1, c.coupleId);
+    await rejectsWith(unpair(c.A, stale, new Date(Date.now() + 10 * 60 * 1000), spy), 'challenge_expired');
+    // Another account presenting this couple, and another couple's member.
+    await rejectsWith(unpair(other.A, { ...(await authorize(other.A, other.A1, other.coupleId)), coupleId: c.coupleId }, now(), spy), 'challenge_invalid');
+    const late = await authorize(c.A, c.A1, c.coupleId);
+    await db.doc(`users/${c.A}/devices/${c.A1.hex}`).update({ status: 'revoked' });
+    await rejectsWith(unpair(c.A, late, now(), spy), 'device_not_active');
+    await db.doc(`users/${c.A}/devices/${c.A1.hex}`).update({ status: 'active' });
+    assert.equal(listed, 0, 'an unauthorized request listed the couple\'s conversations');
+    await stillPaired(c);
+    // Authorized (B: A has used its 5 unpair challenges for today): the
+    // listing runs, once per transaction attempt.
+    await unpair(c.B, await authorize(c.B, c.B1, c.coupleId), now(), spy);
+    assert.ok(listed >= 1);
+    await dissolved(c);
+    await stillPaired(other);
+  });
+
+  test('P3-15: an over-long lineage answers a forged proof with proof_invalid, not the walk bound', async () => {
+    const c = await couple();
+    let last = c.conversationId;
+    for (let i = 0; i < 70; i += 1) last = await seedSuccessor(c, last);
+    const forged = await authorize(c.A, c.A1, c.coupleId, { signer: keyFromSeed(randomBytes(32)) });
+    await rejectsWith(unpair(c.A, forged, now(), async () => []), 'proof_invalid');
+    // The forged challenge was consumed; a replay is refused the same way.
+    await rejectsWith(unpair(c.A, forged, now(), async () => []), 'challenge_invalid');
+    assert.equal(await coupleStatus(c.coupleId), 'active');
+    assert.equal(await convState(last), 'active');
+  });
+
   test('E90: repeated unpair/recovery races never leave an open conversation', async () => {
     for (let round = 0; round < 4; round += 1) {
       const c = await couple();
