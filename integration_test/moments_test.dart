@@ -1,11 +1,12 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:sirf_hum/features/moments/application/moment_photo_picker.dart';
 import 'package:sirf_hum/features/moments/application/moments_controller.dart';
+import 'package:sirf_hum/features/moments/data/picker_cache_sweeper.dart';
 import 'package:sirf_hum/platform/io_media_files.dart';
 import 'package:sirf_hum/platform/secure_key_store.dart';
 import 'package:sirf_hum/security/device/device_registration.dart';
@@ -234,5 +235,28 @@ void main() {
         c.close();
       }
     });
+  });
+
+  // P2-3 (Prompt 18, D-141), on the real device: the app's channel reports
+  // the real cache directory and a leftover picker copy there is removed,
+  // while other cache entries stay.
+  testWidgets('a leftover photo-picker copy is swept at start-up', (
+    tester,
+  ) async {
+    final path = await const MethodChannel(
+      PickerCacheSweeper.channelName,
+    ).invokeMethod<String>('cacheDirectory');
+    expect(path, isNotNull);
+    final leftover = Directory('$path/3f2c8a1e-9b4d-4c7a-8e21-5d6f7a8b9c0d')
+      ..createSync(recursive: true);
+    File('${leftover.path}/IMG_0001.jpg').writeAsBytesSync([0xff, 0xd8]);
+    final other = Directory('$path/not_the_picker')..createSync();
+    addTearDown(() {
+      if (other.existsSync()) other.deleteSync(recursive: true);
+    });
+
+    expect(await const PickerCacheSweeper().sweepAtStartup(), 1);
+    expect(leftover.existsSync(), isFalse);
+    expect(other.existsSync(), isTrue);
   });
 }
