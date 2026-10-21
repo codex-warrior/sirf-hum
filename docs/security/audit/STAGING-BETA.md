@@ -1,8 +1,10 @@
 # Prompt 19 — Staging Activation and Real-Device Beta
 
-Status: **2026-10-21. BLOCKED — owner actions required (§9).** Staging
-Firestore rules and indexes are deployed and verified; nothing else in
-staging could be activated, and the real-device beta did not run.
+Status: **2026-10-21. PARTIALLY READY.** Backend activated after the owner
+linked billing to staging (§10): Firestore, Storage and all 35 Functions
+are deployed and verified. Still blocked for devices: no sign-in method
+(D-138 not approved) and no App Check path for a sideloaded build (D-147
+not approved). The real-device beta has not run.
 Boundaries and runbook: [STAGING-BETA](../../STAGING-BETA.md). Decisions:
 D-146 (accepted), D-147 (proposed).
 
@@ -163,3 +165,42 @@ In order; details in [STAGING-BETA §3](../../STAGING-BETA.md#3-activation-order
 
 After 1–3 the agent can deploy Storage rules; after 1, 4 and 6,
 Functions; after 5, the beta plan (STAGING-BETA §6) can start.
+
+## 10. Resumed after staging billing (2026-10-21, second pass)
+
+Billing verified: `sirf-hum-staging` **enabled**; production still **off**. Every mutation below targeted `sirf-hum-staging` explicitly; nothing touched production or iOS.
+
+| Category | Item |
+| --- | --- |
+| **Done manually (owner)** | Billing linked to `sirf-hum-staging` |
+| **Done automatically** | Enabled `firebasestorage.googleapis.com`; created the default bucket `sirf-hum-staging.firebasestorage.app` in **ASIA-SOUTH1**; set **public access prevention = enforced** and **uniform bucket-level access** (no public IAM members) |
+| | Granted the Firebase Storage service agent `roles/firebaserules.firestoreServiceAgent` (the standard cross-service grant; the Storage rules read conversation state from Firestore and fail closed without it) |
+| | Storage rules deployed via `tool/deploy.sh staging --only storage` after 61 + 20 rules tests; live ruleset byte-identical to `firebase/storage.rules` |
+| | Functions deployed via `tool/deploy.sh staging --only functions` (APIs enabled by the CLI: Functions, Build, Artifact Registry, Run, Eventarc, Scheduler): **35/35 ACTIVE** — 29 callables, 5 Firestore triggers, 1 scheduled job; Node 22, 2nd gen, `asia-south1`, `maxInstances: 10` |
+| | Artifact Registry cleanup policy: images older than 1 day deleted (cost) |
+| **Deploy incidents (resolved)** | First parallel deploy: Eventarc service-agent propagation (5 triggers) and Cloud Run "Quota exceeded for total allowable CPU per project per region" (10 functions; each 2nd-gen function requests 1 vCPU during health checks). Retried in small batches. Nine callables whose first create had failed were left **without** the standard callable invoker binding (Cloud Run 403 before the function); deleted and recreated through `tool/deploy.sh` so the CLI applied it. Triggers and the scheduled job correctly have no public invoker |
+| **Blocked: approval (not permission)** | Auth: D-138 (email link) not approved and no sign-in code exists, so no provider was enabled (enabling one would let anyone with the public API key create accounts with no app to use them). App Check: Play Integrity needs Play Console (excluded); staging debug tokens (D-147) not approved, so staging stays **fail-closed** |
+| **Blocked: external account** | GitHub `staging` secret `SH_ENV_CONFIG_JSON` not set, and `staging-build.yml` can only be dispatched once on `main` |
+| **Not yet safe** | Budgets (billing-account configuration, owner); live authenticated tests (need Auth) |
+| **Missing permissions** | **None.** The operator account is `roles/owner` on staging |
+
+### Live verification
+
+| Check | Result |
+| --- | --- |
+| Storage without auth: GET/LIST/UPLOAD on `conversations/…/media/…` and other paths (Firebase API) | 403 each; GCS JSON list 401; public URL 403 |
+| Regional CPU quota at runtime | 29 simultaneous cold starts (a parallel smoke test) gave 9× 503; sequential calls all 401. Normal two-tester use is far below this. Fix if it recurs: request a Cloud Run CPU quota increase for `asia-south1` (owner, console) or lower per-function CPU in code (a reviewed change; affects production config too) |
+| All callables without auth or App Check | `401 UNAUTHENTICATED` before function code; forged `X-Firebase-AppCheck` → rejected ("AppCheck token was rejected"), 401 |
+| Scheduler | exactly 1 job (`cleanupExpiredDeviceRecords`, every 24 h, UTC); no duplicates |
+| Eventarc | exactly 5 triggers (Firestore created/updated for messages, commits, accountTrust, couples, devices); no leftovers from the failed attempt |
+| Function logs | SDK verification messages and categories only; no payloads, IDs, tokens or content |
+| Staging config regenerated from the live project | identical to the existing file; `check_env_config.mjs staging` passes |
+| Cross-environment search (code, CI, tools) | project IDs appear only in env→project maps, guards and example configs; no stray project or bucket literal |
+
+### Cost observations
+
+Nothing always-on: every function scales to zero (no `minInstances`), one daily job, Artifact Registry pruned daily. Expected staging cost while idle: storage of a few container images and near-zero Firestore/Storage. Function logs so far: a handful of entries from smoke tests. **Recommended (owner):** budget on the billing account scoped to `sirf-hum-staging` with alerts at 50/90/100 % (alerts only; no cap).
+
+### Two-device readiness (Phone A trusted, Phone B new)
+
+All 19 requested scenarios are **BLOCKED**, none failed: the build cannot sign in (no sign-in UI) and callables would reject it (no attestation). Plan and defect template: STAGING-BETA §6.

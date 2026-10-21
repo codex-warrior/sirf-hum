@@ -1,8 +1,9 @@
 # Staging Beta — Environment Boundaries and Runbook
 
-Status: **Prompt 19, 2026-10-21. Staging is partly activated: Firestore
-rules and indexes are deployed; billing, Storage, Functions, Auth and App
-Check are not.** The real-device beta is **blocked** (§5). Current state,
+Status: **Prompt 19, 2026-10-21. Staging backend activated: billing (owner),
+Firestore, Storage (`asia-south1`, private) and all 35 Functions. Auth and
+App Check await owner decisions (D-138, D-147).** The real-device beta is
+**blocked** (§5). Current state,
 evidence and findings: [audit/STAGING-BETA](security/audit/STAGING-BETA.md).
 Decisions: D-146, D-147.
 
@@ -27,11 +28,11 @@ Verified live with the owner's CLI credentials unless marked "repo".
 | Functions `SH_ENV` (`functions/.env.<alias>`; cold-start project check, repo) | `development` | `staging` | `production` |
 | Region (Firestore, Functions, Storage) | `asia-south1` | `asia-south1` | `asia-south1` |
 | Firestore `(default)` | `asia-south1`, Native | `asia-south1`, Native, delete protection **off**, PITR off | `asia-south1`, Native, delete protection **on**, PITR off |
-| Storage bucket | none | **none** (`sirf-hum-staging.firebasestorage.app` once created) | none |
-| Cloud Functions | none (API not enabled) | **none** (API not enabled) | none (API not enabled) |
+| Storage bucket | none | **`sirf-hum-staging.firebasestorage.app`, ASIA-SOUTH1, public access prevention enforced** | none |
+| Cloud Functions | none (API not enabled) | **35 deployed (29 callables, 5 triggers, 1 job)** | none (API not enabled) |
 | Firebase Auth | not initialized | **not initialized** | not initialized |
 | App Check | API on, no service config | API on, no service config | API on, no service config |
-| Billing | **Blaze, linked 2026-10-21** | **not linked** | not linked |
+| Billing | Blaze | **Blaze (linked by owner)** | not linked |
 | Deploy identity (WIF) | `github-deployer@sirf-hum-dev` | `github-deployer@sirf-hum-staging`, condition `repository_id == 1420599703 && repository_owner_id == 148367546 && environment == 'staging'` | `github-deployer@sirf-hum-prod`, plus `ref == refs/heads/main` |
 | Deployer roles | rules, indexes, hosting, service usage | same; **no Functions deploy roles** | same |
 | Service-account keys | none | none user-managed | none user-managed |
@@ -103,8 +104,7 @@ Options, none applied:
 
 ## 5. Why the real-device beta is blocked
 
-1. **Billing is on development, not staging** (S19-1): no bucket, no
-   Functions, so nothing past sign-in works.
+1. ~~Billing~~ resolved: staging backend deployed (audit record §10).
 2. **There is no sign-in method in the app** (P1-7, D-107, D-138): a real
    build reaches only the welcome screen. Building it is a separately
    authorized prompt (AUTH-PRODUCTION-DECISION §10 "Code").
