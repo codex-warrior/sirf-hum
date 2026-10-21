@@ -241,3 +241,9 @@ All 35 Functions redeployed with `cpu: 'gcf_gen1'` (0.1666 vCPU each; the 20-vCP
 | Verified email-link account + App Check token | **200**, `{state}` |
 | Unverified password account + App Check token | **401 UNAUTHENTICATED** (D-149) |
 | Verified account, no App Check token | **401 UNAUTHENTICATED** (enforcement) |
+
+## 13. Merged
+
+PR #21 squash-merged to `main` as `e74d803` (2026-10-21) after 10/10 CI on `2a08532`. GitHub did not deliver the push event for that merge (no post-merge CI run, `staging-build.yml` not registered; Actions enabled, no GitHub incident), so this record was merged through a follow-up PR, whose push registers the workflow and runs post-merge CI.
+
+Install path for the two-phone beta: Actions → **Staging beta build** → artifact `sirf-hum-staging-apk` (7 days) → sideload on both phones → on first launch read the App Check debug secret from logcat and register it in staging (D-147) → sign in by email link (paste path, S19-9).
