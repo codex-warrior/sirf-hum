@@ -231,3 +231,13 @@ All 19 requested scenarios are **BLOCKED**, none failed: the build cannot sign i
 | App Links (**S19-9**, open) | Firebase Hosting **reserves** `/.well-known/assetlinks.json` on the project domains and serves `[]`; our per-environment statement (`tool/app_links.mjs`) deploys (`/app-links/assetlinks.json`, correct content) but the rewrite never applies there. Android therefore cannot verify the App Link: the email link opens in the browser and the tester pastes it into the app (copy in the app says how). Fix later: a custom Hosting domain where the path is ours, or a Firebase-supported association; until then the paste path is the beta route |
 | Probe accounts | 3 created and deleted; staging Auth has 0 accounts |
 | Production Auth | still `CONFIGURATION_NOT_FOUND` (untouched) |
+
+### Live end-to-end check after D-149 (staging, 2026-10-21)
+
+All 35 Functions redeployed with `cpu: 'gcf_gen1'` (0.1666 vCPU each; the 20-vCPU regional quota had blocked ~15 updates, leaving them on the pre-D-149 revision until this deploy). Then, with a temporary staging App Check debug token (the D-147 mechanism) and two probe accounts, all deleted afterwards:
+
+| Request to `getPairingState` | Result |
+| --- | --- |
+| Verified email-link account + App Check token | **200**, `{state}` |
+| Unverified password account + App Check token | **401 UNAUTHENTICATED** (D-149) |
+| Verified account, no App Check token | **401 UNAUTHENTICATED** (enforcement) |
