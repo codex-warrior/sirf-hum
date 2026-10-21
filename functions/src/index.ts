@@ -75,6 +75,10 @@ setGlobalOptions({
   region: REGION,
   // Cost guardrail against runaway scaling; raise per function as needed.
   maxInstances: 10,
+  // A fraction of a vCPU per instance (256 MiB → ~1/6), as 1st gen had.
+  // The 2nd-gen default of 1 vCPU each exhausted the regional Cloud Run
+  // CPU quota (20 vCPU) with ~20 warm or deploying functions (Prompt 19).
+  cpu: 'gcf_gen1',
 });
 
 // Runs once per instance at cold start (not during deploy analysis).
