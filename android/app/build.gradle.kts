@@ -50,15 +50,20 @@ android {
             dimension = "environment"
             applicationIdSuffix = ".dev"
             resValue("string", "app_name", "Sirf Hum Dev")
+            // Email sign-in App Links return only from this project's auth
+            // domain (D-138; must match SH_FIREBASE_AUTH_DOMAIN).
+            manifestPlaceholders["authLinkHost"] = "sirf-hum-dev.firebaseapp.com"
         }
         create("staging") {
             dimension = "environment"
             applicationIdSuffix = ".staging"
             resValue("string", "app_name", "Sirf Hum Staging")
+            manifestPlaceholders["authLinkHost"] = "sirf-hum-staging.firebaseapp.com"
         }
         create("production") {
             dimension = "environment"
             resValue("string", "app_name", "Sirf Hum")
+            manifestPlaceholders["authLinkHost"] = "sirf-hum-prod.firebaseapp.com"
         }
     }
 

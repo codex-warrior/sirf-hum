@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sirf_hum/app/entry/auth_link_screen.dart';
 import 'package:sirf_hum/app/entry/pair_screen.dart';
 import 'package:sirf_hum/app/entry/start_screen.dart';
 import 'package:sirf_hum/app/entry/welcome_screen.dart';
@@ -10,6 +11,7 @@ import 'package:sirf_hum/features/home/presentation/home_screen.dart';
 import 'package:sirf_hum/features/moments/presentation/moments_screen.dart';
 import 'package:sirf_hum/features/together/presentation/together_screen.dart';
 import 'package:sirf_hum/features/us/presentation/us_screen.dart';
+import 'package:sirf_hum/security/account/email_link_sign_in.dart';
 import 'package:sirf_hum/session/session_state.dart';
 
 /// Routes outside the five-area shell, for everyone who is not (yet) a
@@ -18,6 +20,9 @@ abstract final class EntryRoutes {
   static const start = '/start';
   static const welcome = '/welcome';
   static const pair = '/pair';
+
+  /// Email sign-in App Links (D-138): `/__/auth/links`, `/__/auth/action`.
+  static const authLink = '$authLinkPathPrefix:action';
 
   /// The area a deep link asked for, carried through [start].
   static const fromParameter = 'from';
@@ -38,6 +43,12 @@ String? redirectFor(SessionState session, Uri location) {
     SessionPaired() => null,
   };
 
+  // A sign-in link is kept while signed out or still starting (a cold start
+  // from the email); once signed in it is ignored like any other entry URL.
+  if (path.startsWith(authLinkPathPrefix) &&
+      (session is SessionSignedOut || session is SessionStarting)) {
+    return null;
+  }
   if (entry == null) {
     if (ProductArea.fromPath(path) != null) return null;
     final from = location.queryParameters[EntryRoutes.fromParameter];
@@ -78,6 +89,10 @@ GoRouter buildRouter({
       GoRoute(
         path: EntryRoutes.welcome,
         builder: (context, state) => const WelcomeScreen(),
+      ),
+      GoRoute(
+        path: EntryRoutes.authLink,
+        builder: (context, state) => AuthLinkScreen(location: state.uri),
       ),
       GoRoute(
         path: EntryRoutes.pair,

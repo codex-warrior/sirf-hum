@@ -18,9 +18,12 @@ import 'package:sirf_hum/infrastructure/firebase/callable_pairing_backend.dart';
 import 'package:sirf_hum/infrastructure/firebase/crash_reporting.dart';
 import 'package:sirf_hum/infrastructure/firebase/firebase_account_session.dart';
 import 'package:sirf_hum/infrastructure/firebase/firebase_bootstrap.dart';
+import 'package:sirf_hum/infrastructure/firebase/firebase_config.dart';
+import 'package:sirf_hum/infrastructure/firebase/firebase_email_link_sign_in.dart';
 import 'package:sirf_hum/infrastructure/firebase/firestore_couple_profiles.dart';
 import 'package:sirf_hum/security/account/account_session.dart';
 import 'package:sirf_hum/session/session_controller.dart';
+import 'package:sirf_hum/session/sign_in_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -64,6 +67,7 @@ Future<void> main() async {
         appConfigProvider.overrideWithValue(config),
         firebaseStatusProvider.overrideWithValue(firebaseStatus),
         ...sessionPortOverrides(firebaseStatus),
+        ...signInOverrides(firebaseStatus, config),
         // Web never handles private media (D-046): no picker there.
         if (!kIsWeb)
           momentPhotoPickerProvider.overrideWithValue(
@@ -95,3 +99,26 @@ List<Override> sessionPortOverrides(FirebaseStatus status) => switch (status) {
     coupleProfilesProvider.overrideWithValue(FirestoreCoupleProfiles()),
   ],
 };
+
+/// Email-link sign-in (D-138) for a configured Android build. Elsewhere the
+/// defaults apply and the welcome says sign-in is not available: web keeps
+/// account features for later (D-046), and an unconfigured or failed build
+/// has nothing to sign in to.
+@visibleForTesting
+List<Override> signInOverrides(FirebaseStatus status, AppConfig config) {
+  final domain = config.firebase.authDomain;
+  if (status != FirebaseStatus.ready ||
+      domain == null ||
+      config.firebase.platform != FirebasePlatform.android) {
+    return const [];
+  }
+  return [
+    authLinkDomainProvider.overrideWithValue(domain),
+    emailLinkSignInProvider.overrideWithValue(
+      FirebaseEmailLinkSignIn(
+        linkDomain: domain,
+        androidPackageName: config.environment.androidApplicationId,
+      ),
+    ),
+  ];
+}
