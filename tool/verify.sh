@@ -32,7 +32,7 @@ bash tool/check_flutter_hook_pins.sh packages/sirf_hum_crypto/pubspec.yaml \
 step 'Production deploy gates + web header policy + env config isolation (D-137, D-140, D-146)'
 bash tool/test_deploy_guard.sh
 node tool/check_web_headers.mjs
-node --test tool/test_check_env_config.mjs
+node --test tool/test_check_env_config.mjs tool/test_app_links.mjs
 
 step 'Crypto package: analyze + Dart tests (native tests skip without a host build)'
 (cd packages/sirf_hum_crypto && dart pub get && dart analyze --fatal-infos && dart test)
