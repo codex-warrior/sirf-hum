@@ -217,3 +217,17 @@ All 19 requested scenarios are **BLOCKED**, none failed: the build cannot sign i
 | **Blocked: owner console action** | Firebase Auth not initialized in staging (`CONFIGURATION_NOT_FOUND`). The only API that initializes it (`initializeAuth`) upgrades the project to Identity Platform, which was not approved. Owner: console → Authentication → **Get started**. Then the agent sets, via the admin API: email link only (no password), email-enumeration protection, authorized domains = staging Hosting domains |
 | **Pending verification** | `assetlinks.json` on the staging auth domain still served empty right after the SHA-256 was registered; until it lists the app, links open in the browser and the in-app "paste the link" path is the fallback |
 | **Per phone, at install (D-147)** | First launch prints the App Check debug secret to logcat (`adb logcat \| grep -i DebugAppCheckProvider`); register it in console → App Check → Apps → staging Android → Manage debug tokens (or send it to the agent to register through the API). Delete the tokens when the beta ends |
+
+## 12. Staging Auth configured (2026-10-21, fourth pass)
+
+| Item | Result |
+| --- | --- |
+| Owner: Authentication → Get started | Done; project type `FIREBASE_AUTH` (no Identity Platform upgrade) |
+| Sign-in methods (admin API) | Email link is the only method the app offers; the Email/Password provider is enabled because email link requires it (D-149); anonymous, phone and social providers off; anonymous sign-up → `ADMIN_ONLY_OPERATION` |
+| Email-enumeration protection | on |
+| Authorized domains | `sirf-hum-staging.firebaseapp.com`, `sirf-hum-staging.web.app` (`localhost` removed) |
+| Email-link backend | Admin-minted link (no email sent) for a probe account → `signInWithEmailLink` succeeded; the link is `https://sirf-hum-staging.firebaseapp.com/__/auth/action?…mode=signIn…`, matching the app's filter |
+| **S19-8** password sign-ups possible | Server side fixed by D-149 (callables require `email_verified`); pre-hijack verified closed by Firebase |
+| App Links | Firebase serves an empty `assetlinks.json`; we serve our own per environment (`tool/app_links.mjs`: staging lists only `com.sirfhum.app.staging` + the staging certificate; production and development `[]`) |
+| Probe accounts | 3 created and deleted; staging Auth has 0 accounts |
+| Production Auth | still `CONFIGURATION_NOT_FOUND` (untouched) |

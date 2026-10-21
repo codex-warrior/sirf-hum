@@ -369,6 +369,7 @@ mitigated · **P** partially mitigated · **A** accepted · **U** unresolved.
 | E101 | A staging App Check debug token (D-147, proposed) leaks and lets scripts pass attestation in staging | A (if adopted) | Staging only; one token per test phone, deleted at beta end; production refuses the debug provider at start-up; callables still need an account session and device-key proofs | Staging metadata of test accounts reachable to a token holder with a session | none (staging) |
 | E102 | A build handed to a tester carries another environment's Firebase identifiers | M | D-146: `tool/check_env_config.mjs` before the build; the staging workflow checks the compiled Dart code for other projects' app IDs; runtime guard (project ID, flavor) | Checks only the identifiers we know (project IDs and numbers) | — |
 
+| E103 | Password pre-registration of someone else's address (email link needs the Email/Password provider) creates server state before the owner signs in | M | D-149: callables require `email_verified`; Firebase removes the password and revokes sessions at the owner's first link sign-in (verified on staging) | An unverified account can set its own profile display name; Auth quota | — |
 
 ## Assumptions
 

@@ -138,7 +138,7 @@ In each project, staging before production:
    Identity Toolkit configuration; production currently answers
    `CONFIGURATION_NOT_FOUND`).
 2. Sign-in method → **Email/Password** provider → enable **Email link
-   (passwordless sign-in)** only; leave "Email/Password" (password) **off**.
+   (passwordless sign-in)** only; leave "Email/Password" (password) **off**. **Correction (Prompt 19, D-149):** the password method cannot be turned off on Firebase Auth while email link is on; callables therefore require `email_verified`, and the app offers no password path.
 3. Settings → **User actions → Email enumeration protection: on**.
 4. Settings → **Authorized domains**: only the Hosting domain(s) of that
    project (remove `localhost` in production).
