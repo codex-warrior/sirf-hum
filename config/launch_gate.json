@@ -1,0 +1,4 @@
+{
+  "$comment": "Production launch gate (D-137). tool/deploy.sh refuses to deploy Functions or Hosting to production unless productionTraffic is exactly \"open\". Change it only in a reviewed PR after every P0 and P1 gate in docs/security/audit/PRODUCTION-LAUNCH-GATE.md is PASS with evidence.",
+  "productionTraffic": "closed"
+}
