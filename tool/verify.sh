@@ -29,6 +29,10 @@ flutter_root="${FLUTTER_ROOT:-$(cd "$(dirname "$(readlink -f "$(command -v flutt
 bash tool/check_flutter_hook_pins.sh packages/sirf_hum_crypto/pubspec.yaml \
   "$flutter_root/packages/flutter_tools/pubspec.yaml"
 
+step 'Production deploy gates + web header policy (D-137, D-140)'
+bash tool/test_deploy_guard.sh
+node tool/check_web_headers.mjs
+
 step 'Crypto package: analyze + Dart tests (native tests skip without a host build)'
 (cd packages/sirf_hum_crypto && dart pub get && dart analyze --fatal-infos && dart test)
 
@@ -53,7 +57,9 @@ if [[ "${1:-}" == '--all' ]]; then
 
   step 'Android: development debug + production release'
   flutter build apk --debug --flavor development --dart-define=SH_ENV=development
-  flutter build apk --release --flavor production --dart-define=SH_ENV=production
+  # Non-distributable verification build: no signing key here (D-143).
+  SH_ALLOW_DEBUG_SIGNED_RELEASE=1 flutter build apk --release --flavor production --dart-define=SH_ENV=production
+  git diff --exit-code -- android/app/gradle.lockfile
 fi
 
 printf '\nAll requested checks passed.\n'
