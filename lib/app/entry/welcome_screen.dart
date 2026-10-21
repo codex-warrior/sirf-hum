@@ -171,8 +171,8 @@ class _LinkSentState extends ConsumerState<_LinkSent> {
         ),
         const SizedBox(height: Spacing.lg),
         Text(
-          'If the link opens in your browser instead, copy it and paste it '
-          'here.',
+          'If the link opens in your browser instead, go back to the email, '
+          'press and hold the link, copy it, and paste it here.',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: Spacing.sm),
