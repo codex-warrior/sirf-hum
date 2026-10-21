@@ -228,6 +228,6 @@ All 19 requested scenarios are **BLOCKED**, none failed: the build cannot sign i
 | Authorized domains | `sirf-hum-staging.firebaseapp.com`, `sirf-hum-staging.web.app` (`localhost` removed) |
 | Email-link backend | Admin-minted link (no email sent) for a probe account → `signInWithEmailLink` succeeded; the link is `https://sirf-hum-staging.firebaseapp.com/__/auth/action?…mode=signIn…`, matching the app's filter |
 | **S19-8** password sign-ups possible | Server side fixed by D-149 (callables require `email_verified`); pre-hijack verified closed by Firebase |
-| App Links | Firebase serves an empty `assetlinks.json`; we serve our own per environment (`tool/app_links.mjs`: staging lists only `com.sirfhum.app.staging` + the staging certificate; production and development `[]`) |
+| App Links (**S19-9**, open) | Firebase Hosting **reserves** `/.well-known/assetlinks.json` on the project domains and serves `[]`; our per-environment statement (`tool/app_links.mjs`) deploys (`/app-links/assetlinks.json`, correct content) but the rewrite never applies there. Android therefore cannot verify the App Link: the email link opens in the browser and the tester pastes it into the app (copy in the app says how). Fix later: a custom Hosting domain where the path is ours, or a Firebase-supported association; until then the paste path is the beta route |
 | Probe accounts | 3 created and deleted; staging Auth has 0 accounts |
 | Production Auth | still `CONFIGURATION_NOT_FOUND` (untouched) |

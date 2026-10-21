@@ -98,7 +98,7 @@ Finding IDs P17-xx: [PROMPT-17-SECURITY-REVIEW](PROMPT-17-SECURITY-REVIEW.md),
 
 ## Prompt 19 (staging activation)
 
-Nothing closed. **S19-8** (password sign-ups possible alongside email link; fixed server-side by D-149). New operational findings S19-1–S19-7 ([STAGING-BETA §6](STAGING-BETA.md#6-findings)); S19-6 fixed (D-146). No new security finding in the code; no live security test failed, and most could not run.
+Nothing closed. **S19-9** (App Links unverifiable on Firebase-reserved `assetlinks.json`; paste fallback; UX, not security). **S19-8** (password sign-ups possible alongside email link; fixed server-side by D-149). New operational findings S19-1–S19-7 ([STAGING-BETA §6](STAGING-BETA.md#6-findings)); S19-6 fixed (D-146). No new security finding in the code; no live security test failed, and most could not run.
 
 ## Closed in Prompt 18
 
