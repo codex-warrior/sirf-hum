@@ -1,0 +1,48 @@
+# Dependency update proposals (Prompt 18, D-142). Proposals only: every PR
+# runs the full CI (pins, advisories, tests) and is merged by a person.
+#
+# Deliberately NOT here:
+#   - cargo (packages/sirf_hum_crypto/native): crypto pins change only by a
+#     reviewed Decision Log entry with the crypto regression suite (D-054,
+#     D-068; tool/check_crypto_core.sh). Dependabot alerts still cover it.
+#   - gradle: the release classpaths are locked (android/app/gradle.lockfile)
+#     and move with Flutter/plugin upgrades, regenerated deliberately.
+version: 2
+updates:
+  # Actions are pinned to full commit SHAs (D-124); Dependabot keeps the SHA
+  # and the tag comment together.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /functions
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      functions:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /firebase
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    groups:
+      rules-tests:
+        patterns: ['*']
+
+  - package-ecosystem: pub
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      app:
+        patterns: ['*']

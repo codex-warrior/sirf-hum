@@ -1,4 +1,5 @@
 import java.util.Properties
+import org.gradle.api.artifacts.dsl.LockMode
 
 plugins {
     id("com.android.application")
@@ -82,4 +83,37 @@ android {
 
 flutter {
     source = "../.."
+}
+
+// Gradle dependency locking (Prompt 18, P2-6, D-142). Only what ships is
+// locked: the release runtime classpaths, pinned in gradle.lockfile and
+// scanned by OSV-Scanner in CI. STRICT: a locked configuration without lock
+// state fails the build instead of resolving freely. After a deliberate
+// dependency change (e.g. a Flutter or plugin upgrade), regenerate with
+//   ./gradlew :app:dependencies --write-locks
+// and review the lockfile diff in the PR.
+dependencyLocking {
+    lockMode.set(LockMode.STRICT)
+}
+configurations.configureEach {
+    if (name.endsWith("ReleaseRuntimeClasspath")) {
+        resolutionStrategy.activateDependencyLocking()
+    }
+}
+
+// A production release is never silently debug-signed (Prompt 18, P2-11,
+// D-143): without android/key.properties the build fails, unless the
+// caller explicitly asks for an unsigned-identity verification build
+// (CI sets SH_ALLOW_DEBUG_SIGNED_RELEASE=1; such an APK is not
+// distributable and stores reject it).
+gradle.taskGraph.whenReady {
+    val productionRelease = Regex("^(assemble|bundle|package)ProductionRelease$")
+    val building = allTasks.any { it.project == project && productionRelease.matches(it.name) }
+    val signed = android.signingConfigs.findByName("release") != null
+    if (building && !signed && System.getenv("SH_ALLOW_DEBUG_SIGNED_RELEASE") != "1") {
+        throw GradleException(
+            "Production release builds need release signing (android/key.properties). " +
+                "For a non-distributable verification build set SH_ALLOW_DEBUG_SIGNED_RELEASE=1.",
+        )
+    }
 }
