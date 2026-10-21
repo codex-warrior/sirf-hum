@@ -88,7 +88,9 @@ Each step names who does it. Never `firebase use`, never a bare
 | 9 | Build the APK | Owner | Actions → "Staging beta build" (after merge) |
 | 10 | Two-device test plan | Owner + tester | §6 |
 
-## 4. App Check for a sideloaded staging build (D-147, proposed)
+## 4. App Check for a sideloaded staging build (D-147, accepted 2026-10-21)
+
+**Owner decision:** option A below, staging only; debug App Check is never enabled in production. Built into `staging-build.yml`.
 
 Play Integrity, the documented staging provider, needs the app in Play
 Console (APP-CHECK-PRODUCTION §3 step 1), and this beta uploads nothing
@@ -105,10 +107,9 @@ Options, none applied:
 ## 5. Why the real-device beta is blocked
 
 1. ~~Billing~~ resolved: staging backend deployed (audit record §10).
-2. **There is no sign-in method in the app** (P1-7, D-107, D-138): a real
-   build reaches only the welcome screen. Building it is a separately
-   authorized prompt (AUTH-PRODUCTION-DECISION §10 "Code").
-3. **No attestation path** for a sideloaded build (§4, D-147).
+2. ~~No sign-in method~~ built for Android (D-138 accepted, D-148); waits
+   on staging Auth initialization (owner console click, audit record §11).
+3. ~~No attestation path~~ D-147 accepted: per-phone debug tokens (§4).
 
 ## 6. Two-device test plan
 

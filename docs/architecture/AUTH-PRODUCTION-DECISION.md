@@ -1,7 +1,8 @@
 # Production Authentication Decision
 
-Status: **Proposed (D-138), Prompt 18, 2026-10-21. Needs owner approval.
-Nothing is enabled.** Follows D-029 (no provider before the identity
+Status: **Accepted by the owner (D-138), 2026-10-21. Built for Android in
+Prompt 19 (D-148); staging configuration in progress; production not
+configured.** Follows D-029 (no provider before the identity
 phase; intended baseline "email link or email/password") and D-107
 (session observation only; sign-in method open).
 

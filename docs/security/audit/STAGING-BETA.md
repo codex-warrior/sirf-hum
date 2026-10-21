@@ -204,3 +204,16 @@ Nothing always-on: every function scales to zero (no `minInstances`), one daily 
 ### Two-device readiness (Phone A trusted, Phone B new)
 
 All 19 requested scenarios are **BLOCKED**, none failed: the build cannot sign in (no sign-in UI) and callables would reject it (no attestation). Plan and defect template: STAGING-BETA §6.
+
+## 11. After owner approval of D-138 and D-147 (2026-10-21, third pass)
+
+| Category | Item |
+| --- | --- |
+| **Done automatically** | Email-link sign-in built for Android (D-148) with 21 new tests; per-flavor App Link to `<project>.firebaseapp.com/__/auth/` |
+| | Staging Hosting deployed (`tool/deploy.sh staging --only hosting`, from a clean worktree of `313ab0b`): `sirf-hum-staging.web.app` and the `/__/auth/` handler serve 200 |
+| | Staging signing key generated outside the repo; SHA-256 `e7c88d35…a4bbc7` registered on the **staging** Android app only |
+| | GitHub `staging` environment secrets set: `SH_ENV_CONFIG_JSON` (checked by `check_env_config.mjs`), `STAGING_KEYSTORE_BASE64`, `STAGING_KEYSTORE_PASSWORD`. Production environment: 0 secrets, unchanged |
+| | `staging-build.yml`: signs with the staging key (refuses without it), verifies the certificate, builds with the App Check debug provider (D-147) |
+| **Blocked: owner console action** | Firebase Auth not initialized in staging (`CONFIGURATION_NOT_FOUND`). The only API that initializes it (`initializeAuth`) upgrades the project to Identity Platform, which was not approved. Owner: console → Authentication → **Get started**. Then the agent sets, via the admin API: email link only (no password), email-enumeration protection, authorized domains = staging Hosting domains |
+| **Pending verification** | `assetlinks.json` on the staging auth domain still served empty right after the SHA-256 was registered; until it lists the app, links open in the browser and the in-app "paste the link" path is the fallback |
+| **Per phone, at install (D-147)** | First launch prints the App Check debug secret to logcat (`adb logcat \| grep -i DebugAppCheckProvider`); register it in console → App Check → Apps → staging Android → Manage debug tokens (or send it to the agent to register through the API). Delete the tokens when the beta ends |
