@@ -107,3 +107,13 @@ unit (`functions/test`), **S** = Security Rules (`firebase/tests`),
 | Picker plaintext copies swept (D-141) | **18** D `picker_cache_sweeper_test.dart` (7: picker-shaped directories removed; other names, wrong UUID version/variant, nested directories, loose files kept; links never followed; missing cache; channel failure; unsupported platforms never ask); I `a leftover photo-picker copy is swept at start-up` (CI emulator, real channel and cache) |
 | Gradle supply chain (D-142) | **18** CI: production release resolves against `android/app/gradle.lockfile` (STRICT) and must not change it; OSV-Scanner on the lockfile; wrapper `distributionSha256Sum` |
 | No silently debug-signed production release (D-143) | **18** CI step `A production release is never silently debug-signed` (Gradle dry run must fail with the signing message); verified locally with and without the opt-in |
+
+## Prompt 19
+
+| Property | Tests |
+| --- | --- |
+| A build config holds only its environment's identifiers (D-146) | **19** `tool/test_check_env_config.mjs` (9: staging-only passes; wrong `SH_ENV`, wrong sender, a production app ID or bucket in a staging file, a staging file checked as production, the production debug provider, non-objects and unknown environments fail; problems name keys, never values); CI and `tool/verify.sh` |
+| Staging APK embeds staging config only (D-146) | **19** `staging-build.yml` steps (application ID, crypto core per ABI, `libapp.so` has the staging Android app ID and no development or production app ID); **not yet run** (needs `main` and the staging secret) |
+| Deployed staging rules = reviewed rules | **19** manual: live ruleset source byte-compared with `firebase/firestore.rules`; unauthenticated GET/LIST/PATCH on `users`, `couples`, `conversations`, `accountTrust`, devices → 403 (STAGING-BETA §3) |
+| Live staging security tests A–P | **19** not run beyond the unauthenticated deny probe: blocked by billing, sign-in and App Check (STAGING-BETA §5) |
+

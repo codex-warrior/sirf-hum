@@ -4,7 +4,8 @@ Status: **Prompt 17 classification (D-125), updated after Prompt 17B
 (2026-10-20), Prompt 17C (2026-10-21,
 [PROMPT-17C-CLOSURE](PROMPT-17C-CLOSURE.md)) and Prompt 18 (2026-10-21,
 D-137–D-145; per-gate status and evidence in
-[PRODUCTION-LAUNCH-GATE](PRODUCTION-LAUNCH-GATE.md)).** **Sirf Hum is not yet
+[PRODUCTION-LAUNCH-GATE](PRODUCTION-LAUNCH-GATE.md)) and Prompt 19 (2026-10-21,
+staging activation, [STAGING-BETA](STAGING-BETA.md), D-146, D-147).** **Sirf Hum is not yet
 production E2EE; independent security/cryptographic review is still
 required.** Every unresolved security item, classified after reviewing
 the implementation. Update this file whenever an item closes; never close
@@ -36,11 +37,11 @@ Finding IDs P17-xx: [PROMPT-17-SECURITY-REVIEW](PROMPT-17-SECURITY-REVIEW.md),
 
 | # | Item | Ref | State |
 | --- | --- | --- | --- |
-| P1-6 | Deployment prerequisites: Blaze, Functions, Storage bucket + agent permission, Eventarc triggers, Cloud Scheduler | D-025 | **Open (owner actions).** Prompt 18 prepared the gates (D-137) and verified the projects read-only: billing off, no bucket, no functions (PROMPT-18-BASELINE §3) |
-| P1-6a | Reviewed Security Rules released in production; development's rules redeployed | — | **New (Prompt 18): open.** Production has **no** rules release; development's is from 2026-10-15. Deployable now through the Deploy workflow (rules pass the closed gate, D-137) |
+| P1-6 | Deployment prerequisites: Blaze, Functions, Storage bucket + agent permission, Eventarc triggers, Cloud Scheduler | D-025 | **Open (owner actions).** Prompt 18 prepared the gates (D-137) and verified the projects read-only: billing off, no bucket, no functions (PROMPT-18-BASELINE §3). **Prompt 19:** billing is now linked to `sirf-hum-dev` only; staging and production still off (S19-1); staging still has no bucket or Functions |
+| P1-6a | Reviewed Security Rules released in production; development's rules redeployed | — | **New (Prompt 18): open.** Production has **no** rules release; development's is from 2026-10-15. Deployable now through the Deploy workflow (rules pass the closed gate, D-137). **Prompt 19:** staging rules released from `c01ffb8`, verified byte-identical; production and development unchanged |
 | P1-6b | Second owner and organization accounts; monitoring and budget alerts | D-025, ACCOUNT-OWNERSHIP | **New (Prompt 18): open** (owner) |
-| P1-7 | Sign-in provider chosen and hardened | D-107, D-138 | **Decision proposed** (email link, D-138; needs owner approval); not configured or built |
-| P1-8 | App Check attestation before the first Functions deploy | P17-10, D-028, D-139 | **Prepared, not enabled:** production refuses debug and unattested web; all callables enforce in code (static test); console steps in APP-CHECK-PRODUCTION |
+| P1-7 | Sign-in provider chosen and hardened | D-107, D-138 | **Decision proposed** (email link, D-138; needs owner approval); not configured or built. **Prompt 19:** blocks the staging beta (S19-2) |
+| P1-8 | App Check attestation before the first Functions deploy | P17-10, D-028, D-139 | **Prepared, not enabled:** production refuses debug and unattested web; all callables enforce in code (static test); console steps in APP-CHECK-PRODUCTION. **Prompt 19:** no attestation path for a sideloaded staging build (S19-3); staging-only debug tokens proposed (D-147) |
 
 **Closed in Prompt 17B (implementation; independent review is P0-1):**
 
@@ -94,6 +95,10 @@ Finding IDs P17-xx: [PROMPT-17-SECURITY-REVIEW](PROMPT-17-SECURITY-REVIEW.md),
 | P3-13 | A device keeps its local partner-root anchor (D-128) after unpairing; authorizes nothing server-side | D-136, PROMPT-17C-CLOSURE §8.2 |
 | P3-14 | Firestore emulator rejects some contended transactions (`INVALID_ARGUMENT`) under the parallel suite: test-infrastructure flake, never a partial state | PROMPT-17C-CLOSURE §8.3–8.4 |
 | P3-15 | `unpairCouple` listed and walked the couple's conversation lineage (≤ ~64 reads) **before** verifying the challenge and proof; an over-long lineage answered with a generic error instead of `challenge_invalid` (one-bit signal). No state change, no data returned, no bypass. Found in the PR #16 merge-gate review and recorded there; recorded here in Prompt 18 | **Fixed in Prompt 18** (D-144): authorization first; regression tests `P3-15: …` (emulator). Kept in this table so the finding is not erased |
+
+## Prompt 19 (staging activation)
+
+Nothing closed. New operational findings S19-1–S19-7 ([STAGING-BETA §6](STAGING-BETA.md#6-findings)); S19-6 fixed (D-146). No new security finding in the code; no live security test failed, and most could not run.
 
 ## Closed in Prompt 18
 

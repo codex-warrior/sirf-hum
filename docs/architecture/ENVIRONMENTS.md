@@ -218,6 +218,11 @@ in Prompt 02):
   separate workflow option and not part of `rules`.
 - These stay **intentionally unavailable** until the phase that needs them,
   when billing is deliberately enabled. Prompt 03 did not enable billing.
+- **Prompt 19 (2026-10-21, verified):** billing is linked to
+  `sirf-hum-dev` only; staging and production are still on Spark, so
+  staging has no bucket and no Functions. Staging Firestore rules and
+  indexes are released. Status and owner actions:
+  [STAGING-BETA](../STAGING-BETA.md).
 
 ## GitHub repository and CI (Prompt 03)
 
