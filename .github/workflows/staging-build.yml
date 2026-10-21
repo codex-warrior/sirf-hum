@@ -6,10 +6,14 @@ name: Staging beta build
 #
 # The client config (public identifiers, not secrets) comes from the
 # `staging` GitHub Environment secret SH_ENV_CONFIG_JSON and must pass
-# tool/check_env_config.mjs before anything is built. The APK is
-# debug-signed (no staging signing key exists): fine for sideloading onto
-# test devices, not distributable. Artifacts on this public repository are
-# visible to signed-in GitHub users, so retention is short.
+# tool/check_env_config.mjs before anything is built. The build uses the
+# App Check DEBUG provider (D-147, staging only: each phone generates its
+# own secret, registered by the owner; none is embedded in the APK) and is
+# signed with the staging key (secrets STAGING_KEYSTORE_BASE64 and
+# STAGING_KEYSTORE_PASSWORD), whose SHA-256 is registered on the staging
+# Firebase Android app so sign-in App Links verify (D-138). Artifacts on
+# this public repository are visible to signed-in GitHub users, so
+# retention is short.
 # Supply chain (D-124): actions pinned to full commit SHAs.
 
 on:
@@ -25,6 +29,8 @@ concurrency:
 env:
   FLUTTER_VERSION: 3.41.5
   APK: build/app/outputs/flutter-apk/app-staging-release.apk
+  # Staging signing certificate registered in Firebase (docs/STAGING-BETA.md).
+  STAGING_CERT_SHA256: e7c88d35f7c9f52093a7ca758ff320480460f639499f9db3d4e2551095a4bbc7
 
 jobs:
   build:
@@ -63,7 +69,23 @@ jobs:
         run: |
           [[ -n "$SH_ENV_CONFIG_JSON" ]] || { echo "::error::staging secret SH_ENV_CONFIG_JSON is not set"; exit 1; }
           printf '%s' "$SH_ENV_CONFIG_JSON" > config/env/staging.json
+          # D-147: the staging beta uses App Check debug tokens. Production
+          # refuses the debug provider at start-up and in check_env_config.
+          node -e 'const f="config/env/staging.json";const fs=require("fs");const c=JSON.parse(fs.readFileSync(f));c.SH_APPCHECK_PROVIDER="debug";fs.writeFileSync(f,JSON.stringify(c))'
           node tool/check_env_config.mjs staging config/env/staging.json
+      - name: Staging signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.STAGING_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.STAGING_KEYSTORE_PASSWORD }}
+        run: |
+          [[ -n "$KEYSTORE_BASE64" && -n "$KEYSTORE_PASSWORD" ]] || { echo "::error::staging signing secrets are not set"; exit 1; }
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > android/app/staging.jks
+          {
+            echo 'storeFile=staging.jks'
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo 'keyAlias=staging'
+            echo "keyPassword=$KEYSTORE_PASSWORD"
+          } > android/key.properties
       - name: Build
         run: >-
           flutter build apk --release
@@ -76,6 +98,11 @@ jobs:
           aapt2="$(ls -d "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -n 1)"
           "$aapt2" dump badging "$APK" | grep -q "package: name='com.sirfhum.app.staging'" \
             || { echo "::error::$APK is not com.sirfhum.app.staging"; exit 1; }
+      - name: Verify the staging signing certificate
+        run: |
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)"
+          "$apksigner" verify --print-certs "$APK" | grep -qi "SHA-256 digest: $STAGING_CERT_SHA256" \
+            || { echo "::error::APK is not signed with the registered staging key"; exit 1; }
       - name: Verify crypto core is bundled for every ABI
         run: |
           for abi in arm64-v8a armeabi-v7a x86_64; do
