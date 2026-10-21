@@ -1396,7 +1396,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 ### D-142 — Gradle locking, scanning and update proposals (Prompt 18; P2-6)
 - **Decision:**
   - Gradle dependency locking, `STRICT`, for the `*ReleaseRuntimeClasspath` configurations (what ships), in `android/app/gradle.lockfile`; CI fails if the build changes it;
-  - OSV-Scanner scans it with the Dart lockfiles (2026-10-21: 121 + 52 + 184 packages, no advisories);
+  - OSV-Scanner scans it with the Dart lockfiles (2026-10-21: 121 + 52 + 183 packages, no advisories). The first lockfile, generated on Windows, held a `kotlin-stdlib-common` entry the Linux CI build does not resolve; STRICT locking failed the CI production build (run 39563846824) and the entry was removed, so locks are regenerated on Linux;
   - the Gradle wrapper pins `distributionSha256Sum` (services.gradle.org, cross-checked with gradle.org's checksum page);
   - Dependabot version updates (monthly, grouped) for GitHub Actions, the two npm projects and pub; **not** Cargo (crypto pins move only by decision, D-054, D-068) and **not** Gradle (locked; moves with Flutter upgrades). Dependabot alerts still cover every ecosystem.
 - **Status:** Accepted · 2026-10-21. P2-6 → fixed.

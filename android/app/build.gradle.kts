@@ -89,9 +89,12 @@ flutter {
 // locked: the release runtime classpaths, pinned in gradle.lockfile and
 // scanned by OSV-Scanner in CI. STRICT: a locked configuration without lock
 // state fails the build instead of resolving freely. After a deliberate
-// dependency change (e.g. a Flutter or plugin upgrade), regenerate with
+// dependency change (e.g. a Flutter or plugin upgrade), regenerate ON
+// LINUX, as CI builds (a Windows host resolved an extra
+// kotlin-stdlib-common entry that the CI build does not), with
 //   ./gradlew :app:dependencies --write-locks
-// and review the lockfile diff in the PR.
+// and review the lockfile diff in the PR; the CI production release build
+// is the arbiter.
 dependencyLocking {
     lockMode.set(LockMode.STRICT)
 }

@@ -305,7 +305,7 @@ suite.
 4.0.0, `crypto` 3.0.7 (full list: `pubspec.lock`, 121 packages).
 Android: AGP 8.11.1, Kotlin 2.2.20, Gradle 8.14 (checksum-pinned), NDK
 28.2.13676358, JDK 17 (CI build); release classpath locked in
-`android/app/gradle.lockfile` (184 entries). **Server:** Node 22,
+`android/app/gradle.lockfile` (183 entries). **Server:** Node 22,
 `firebase-functions` 7.4.0, `firebase-admin` 14.5.0, TypeScript 5.9.3,
 `firebase-tools` 15.34.0 (deploy and emulators).
 
