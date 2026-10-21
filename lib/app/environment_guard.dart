@@ -1,5 +1,6 @@
 import 'package:sirf_hum/app/app_config.dart';
 import 'package:sirf_hum/infrastructure/firebase/app_check_config.dart';
+import 'package:sirf_hum/infrastructure/firebase/firebase_config.dart';
 
 /// Refuses to start a build whose pieces disagree about which environment it
 /// is. This is the runtime half of environment isolation; the build-time half
@@ -19,6 +20,13 @@ List<String> environmentViolations(AppConfig config, {String? nativeFlavor}) {
       'The App Check debug provider is never allowed in production.',
     if (env.isProduction && !config.firebase.isComplete)
       'Production builds require a complete Firebase configuration.',
+    // Without a site key App Check is skipped on web (AppCheckBootstrap);
+    // production must never start unattested (Prompt 18, D-139).
+    if (env.isProduction &&
+        config.firebase.platform == FirebasePlatform.web &&
+        config.appCheck.webRecaptchaSiteKey == null)
+      'Production web builds require a reCAPTCHA Enterprise site key '
+          '(SH_APPCHECK_WEB_RECAPTCHA_SITE_KEY) for App Check.',
   ];
 }
 
