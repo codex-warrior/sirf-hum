@@ -10,7 +10,9 @@ trap 'rm -rf "$WORK"' EXIT
 
 mkdir -p "$WORK/tool" "$WORK/config"
 cp "$ROOT/tool/deploy.sh" "$WORK/tool/deploy.sh"
-cp "$ROOT/config/launch_gate.json" "$WORK/config/launch_gate.json"
+# A closed gate fixture, not the repository's file: the guard is tested in
+# both states below whatever production's gate currently says (D-151).
+printf '%s\n' '{"productionTraffic":"closed"}' > "$WORK/config/launch_gate.json"
 git -C "$WORK" init -q -b main
 git -C "$WORK" -c user.email=t@example.invalid -c user.name=t add -A
 git -C "$WORK" -c user.email=t@example.invalid -c user.name=t commit -qm init
