@@ -89,3 +89,7 @@ database-debug.log
 pubsub-debug.log
 .firebase/
 node_modules/
+
+# google-github-actions/auth writes its short-lived credentials file into the
+# checkout; ignored so tool/deploy.sh sees a clean tree (never committed).
+gha-creds-*.json
