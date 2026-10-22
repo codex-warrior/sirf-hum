@@ -169,8 +169,12 @@ jobs:
           unzip -p "$APK" lib/arm64-v8a/libapp.so > "$so"
           grep -aq '1:244475624083:android:' "$so" || { echo "::error::production Android app ID not embedded"; exit 1; }
           grep -aq '244475624083-[a-z0-9]*\.apps\.googleusercontent\.com' "$so" || { echo "::error::production Google client not embedded"; exit 1; }
+          # The bare project numbers of every environment are in the binary
+          # on purpose (AppEnvironment, used by the start-up guard to refuse
+          # a mixed config); what must never appear is another project's
+          # app ID or OAuth client.
           for number in 203770631547 627383930881; do
-            if grep -aq "$number" "$so"; then echo "::error::another environment's identifier is embedded"; exit 1; fi
+            if grep -aq -e "1:$number:" -e "$number-" "$so"; then echo "::error::another environment's app or OAuth client ID is embedded"; exit 1; fi
           done
           sha256sum "$APK" "$AAB" | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
