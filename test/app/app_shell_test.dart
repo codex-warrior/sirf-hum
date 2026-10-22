@@ -116,7 +116,7 @@ void main() {
     session.emit(null);
     await tester.pumpAndSettle();
     expect(find.byType(NavigationBar), findsNothing);
-    expect(find.text('A private home for the two of you.'), findsOneWidget);
+    expect(find.text('Your private space for two.'), findsOneWidget);
   });
 
   testWidgets('switching account never shows the previous couple', (

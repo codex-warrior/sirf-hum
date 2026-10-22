@@ -52,7 +52,7 @@ adds an explicit status, evidence and owner action per gate.
 
 | Gate | Status | Evidence | Owner action |
 | --- | --- | --- | --- |
-| P1-7 Production sign-in provider | **FAIL** | Decision proposed: email link (D-138, [AUTH-PRODUCTION-DECISION](../../architecture/AUTH-PRODUCTION-DECISION.md)); Firebase Authentication not initialized in production; no sign-in UI | Approve D-138; follow its §10 console steps (staging first); authorize the sign-in UI prompt |
+| P1-7 Production sign-in provider | **FAIL** | Accepted: Google first, email link fallback (D-138, D-150, [AUTH-PRODUCTION-DECISION](../../architecture/AUTH-PRODUCTION-DECISION.md) §12). Android UI and tests built; production build workflow gated (`production-build.yml`). Firebase Authentication **not initialized** in production (2026-10-21); no production signing key | AUTH-PRODUCTION-DECISION §10 and §12 console steps (staging first); create the production upload key; on-device test of both providers |
 | P1-8 App Check attestation and enforcement | **FAIL** | Code ready: production refuses debug and unattested web (D-139 tests); all 29 callables enforce in code (static test). Console: no enforcement, no Play Integrity link, no reCAPTCHA key | [APP-CHECK-PRODUCTION](../../architecture/APP-CHECK-PRODUCTION.md) §3 steps 1–9, **before** the first Functions deploy |
 
 ### Security behaviour (implemented; review is P0)

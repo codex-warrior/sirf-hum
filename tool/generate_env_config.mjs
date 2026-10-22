@@ -68,6 +68,23 @@ const plistValue = (key) => {
 
 if (webConfig.projectId !== projectId) throw new Error('Project mismatch in web config.');
 
+// "Continue with Google" (D-150): the project's Web OAuth client (type 3),
+// the audience of the Google ID token. Firebase creates it when the Google
+// provider is enabled; it appears in the Android config once the Android
+// app has a SHA-1. A public client ID; the client secret never leaves
+// Firebase Auth. Empty = Google sign-in not set up in this project yet.
+const webOauthClients = [
+  ...(androidClient.oauth_client ?? []),
+  ...(androidClient.services?.appinvite_service?.other_platform_oauth_client ?? []),
+].filter((c) => c.client_type === 3).map((c) => c.client_id);
+const googleServerClientId = [...new Set(webOauthClients)];
+if (googleServerClientId.length > 1) {
+  throw new Error(`Expected at most one Web OAuth client in ${projectId}, found ${googleServerClientId.length}.`);
+}
+if (googleServerClientId.length === 0) {
+  console.warn(`Google sign-in is not set up in ${projectId} (no Web OAuth client): SH_GOOGLE_SERVER_CLIENT_ID left empty.`);
+}
+
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const outPath = join(repoRoot, 'config', 'env', `${env}.json`);
 const previous = existsSync(outPath) ? JSON.parse(readFileSync(outPath, 'utf8')) : {};
@@ -85,6 +102,7 @@ const config = {
   SH_FIREBASE_IOS_API_KEY: plistValue('API_KEY'),
   SH_FIREBASE_WEB_APP_ID: webConfig.appId,
   SH_FIREBASE_WEB_API_KEY: webConfig.apiKey,
+  SH_GOOGLE_SERVER_CLIENT_ID: googleServerClientId[0] ?? '',
 };
 for (const key of PRESERVED_KEYS) {
   if (previous[key] !== undefined) config[key] = previous[key];

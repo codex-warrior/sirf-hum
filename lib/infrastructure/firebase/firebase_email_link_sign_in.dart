@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sirf_hum/core/logging/app_logger.dart';
 import 'package:sirf_hum/core/logging/log_value.dart';
 import 'package:sirf_hum/security/account/email_link_sign_in.dart';
+import 'package:sirf_hum/security/account/sign_in_result.dart';
 
 /// Firebase Auth email-link (passwordless) sign-in, D-138.
 ///
@@ -38,7 +39,7 @@ class FirebaseEmailLinkSignIn implements EmailLinkSignIn {
   }
 
   @override
-  Future<void> completeSignIn({
+  Future<SignInResult> completeSignIn({
     required String email,
     required String link,
   }) async {
@@ -46,7 +47,15 @@ class FirebaseEmailLinkSignIn implements EmailLinkSignIn {
       throw const EmailLinkException(EmailLinkFailure.invalidLink);
     }
     try {
-      await _auth.signInWithEmailLink(email: email, emailLink: link);
+      // An address that already signs in with Google lands on that same
+      // account (one account per email): the link proves the mailbox.
+      final credential = await _auth.signInWithEmailLink(
+        email: email,
+        emailLink: link,
+      );
+      return SignInResult(
+        isNewAccount: credential.additionalUserInfo?.isNewUser ?? false,
+      );
     } on FirebaseAuthException catch (e) {
       throw _failure(e, completing: true);
     }

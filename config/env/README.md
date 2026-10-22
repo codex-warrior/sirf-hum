@@ -28,6 +28,8 @@ node tool/generate_env_config.mjs development
   build's environment/flavor (`lib/app/environment_guard.dart`).
 
 Keys: `SH_ENV`, `SH_FIREBASE_*` (per-platform app IDs and API keys),
-`SH_APPCHECK_PROVIDER` (`debug` | `attestation`),
+`SH_GOOGLE_SERVER_CLIENT_ID` (the project's Web OAuth client ID for
+"Continue with Google", D-150; public, generated; empty = Google not offered;
+required for production), `SH_APPCHECK_PROVIDER` (`debug` | `attestation`),
 `SH_APPCHECK_WEB_RECAPTCHA_SITE_KEY`, `SH_CRASH_REPORTING` (`true` | `false`).
 See `docs/architecture/ENVIRONMENTS.md`.

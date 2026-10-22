@@ -20,6 +20,7 @@ import 'package:sirf_hum/infrastructure/firebase/firebase_account_session.dart';
 import 'package:sirf_hum/infrastructure/firebase/firebase_bootstrap.dart';
 import 'package:sirf_hum/infrastructure/firebase/firebase_config.dart';
 import 'package:sirf_hum/infrastructure/firebase/firebase_email_link_sign_in.dart';
+import 'package:sirf_hum/infrastructure/firebase/firebase_google_sign_in.dart';
 import 'package:sirf_hum/infrastructure/firebase/firestore_couple_profiles.dart';
 import 'package:sirf_hum/security/account/account_session.dart';
 import 'package:sirf_hum/session/session_controller.dart';
@@ -100,10 +101,12 @@ List<Override> sessionPortOverrides(FirebaseStatus status) => switch (status) {
   ],
 };
 
-/// Email-link sign-in (D-138) for a configured Android build. Elsewhere the
-/// defaults apply and the welcome says sign-in is not available: web keeps
-/// account features for later (D-046), and an unconfigured or failed build
-/// has nothing to sign in to.
+/// Sign-in for a configured Android build: Google (D-150) when the build
+/// carries its environment's Google client ID, and email link (D-138)
+/// always. Elsewhere the defaults apply and the welcome says sign-in is not
+/// available: web keeps account features for later (D-046), and an
+/// unconfigured or failed build has nothing to sign in to. The client ID was
+/// checked against the environment at start-up (`environment_guard.dart`).
 @visibleForTesting
 List<Override> signInOverrides(FirebaseStatus status, AppConfig config) {
   final domain = config.firebase.authDomain;
@@ -120,5 +123,9 @@ List<Override> signInOverrides(FirebaseStatus status, AppConfig config) {
         androidPackageName: config.environment.androidApplicationId,
       ),
     ),
+    if (config.googleServerClientId case final clientId?)
+      googleSignInProvider.overrideWithValue(
+        FirebaseGoogleSignIn(serverClientId: clientId),
+      ),
   ];
 }

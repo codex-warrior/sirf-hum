@@ -87,6 +87,7 @@ Each step names who does it. Never `firebase use`, never a bare
 | 8 | Staging config secret for the build workflow | Owner | `gh secret set SH_ENV_CONFIG_JSON --env staging < config/env/staging.json` |
 | 9 | Build the APK | Owner | Actions → "Staging beta build" (after merge) |
 | 10 | Two-device test plan | Owner + tester | §6 |
+| 11 | Google sign-in (D-150): enable the Google provider in staging, add the staging key's **SHA-1** (Staging beta build job summary) to `com.sirfhum.app.staging` only; then regenerate the config and update step 8's secret | Owner (console), then agent | AUTH-PRODUCTION-DECISION §12 |
 
 ## 4. App Check for a sideloaded staging build (D-147, accepted 2026-10-21)
 
@@ -120,7 +121,8 @@ or message content into a report.
 
 | # | Step | Expected |
 | --- | --- | --- |
-| 1 | Account creation (A, B) | Email link arrives; opening it signs in; a new UID per account |
+| 1 | Account creation (A, B) | A: Continue with Google → picker → signed in, lands on pairing (never Home). B: Continue with Email → link arrives; opening it signs in. A new UID per account |
+| 1b | Same address, other provider | B (email link) taps Continue with Google with the same address: same UID, or "already signs in with an email link" and no new account; never a second UID |
 | 2 | Sign in again after sign-out | Same UID; no data from another account visible |
 | 3 | Device registration | Device record created server-side; first device is `pending` until activation |
 | 4 | First-device activation | Device becomes `active`; person identity key created on device |

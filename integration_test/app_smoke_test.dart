@@ -15,7 +15,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(MaterialApp), findsOneWidget);
-    expect(find.text('A private home for the two of you.'), findsOneWidget);
+    expect(find.text('Your private space for two.'), findsOneWidget);
     expect(find.byType(NavigationBar), findsNothing);
   });
 }

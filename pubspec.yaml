@@ -31,10 +31,15 @@ dependencies:
   # hook, so Android/iOS builds need the Rust toolchain (rustup).
   sirf_hum_crypto:
     path: packages/sirf_hum_crypto
-  # Account session (Prompt 13, D-107): observes and restores the signed-in
-  # account and signs out. No sign-in method is chosen yet. Imported only by
-  # lib/infrastructure.
+  # Account session (Prompt 13, D-107) and sign-in (email link D-148,
+  # Google D-150): observes, restores and signs in the account, and signs
+  # out. Imported only by lib/infrastructure.
   firebase_auth: ^6.7.0
+  # Google sign-in (D-150): Android Credential Manager returns a Google ID
+  # token that is exchanged once with Firebase Auth (signInWithCredential).
+  # Identity only, never device trust. Pinned like the other security-path
+  # plugins; imported only by lib/infrastructure.
+  google_sign_in: 7.2.0
   # Moments (Prompt 15, D-117): the system photo picker (Android Photo
   # Picker, no storage permission). Its temporary copies are deleted after
   # encryption. Imported only by features/moments/data.

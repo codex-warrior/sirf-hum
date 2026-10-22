@@ -14,6 +14,7 @@ class AppConfig {
     required this.firebase,
     required this.appCheck,
     required this.crashReportingEnabled,
+    this.googleServerClientId,
   });
 
   factory AppConfig.fromEnvironment() {
@@ -21,6 +22,7 @@ class AppConfig {
       const String.fromEnvironment('SH_ENV', defaultValue: 'development'),
     );
     const crashReporting = String.fromEnvironment('SH_CRASH_REPORTING');
+    const googleClient = String.fromEnvironment('SH_GOOGLE_SERVER_CLIENT_ID');
     return AppConfig(
       environment: environment,
       firebase: FirebaseConfig.fromEnvironment(),
@@ -29,6 +31,7 @@ class AppConfig {
       crashReportingEnabled: crashReporting.isEmpty
           ? environment != AppEnvironment.development
           : crashReporting == 'true',
+      googleServerClientId: googleClient.isEmpty ? null : googleClient,
     );
   }
 
@@ -36,4 +39,9 @@ class AppConfig {
   final FirebaseConfig firebase;
   final AppCheckConfig appCheck;
   final bool crashReportingEnabled;
+
+  /// The project's Web OAuth client ID, the audience of Google ID tokens
+  /// (D-150). A public identifier, not a secret: no client secret exists in
+  /// any client. Null: "Continue with Google" is not offered.
+  final String? googleServerClientId;
 }

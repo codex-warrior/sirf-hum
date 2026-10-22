@@ -1,4 +1,7 @@
-/// Port to passwordless email-link sign-in (D-138).
+import 'package:sirf_hum/security/account/sign_in_result.dart';
+
+/// Port to passwordless email-link sign-in (D-138), the fallback to
+/// Google (D-150).
 ///
 /// Signing in only establishes *which account* this installation is. It
 /// never registers, activates or trusts a device and never touches keys:
@@ -10,8 +13,12 @@ abstract interface class EmailLinkSignIn {
   Future<void> sendLink(String email);
 
   /// Completes sign-in with a [link] from the email, for the same [email]
-  /// it was sent to. The account then arrives through `AccountSession`.
-  Future<void> completeSignIn({required String email, required String link});
+  /// it was sent to. The account then arrives through `AccountSession`; a
+  /// new address creates the account, an existing one signs in to it.
+  Future<SignInResult> completeSignIn({
+    required String email,
+    required String link,
+  });
 }
 
 /// Why sign-in did not happen. Categories only: the email address and the
@@ -45,8 +52,10 @@ class UnavailableEmailLinkSignIn implements EmailLinkSignIn {
       Future.error(const EmailLinkException(EmailLinkFailure.unavailable));
 
   @override
-  Future<void> completeSignIn({required String email, required String link}) =>
-      Future.error(const EmailLinkException(EmailLinkFailure.unavailable));
+  Future<SignInResult> completeSignIn({
+    required String email,
+    required String link,
+  }) => Future.error(const EmailLinkException(EmailLinkFailure.unavailable));
 }
 
 /// The trimmed address if it can be an email address, else null. A shape
