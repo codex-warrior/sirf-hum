@@ -19,7 +19,7 @@ whose step list this document supersedes as the operational procedure.
 | Web provider | Debug | reCAPTCHA Enterprise if a site key is set, else **skipped with a warning** | reCAPTCHA Enterprise; **without a site key the app refuses to start** (D-139) |
 | `SH_APPCHECK_PROVIDER=debug` | default | allowed (e.g. a staging build on an emulator) | **refused at start-up** (`environment_guard.dart`) |
 | Emulator / local | Debug tokens; Functions emulator does not verify App Check | — | — |
-| Callables | `enforceAppCheck: true` on all 29 (static test `functions/test/app_check.test.mjs`) | same | same |
+| Callables | `enforceAppCheck: true` on all 29 (static test `functions/test/app_check.test.mjs`) | same | **paused** (`SH_APP_CHECK_PAUSED=true` in `functions/.env.production`, D-152) until Play Console links Play Integrity |
 | Firestore / Storage / Auth enforcement | off (console) | off | off |
 
 Failure behaviour (client): if activation fails the app keeps running and

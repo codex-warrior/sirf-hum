@@ -136,6 +136,8 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-144 | P3-15: `unpairCouple` authorizes (challenge, couple, device, proof) before listing or walking the couple's conversations | Accepted (development); needs independent review | 2026-10-21 |
 | D-145 | Prompt 18 review readiness: PRODUCTION-LAUNCH-GATE is the launch gate of record (with D-125's blocker classes); the independent review package is the reviewer's entry point | Accepted | 2026-10-21 |
 | D-150 | "Continue with Google" (primary) + email link (fallback); identity only, no linking, per-environment OAuth clients; gated production build workflow | Accepted (owner request); console setup pending | 2026-10-21 |
+| D-151 | Owner opens production for an invite-only friends beta (sideloaded APK) before the independent review | Accepted by the owner; P0 gates still FAIL | 2026-10-22 |
+| D-152 | App Check enforcement paused on production callables only until Play Console links Play Integrity | Accepted by the owner; **temporary** | 2026-10-24 |
 
 ---
 
@@ -1464,3 +1466,11 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Infrastructure (owner, 2026-10-22):** Functions/Run/Build/Artifact Registry/Eventarc/Scheduler/Pub/Sub/Storage/Play Integrity APIs enabled; Storage bucket `asia-south1`; `github-deployer` granted `cloudfunctions.developer`, `run.developer`, `cloudscheduler.admin`, `eventarc.developer` and `iam.serviceAccountUser` on the compute runtime account only. `gha-creds-*.json` git-ignored: the auth action writes it into the checkout, which made `tool/deploy.sh` refuse the first production deploy as a dirty tree.
 - **Reverting:** set `productionTraffic` back to `"closed"` in a PR.
 - **Status:** Accepted by the owner · 2026-10-22. A public release still requires every P0 gate PASS.
+- **Follow-up (owner, 2026-10-24):** the production callables had no Cloud Run invoker binding (the deployer cannot set IAM on services), so every call got a 401 from Cloud Run. The owner granted `allUsers` `roles/run.invoker` on the 29 callable services only (the standard Firebase callable setup; the 6 trigger/scheduled services stay private). Authorization is unchanged: auth, verified email and device proofs in code.
+
+### D-152 — Owner pauses App Check enforcement on production callables for the sideloaded friends beta (amends D-139, D-151)
+- **Context:** the first production install got `App Check token was rejected` on every callable. Play Integrity issues no tokens until the app exists in Google Play Console with the Cloud project linked (App integrity), and the owner does not want a Play Console listing yet. Linking does not publish the app; the owner was told so and chose the pause.
+- **Decision (owner, 2026-10-24):** `functions/.env.production` sets `SH_APP_CHECK_PAUSED=true`; `functions/src/index.ts` then deploys every callable with `enforceAppCheck: false` in production only. Development and staging never pause (static test `functions/test/app_check.test.mjs`). The client is unchanged: production still uses the Play Integrity provider only, never the debug provider.
+- **Accepted risk:** anyone holding the app's public Firebase config can call production callables from a script. Every callable still requires a signed-in account with a verified email (D-149), and every privileged action still requires device proofs and trusted-key signatures; Security Rules are unchanged. Abuse is bounded only by `maxInstances` (10 per function) and per-account server checks, not by attestation.
+- **Reverting (required before any public release or Play listing):** create the app in Play Console (unpublished is enough), link `sirf-hum-prod` under App integrity, confirm a token is issued on a real device, remove `SH_APP_CHECK_PAUSED` from `.env.production` and redeploy Functions.
+- **Status:** Accepted by the owner · 2026-10-24. Temporary.

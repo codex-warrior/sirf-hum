@@ -152,7 +152,12 @@ async function guarded<T>(event: string, run: () => Promise<T>): Promise<T> {
 
 // App Check is defence in depth (FIREBASE-ARCHITECTURE.md), never the
 // authorization: auth + signatures by trusted keys are.
-const deviceCallOptions = { enforceAppCheck: true } as const;
+// D-152: the owner paused enforcement on production only (`.env.production`)
+// until the app is linked in Play Console, without which Play Integrity
+// issues no tokens for the sideloaded beta. Anything but exactly "true"
+// keeps it enforced.
+const appCheckPaused = process.env.SH_APP_CHECK_PAUSED === 'true';
+const deviceCallOptions = { enforceAppCheck: !appCheckPaused } as const;
 
 const callable = <T>(event: string, run: (uid: string | undefined, data: unknown, now: Date) => Promise<T>) =>
   onCall(deviceCallOptions, (request) => guarded(event, () => run(verifiedUid(request.auth), request.data, new Date())));
