@@ -1,5 +1,6 @@
 package com.sirfhum.app
 
+import android.content.Intent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -21,9 +22,25 @@ class MainActivity : FlutterActivity() {
                     result.notImplemented()
                 }
             }
+        // The system share sheet for a pairing invitation. App-owned, so no
+        // share plugin (and its dependencies) for one plain-text intent.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SHARE_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                val text = call.argument<String>("text")
+                if (call.method != "shareText" || text == null) {
+                    result.notImplemented()
+                    return@setMethodCallHandler
+                }
+                val send = Intent(Intent.ACTION_SEND)
+                    .setType("text/plain")
+                    .putExtra(Intent.EXTRA_TEXT, text)
+                startActivity(Intent.createChooser(send, null))
+                result.success(null)
+            }
     }
 
     private companion object {
         const val APP_CACHE_CHANNEL = "com.sirfhum.app/app_cache"
+        const val SHARE_CHANNEL = "com.sirfhum.app/share"
     }
 }

@@ -138,6 +138,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-150 | "Continue with Google" (primary) + email link (fallback); identity only, no linking, per-environment OAuth clients; gated production build workflow | Accepted (owner request); console setup pending | 2026-10-21 |
 | D-151 | Owner opens production for an invite-only friends beta (sideloaded APK) before the independent review | Accepted by the owner; P0 gates still FAIL | 2026-10-22 |
 | D-152 | App Check enforcement paused on production callables only until Play Console links Play Integrity | Accepted by the owner; **temporary** | 2026-10-24 |
+| D-153 | Pairing UI: phone set-up after sign-in, invite shared as a message, join by pasting it, inviter types the invitee's code; launcher icon | Accepted (owner request) | 2026-10-24 |
 
 ---
 
@@ -1474,3 +1475,16 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Accepted risk:** anyone holding the app's public Firebase config can call production callables from a script. Every callable still requires a signed-in account with a verified email (D-149), and every privileged action still requires device proofs and trusted-key signatures; Security Rules are unchanged. Abuse is bounded only by `maxInstances` (10 per function) and per-account server checks, not by attestation.
 - **Reverting (required before any public release or Play listing):** create the app in Play Console (unpublished is enough), link `sirf-hum-prod` under App integrity, confirm a token is issued on a real device, remove `SH_APP_CHECK_PAUSED` from `.env.production` and redeploy Functions.
 - **Status:** Accepted by the owner · 2026-10-24. Temporary.
+
+### D-153 — Pairing UI and phone set-up (owner request; builds on D-101–D-104, D-131)
+- **Context:** the first production install could sign in but not pair: the signed pairing steps existed (`PairingService`, server callables) with no screens, and nothing set the phone up as a device after sign-in.
+- **Decision:**
+  - After sign-in, without a couple, `PairingController` opens this account's device identity (`LocalDeviceIdentityService`, platform key store) and enrolls it (`DeviceRegistrationFlow`: the first phone activates; a later phone opens an approval request and shows its code — approving from the other phone has no UI yet, said on screen). Web never sets up keys (D-046).
+  - Invite: `createInvitation` → the token is shared as a plain message through the system share sheet (app-owned `com.sirfhum.app/share` channel, no plugin, no new dependencies) or copied. The token is a bearer secret until redeemed: never logged (test), never in a URL.
+  - Join: the invitee pastes the message (or just the code); the token is extracted locally (`inviteTokenIn`, 22-char base64url) and redeemed by `acceptInvitation`; the invitee's phone shows the six-digit code.
+  - Confirm (D-131 unchanged): the inviter types the code the invitee reads out; wrong codes are refused by the server (third ends the pairing); "That's not my person" rejects. Either side can cancel.
+  - While a pairing is open the screen re-reads `getPairingState` every 4 s; the couple exists only when the server says so (the session refreshes, nothing local makes it paired). Keys are released when the session leaves this state.
+  - Launcher icon (adaptive, themed, legacy PNGs) and a dark launch screen; `SirfHumMark` mirrors it in the app. Provisional identity (DESIGN-TOKENS).
+- **Not done:** approving a second phone, display-name editing (the partner name is shown only when a profile exists), deep links for invitations, push for pairing events.
+- **Tests:** `test/app/pairing_flow_test.dart` (both roles end to end over fakes, wrong code, refusal, cancel, reject, setup failure/retry, second phone, removed phone, sign-out releases keys, token/code never logged, token extraction), `entry_screens_test.dart`.
+- **Status:** Accepted (owner request) · 2026-10-24.

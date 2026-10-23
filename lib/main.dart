@@ -11,6 +11,8 @@ import 'package:sirf_hum/core/logging/app_logger.dart';
 import 'package:sirf_hum/features/moments/application/moment_photo_picker.dart';
 import 'package:sirf_hum/features/moments/data/picker_cache_sweeper.dart';
 import 'package:sirf_hum/features/moments/data/system_photo_picker.dart';
+import 'package:sirf_hum/features/pairing/application/pairing_controller.dart';
+import 'package:sirf_hum/features/pairing/application/pairing_device.dart';
 import 'package:sirf_hum/features/verification/application/verification_controller.dart';
 import 'package:sirf_hum/features/verification/data/camera_qr_code_scanner.dart';
 import 'package:sirf_hum/infrastructure/firebase/app_check_bootstrap.dart';
@@ -22,6 +24,9 @@ import 'package:sirf_hum/infrastructure/firebase/firebase_config.dart';
 import 'package:sirf_hum/infrastructure/firebase/firebase_email_link_sign_in.dart';
 import 'package:sirf_hum/infrastructure/firebase/firebase_google_sign_in.dart';
 import 'package:sirf_hum/infrastructure/firebase/firestore_couple_profiles.dart';
+import 'package:sirf_hum/infrastructure/firebase/firestore_device_registry.dart';
+import 'package:sirf_hum/platform/secure_key_store.dart';
+import 'package:sirf_hum/platform/text_share.dart';
 import 'package:sirf_hum/security/account/account_session.dart';
 import 'package:sirf_hum/session/session_controller.dart';
 import 'package:sirf_hum/session/sign_in_controller.dart';
@@ -98,6 +103,18 @@ List<Override> sessionPortOverrides(FirebaseStatus status) => switch (status) {
     accountSessionProvider.overrideWithValue(FirebaseAccountSession()),
     pairingBackendProvider.overrideWithValue(CallablePairingBackend()),
     coupleProfilesProvider.overrideWithValue(FirestoreCoupleProfiles()),
+    // Keys live only on phones (D-046): web keeps the null default, which
+    // the pairing screen reports instead of pairing.
+    if (!kIsWeb) ...[
+      pairingDeviceSetupProvider.overrideWithValue(
+        LocalPairingDeviceSetup.withKeyStore(
+          keyStore: const PlatformSecureKeyStore(),
+          registry: FirestoreDeviceRegistry(),
+          backend: CallablePairingBackend(),
+        ),
+      ),
+      textShareProvider.overrideWithValue(const PlatformTextShare()),
+    ],
   ],
 };
 

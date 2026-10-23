@@ -43,7 +43,7 @@ void main() {
       backend: FakePairingBackend.returning(const PairingNone()),
       initialLocation: ProductArea.us.path,
     );
-    expect(find.text('Invite your person.'), findsOneWidget);
+    expect(find.text('Bring your person in.'), findsOneWidget);
     expect(find.byType(NavigationBar), findsNothing);
   });
 

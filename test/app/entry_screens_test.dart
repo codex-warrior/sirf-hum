@@ -36,7 +36,9 @@ void main() {
   });
 
   group('signed in, not paired', () {
-    testWidgets('guides toward pairing on a phone', (tester) async {
+    testWidgets('sets the phone up, then offers invite or join', (
+      tester,
+    ) async {
       setPhoneWindow(tester);
       final handle = tester.ensureSemantics();
       await pumpSirfHum(
@@ -44,12 +46,9 @@ void main() {
         backend: FakePairingBackend.returning(const PairingNone()),
       );
 
-      expect(find.text('Invite your person.'), findsOneWidget);
-      expect(find.text('Send your person an invitation.'), findsOneWidget);
-      expect(
-        find.text('Pairing opens in an upcoming version of Sirf Hum.'),
-        findsOneWidget,
-      );
+      expect(find.text('Bring your person in.'), findsOneWidget);
+      expect(find.text('Invite your person'), findsOneWidget);
+      expect(find.text('I have an invite'), findsOneWidget);
       expect(find.byType(NavigationBar), findsNothing);
       await expectGuidelines(tester);
       expectNoSecretsOnScreen(tester);
@@ -64,26 +63,7 @@ void main() {
         privateContent: false,
       );
       expect(find.textContaining('app on your phone'), findsOneWidget);
-    });
-
-    testWidgets('"Check again" only asks the server', (tester) async {
-      setPhoneWindow(tester);
-      PairingState answer = const PairingNone();
-      final backend = FakePairingBackend(() async => answer);
-      await pumpSirfHum(tester, backend: backend);
-
-      // Still not paired: stays on the pairing screen.
-      await tester.tap(find.text('Check again'));
-      await tester.pumpAndSettle();
-      expect(backend.stateCalls, 2);
-      expect(find.text('Invite your person.'), findsOneWidget);
-
-      // The server now reports a couple: Home opens.
-      answer = paired;
-      await tester.tap(find.text('Check again'));
-      await tester.pumpAndSettle();
-      expect(find.byType(NavigationBar), findsOneWidget);
-      expect(find.text('Asha & Ravi'), findsOneWidget);
+      expect(find.text('Invite your person'), findsNothing);
     });
 
     testWidgets('sign out returns to the welcome', (tester) async {
@@ -101,28 +81,41 @@ void main() {
     });
   });
 
-  group('pairing in progress', () {
-    final stages = <String, (PairingState, String)>{
-      'invitation sent': (invited, 'Your invitation is out.'),
-      'partner accepted': (awaiting(isInviter: true), 'Your person accepted.'),
-      'waiting for partner': (awaiting(isInviter: false), 'Almost there.'),
-    };
-    stages.forEach((name, testCase) {
-      testWidgets('$name: human copy, no codes or IDs', (tester) async {
-        setPhoneWindow(tester);
-        final handle = tester.ensureSemantics();
-        await pumpSirfHum(
-          tester,
-          backend: FakePairingBackend.returning(testCase.$1),
-        );
-        expect(find.text(testCase.$2), findsOneWidget);
-        expect(find.byType(NavigationBar), findsNothing);
-        // The comparison code and partner name belong to the pairing UI's
-        // code-comparison step, not to this status screen.
-        expectNoSecretsOnScreen(tester);
-        expect(find.textContaining('Ravi'), findsNothing);
-        handle.dispose();
-      });
+  group('pairing in progress, as the server reports it', () {
+    testWidgets('invitation out: waiting, no IDs', (tester) async {
+      setPhoneWindow(tester);
+      reduceMotion(tester);
+      final handle = tester.ensureSemantics();
+      await pumpSirfHum(tester, backend: FakePairingBackend.returning(invited));
+      // Restarted: this phone no longer holds the token to share.
+      expect(find.text('Your invite is out.'), findsOneWidget);
+      expect(find.text('Share invite'), findsNothing);
+      expect(find.text('Cancel invite'), findsOneWidget);
+      expectNoSecretsOnScreen(tester);
+      handle.dispose();
+    });
+
+    testWidgets('inviter: asks for the code, never shows it', (tester) async {
+      setPhoneWindow(tester);
+      await pumpSirfHum(
+        tester,
+        backend: FakePairingBackend.returning(awaiting(isInviter: true)),
+      );
+      expect(find.text('Ravi joined.'), findsOneWidget);
+      expect(find.text('Six-digit code'), findsOneWidget);
+      expectNoSecretsOnScreen(tester);
+    });
+
+    testWidgets('invitee: shows the code to read out', (tester) async {
+      setPhoneWindow(tester);
+      reduceMotion(tester);
+      await pumpSirfHum(
+        tester,
+        backend: FakePairingBackend.returning(awaiting(isInviter: false)),
+      );
+      expect(find.text('Read this code to Ravi.'), findsOneWidget);
+      expect(find.text('482 913'), findsOneWidget);
+      expect(find.textContaining(testPairingId), findsNothing);
     });
   });
 

@@ -9,6 +9,7 @@ export 'package:sirf_hum/design_system/components/google_mark.dart';
 export 'package:sirf_hum/design_system/components/notice.dart';
 export 'package:sirf_hum/design_system/components/scannable_code.dart';
 export 'package:sirf_hum/design_system/components/section.dart';
+export 'package:sirf_hum/design_system/components/sirf_hum_mark.dart';
 export 'package:sirf_hum/design_system/components/skeleton.dart';
 export 'package:sirf_hum/design_system/theme/app_theme.dart';
 export 'package:sirf_hum/design_system/tokens/layout_tokens.dart';
