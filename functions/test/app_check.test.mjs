@@ -21,10 +21,22 @@ function sources(dir) {
 
 describe('App Check on callables (D-139)', () => {
   test('the one onCall wrapper enforces App Check', () => {
-    assert.match(index, /const deviceCallOptions = \{ enforceAppCheck: true \} as const;/);
+    assert.match(index, /const appCheckPaused = process\.env\.SH_APP_CHECK_PAUSED === 'true';/);
+    assert.match(index, /const deviceCallOptions = \{ enforceAppCheck: !appCheckPaused \} as const;/);
     const calls = [...index.matchAll(/\bonCall\(/g)];
     assert.equal(calls.length, 1, 'onCall must be used only by the shared `callable` wrapper');
     assert.match(index, /onCall\(deviceCallOptions,/);
+  });
+
+  // D-152: the owner's temporary pause is production-only; development and
+  // staging never pause, so the enforced path stays exercised.
+  test('only production may pause App Check enforcement', () => {
+    const envFile = (name) => readFileSync(join(srcDir, '..', `.env.${name}`), 'utf8');
+    for (const env of ['development', 'staging']) {
+      assert.doesNotMatch(envFile(env), /SH_APP_CHECK_PAUSED/, `${env} must not pause App Check`);
+    }
+    const paused = envFile('production').match(/^SH_APP_CHECK_PAUSED=(.*)$/m);
+    assert.ok(!paused || paused[1] === 'true', 'SH_APP_CHECK_PAUSED is either absent or exactly true');
   });
 
   test('no other module creates HTTP or callable endpoints', () => {
