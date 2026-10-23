@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon (Android 13+) silhouette of ic_launcher_foreground. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M34,82V48A20,20 0,0 1,74 48V82ZM39,82V48A15,15 0,0 1,69 48V82Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M43.5,57a4,4 0,1 0,8 0a4,4 0,1 0,-8 0zM42,68.5a5.5,5.5 0,0 1,11 0V76.5a5.5,5.5 0,0 1,-11 0z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M56.5,57a4,4 0,1 0,8 0a4,4 0,1 0,-8 0zM55,68.5a5.5,5.5 0,0 1,11 0V76.5a5.5,5.5 0,0 1,-11 0z" />
+</vector>
