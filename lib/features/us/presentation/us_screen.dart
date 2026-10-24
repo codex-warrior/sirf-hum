@@ -245,8 +245,8 @@ class _Cards extends ConsumerWidget {
       _InfoCard(
         icon: Icons.people_outline,
         title: 'Our Profile',
-        subtitle: coupleTitle(names),
-        onTap: () => push(_ProfilePage(names: names)),
+        subtitle: names.yours == null ? 'Add your name' : coupleTitle(names),
+        onTap: () => push(const _ProfilePage()),
       ),
       _InfoCard(
         icon: Icons.lock_outline,
@@ -551,19 +551,18 @@ class _PartPage extends ConsumerWidget {
   }
 }
 
-/// Your names as your accounts give them. Editing them is not built yet,
-/// and the page says so.
-class _ProfilePage extends StatelessWidget {
-  const _ProfilePage({required this.names});
-
-  final CoupleNames names;
+/// Both names. You set yours here; your person sets theirs on their phone.
+class _ProfilePage extends ConsumerWidget {
+  const _ProfilePage();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final names = ref.watch(pairedCoupleProvider)?.names ?? CoupleNames.unknown;
     final textTheme = Theme.of(context).textTheme;
-    final secondary = textTheme.bodyLarge?.copyWith(
+    final secondary = textTheme.bodyMedium?.copyWith(
       color: context.colors.textSecondary,
     );
+    final yours = names.yours;
     return Scaffold(
       appBar: AppBar(),
       body: AppPage(
@@ -575,24 +574,147 @@ class _ProfilePage extends StatelessWidget {
             partner: CoupleMark.initialOf(names.partner),
           ),
           const SizedBox(height: Spacing.lg),
-          Text(coupleTitle(names), style: textTheme.headlineSmall),
+          Text(coupleTitle(names), style: textTheme.titleLarge),
           const SizedBox(height: Spacing.xl),
-          Text('You', style: secondary),
-          Text(names.yours ?? 'No name yet', style: textTheme.titleMedium),
+          Row(
+            children: [
+              Expanded(
+                child: MergeSemantics(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('You', style: secondary),
+                      Text(
+                        yours ?? 'No name yet',
+                        style: textTheme.titleMedium,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => _editName(context, ref, yours),
+                child: Text(yours == null ? 'Add your name' : 'Change'),
+              ),
+            ],
+          ),
           const SizedBox(height: Spacing.md),
-          Text('Your person', style: secondary),
-          Text(names.partner ?? 'No name yet', style: textTheme.titleMedium),
+          MergeSemantics(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Your person', style: secondary),
+                Text(
+                  names.partner ?? 'No name yet',
+                  style: textTheme.titleMedium,
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: Spacing.xl),
-          const Notice(
-            icon: Icons.schedule_outlined,
-            message:
-                'Names come from your accounts. Changing them and adding '
-                'photos are coming soon.',
+          Notice(
+            icon: Icons.info_outline,
+            message: names.partner == null
+                ? 'Your person adds their own name on their phone, in Us › '
+                      'Our Profile. Photos are coming soon.'
+                : 'Each of you sets your own name. Photos are coming soon.',
           ),
         ],
       ),
     );
   }
+
+  Future<void> _editName(
+    BuildContext context,
+    WidgetRef ref,
+    String? current,
+  ) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (_) => _NameDialog(current: current),
+    );
+    if ((saved ?? false) && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Saved. Your person will see it too.')),
+      );
+    }
+  }
+}
+
+/// One field; saves through the session (single flight), says plainly
+/// when it could not.
+class _NameDialog extends ConsumerStatefulWidget {
+  const _NameDialog({required this.current});
+
+  final String? current;
+
+  @override
+  ConsumerState<_NameDialog> createState() => _NameDialogState();
+}
+
+class _NameDialogState extends ConsumerState<_NameDialog> {
+  late final TextEditingController _name = TextEditingController(
+    text: widget.current ?? '',
+  );
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    if (acceptableName(_name.text) == null) {
+      setState(() => _error = 'Write a name, up to 40 letters.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await ref.read(sessionProvider.notifier).setYourName(_name.text);
+      if (mounted) Navigator.of(context).pop(true);
+    } on CoupleProfileException {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = 'That didn’t save. Check your connection and try again.';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Your name'),
+    content: TextField(
+      controller: _name,
+      enabled: !_saving,
+      autofocus: true,
+      maxLength: 40,
+      textCapitalization: TextCapitalization.words,
+      textInputAction: TextInputAction.done,
+      onSubmitted: (_) => _save(),
+      decoration: InputDecoration(
+        hintText: 'What your person calls you',
+        errorText: _error,
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+        child: const Text('Cancel'),
+      ),
+      TextButton(
+        onPressed: _saving ? null : _save,
+        child: Text(_saving ? 'Saving…' : 'Save'),
+      ),
+    ],
+  );
 }
 
 /// Account and app: licences and signing out.

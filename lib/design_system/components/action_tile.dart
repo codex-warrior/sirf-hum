@@ -58,14 +58,14 @@ class ActionTile extends StatelessWidget {
                       children: [
                         Icon(
                           icon,
-                          size: IconSizes.lg + Spacing.xs,
+                          size: IconSizes.lg - Spacing.xs,
                           color: colors.accent,
                         ),
                         const SizedBox(height: Spacing.md),
                         Text(
                           label,
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodyLarge,
+                          style: Theme.of(context).textTheme.labelLarge,
                         ),
                         if (caption != null) ...[
                           const SizedBox(height: Spacing.xxs),

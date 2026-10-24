@@ -34,4 +34,35 @@ class FirestoreCoupleProfiles implements CoupleProfiles {
       return CoupleNames.unknown;
     }
   }
+
+  /// Creates the profile with the rules' exact fields the first time, and
+  /// afterwards changes only the name and its timestamp.
+  @override
+  Future<void> setYourName(AccountId account, String name) async {
+    final value = acceptableName(name);
+    if (value == null) {
+      throw const CoupleProfileException(CoupleProfileFailure.invalidName);
+    }
+    final doc = _firestore.doc('users/${account.value}');
+    try {
+      final existing = await doc.get();
+      if (existing.exists) {
+        await doc.update({
+          'displayName': value,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      } else {
+        await doc.set({
+          'schemaVersion': 1,
+          'displayName': value,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+      AppLogger.info('profile_name_saved');
+    } on FirebaseException catch (e) {
+      AppLogger.warning('profile_name_save_failed', error: e);
+      throw const CoupleProfileException(CoupleProfileFailure.unavailable);
+    }
+  }
 }
