@@ -209,6 +209,22 @@ class FakeCoupleProfiles implements CoupleProfiles {
     requested.add(account);
     return value;
   }
+
+  /// Set to make the next save fail.
+  CoupleProfileException? saveError;
+  final saved = <String>[];
+
+  @override
+  Future<void> setYourName(AccountId account, String name) async {
+    final error = saveError;
+    if (error != null) throw error;
+    final value = acceptableName(name);
+    if (value == null) {
+      throw const CoupleProfileException(CoupleProfileFailure.invalidName);
+    }
+    saved.add(value);
+    this.value = CoupleNames(yours: value, partner: this.value.partner);
+  }
 }
 
 /// The server's answers used across tests.

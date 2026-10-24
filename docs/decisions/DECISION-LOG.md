@@ -143,6 +143,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-155 | Production wires the couple's private services after pairing: Moments, Future + Us (notebook) and partner verification run over the existing MLS conversation; the group forms once both partners verified each other | Accepted (owner request); unreviewed, NOT production E2EE | 2026-10-24 |
 | D-156 | Visual identity v1, "night intimacy": owner-chosen reference screens for Home, Together and Moments; dark-first, peach accent, painted dusk scene, Plus Jakarta Sans (bundled); unbuilt activities marked "Soon", numbers always real | Accepted (owner choice) | 2026-10-24 |
 | D-157 | Future and Us in visual identity v1; dreams with a shared progress (notebook schema 2, dreams only); the reference's Investments/Savings tiles replaced by Goals/Plans/Places/To try — Our Money stays out of V1 | Accepted (owner choice) | 2026-10-24 |
+| D-158 | Calmer type scale (display 28, hero 22, title 20, heading 16, body 15, secondary 14, label 13; explicit letter spacing); people set their own display name (Our Profile, Home prompt) | Accepted (owner feedback) | 2026-10-24 |
 | D-159 | "Set up this phone" after a reinstall (recovery key or identity reset) instead of "no longer trusted"; production identity-reset delay 1 hour for the friends beta (temporary, launch-gate item) | Accepted (owner decision) | 2026-10-25 |
 
 ---
@@ -1541,6 +1542,13 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Copy differences from the reference, deliberate:** "Privacy & Safety" with the real safety-number status replaces "Your space, always safe" (no security claim before the independent review). "Your favourites, quirks and more" replaces "likes" (no social vocabulary, D-115).
 - **Tests:** payload (schema 2 round trip, schema 1 unchanged, strict failures), assembly (progress follows the latest version), Future (dream end to end, sections, 200% text, guidelines), Us rewritten for the new structure (parts, cards, sign-out, no security claims, 200% text, guidelines), shell, verification and integration copy.
 - **Status:** Accepted (owner choice) · 2026-10-24. Unreviewed; Sirf Hum is NOT production E2EE.
+
+### D-158 — Calmer type scale; you set your own name (owner feedback; amends D-156, completes D-100's profile)
+- **Context:** on the installed beta the owner found the text "quite big", and both names showed "No name yet": the rules allowed `users/{uid}.displayName` from Prompt 12, but no client ever wrote it.
+- **Type:** display 34→28, new hero 22 (hero card titles), title 24→20, heading 18→16, body 16→15, new secondary 14 (`bodyMedium`, supporting lines), label 14→13, caption 12 (floor). Every style sets its letter spacing (Material's default +0.5 on body made the face look loose). Tile icons 36→28.
+- **Names:** `CoupleProfiles.setYourName` writes only the signed-in account's profile with the rules' exact fields (create, then name and timestamp only), validated before sending as the rules do. `SessionController.setYourName` keeps the account inside the session and refreshes the couple. UI: Our Profile ("Add your name" / "Change"), a quiet "Add your name" on Home while it is missing; each partner sets their own name on their own phone.
+- **Tests:** name save, validation, failure, Home prompt; all screens' guideline and 200% text tests on the new scale.
+- **Status:** Accepted (owner feedback) · 2026-10-24.
 
 ### D-159 — Setting a phone up again after a reinstall; 1-hour reset delay for the beta (owner decision; amends D-082 timing for the beta only)
 - **Context:** an owner uninstalled and reinstalled the app. The reinstall created a new identity the server never trusted, and the app said "This phone is no longer one of your trusted devices… Use a phone you trust", a dead end. The account had no recovery key (no UI to create one) and no other phone, so only the 7-day identity reset could help, and it had no UI either. The owner expects signing in to be enough, and chose the plan below.

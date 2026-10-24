@@ -4,6 +4,7 @@ import 'package:sirf_hum/app/product_area.dart';
 import 'package:sirf_hum/features/future/application/future_providers.dart';
 import 'package:sirf_hum/features/notebook/application/notebook_controller.dart';
 import 'package:sirf_hum/features/notebook/presentation/notebook_editor_screen.dart';
+import 'package:sirf_hum/security/couple/couple_profiles.dart';
 import 'package:sirf_hum/security/moments/moment_payload.dart';
 import 'package:sirf_hum/security/notebook/notebook_payload.dart';
 import 'package:sirf_hum/security/notebook/notebook_service.dart';
@@ -354,6 +355,84 @@ void main() {
         expect(strings, isNot(contains(claim)), reason: claim);
       }
       expect(text('Privacy & Safety'), findsOneWidget);
+    });
+  });
+
+  group('your name', () {
+    Future<FakeCoupleProfiles> pumpNamed(
+      WidgetTester tester,
+      CoupleNames names,
+    ) async {
+      final profiles = FakeCoupleProfiles(names);
+      setPhoneWindow(tester);
+      await pumpSirfHum(
+        tester,
+        profiles: profiles,
+        initialLocation: ProductArea.us.path,
+        extra: [
+          notebookBackendProvider.overrideWithValue(FakeNotebookBackend()),
+        ],
+      );
+      return profiles;
+    }
+
+    testWidgets('added from Our Profile, then shown everywhere', (
+      tester,
+    ) async {
+      final profiles = await pumpNamed(
+        tester,
+        const CoupleNames(partner: 'Ravi'),
+      );
+      await tapScrolled(tester, text('Our Profile'));
+      await tester.tap(find.widgetWithText(TextButton, 'Add your name'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '  Asha ');
+      await tester.tap(find.widgetWithText(TextButton, 'Save'));
+      await tester.pumpAndSettle();
+      expect(profiles.saved, ['Asha']);
+      expect(text('Saved. Your person will see it too.'), findsOneWidget);
+      expect(text('Asha'), findsOneWidget);
+      expect(text('Asha & Ravi'), findsOneWidget);
+    });
+
+    testWidgets('an empty name is refused before saving; a failed save says '
+        'so and keeps the dialog', (tester) async {
+      final profiles = await pumpNamed(tester, CoupleNames.unknown);
+      await tapScrolled(tester, text('Our Profile'));
+      await tester.tap(find.widgetWithText(TextButton, 'Add your name'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '   ');
+      await tester.tap(find.widgetWithText(TextButton, 'Save'));
+      await tester.pumpAndSettle();
+      expect(text('Write a name, up to 40 letters.'), findsOneWidget);
+      expect(profiles.saved, isEmpty);
+
+      profiles.saveError = const CoupleProfileException(
+        CoupleProfileFailure.unavailable,
+      );
+      await tester.enterText(find.byType(TextField), 'Asha');
+      await tester.tap(find.widgetWithText(TextButton, 'Save'));
+      await tester.pumpAndSettle();
+      expect(
+        text('That didn’t save. Check your connection and try again.'),
+        findsOneWidget,
+      );
+      expect(find.byType(AlertDialog), findsOneWidget);
+    });
+
+    testWidgets('Home asks for your name only while it is missing', (
+      tester,
+    ) async {
+      setPhoneWindow(tester);
+      await pumpSirfHum(tester, profiles: FakeCoupleProfiles());
+      expect(text('Add your name'), findsOneWidget);
+      await tester.tap(text('Add your name'));
+      await tester.pumpAndSettle();
+      expect(text('The little things about the two of you.'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await pumpSirfHum(tester);
+      expect(text('Add your name'), findsNothing);
     });
   });
 

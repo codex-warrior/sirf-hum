@@ -30,15 +30,16 @@ abstract final class AppTheme {
 
     final textTheme = const TextTheme(
       displaySmall: TypeScale.display,
-      headlineSmall: TypeScale.title,
+      headlineSmall: TypeScale.hero,
       titleLarge: TypeScale.title,
       titleMedium: TypeScale.heading,
       titleSmall: TypeScale.bodyStrong,
       bodyLarge: TypeScale.body,
-      bodyMedium: TypeScale.body,
+      bodyMedium: TypeScale.secondary,
       labelLarge: TypeScale.label,
       labelMedium: TypeScale.label,
       bodySmall: TypeScale.caption,
+      labelSmall: TypeScale.caption,
     ).apply(bodyColor: colors.textPrimary, displayColor: colors.textPrimary);
 
     return ThemeData(

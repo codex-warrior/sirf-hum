@@ -35,7 +35,7 @@ Feature widgets (read Theme / context.colors / token constants — never literal
 | Category | Tokens | Notes |
 | --- | --- | --- |
 | Color (semantic) | see above, light + dark | AA contrast enforced by tests |
-| Typography | `display 34`, `title 24`, `heading 18`, `body 16`, `bodyStrong 16`, `label 14`, `caption 12` | Plus Jakarta Sans, bundled (`assets/fonts`, OFL; D-156). 12 is the floor. |
+| Typography | `display 28`, `hero 22`, `title 20`, `heading 16`, `body 15`, `bodyStrong 15`, `secondary 14`, `label 13`, `caption 12` | Plus Jakarta Sans, bundled (`assets/fonts`, OFL; D-156); calmer scale and explicit letter spacing (D-158). 12 is the floor. |
 | Font weights | `regular 400`, `medium 500`, `semibold 600`, `bold 700` | `display` is bold |
 | Spacing | `xxs 2, xs 4, sm 8, md 12, lg 16, xl 24, xxl 32, xxxl 48`; gutters 16/24 | 4-pt grid |
 | Radii | `none 0, sm 6, md 12, lg 20, xl 28, pill 999` | `xl` is for hero cards only |
