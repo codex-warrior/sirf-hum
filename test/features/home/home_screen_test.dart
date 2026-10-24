@@ -10,6 +10,7 @@ import 'package:sirf_hum/features/notebook/application/notebook_controller.dart'
 import 'package:sirf_hum/security/couple/couple_profiles.dart';
 import 'package:sirf_hum/security/couple/pairing.dart';
 import 'package:sirf_hum/security/moments/moment_payload.dart';
+import 'package:sirf_hum/security/notebook/notebook_payload.dart';
 import 'package:sirf_hum/session/session_controller.dart';
 
 import '../../support/notebook_fakes.dart';
@@ -25,9 +26,12 @@ void main() {
     setPhoneWindow(tester);
     await pumpSirfHum(tester);
 
-    expect(find.text('Good evening'), findsOneWidget);
-    expect(find.text('Asha & Ravi'), findsOneWidget);
-    expect(find.text('Start something together.'), findsOneWidget);
+    expect(find.text('Good evening,'), findsOneWidget);
+    expect(find.text('Asha & Ravi.'), findsOneWidget);
+    for (final label in ['Watch', 'Listen', 'Call', 'Play']) {
+      expect(find.text(label), findsOneWidget);
+    }
+    await tester.scrollUntilVisible(find.text('+ Plan'), 100);
     expect(
       find.byType(FilledButton),
       findsOneWidget,
@@ -40,7 +44,7 @@ void main() {
   ) async {
     setPhoneWindow(tester);
     await pumpSirfHum(tester, profiles: FakeCoupleProfiles());
-    expect(find.text('Just the two of you'), findsOneWidget);
+    expect(find.text('Just the two of you.'), findsOneWidget);
   });
 
   testWidgets('empty states are deliberate and human', (tester) async {
@@ -48,11 +52,9 @@ void main() {
     await pumpSirfHum(tester);
 
     expect(find.text('Your first memory is waiting.'), findsOneWidget);
-    await tester.scrollUntilVisible(
-      find.text('Make a plan for the two of you.'),
-      100,
-    );
-    expect(find.text('Make a plan for the two of you.'), findsOneWidget);
+    expect(find.text('Add your day'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('No plans yet.'), 100);
+    expect(find.text('No plans yet.'), findsOneWidget);
     for (final generic in ['No data', 'No items', 'Lorem', 'TODO']) {
       expect(find.textContaining(generic), findsNothing);
     }
@@ -83,15 +85,40 @@ void main() {
     for (final other in ['Udaipur', 'Someday trip', 'Last spring']) {
       expect(find.text(other), findsNothing, reason: other);
     }
-    expect(find.text('Make a plan for the two of you.'), findsNothing);
+    expect(find.text('No plans yet.'), findsNothing);
   });
 
-  testWidgets('Home leads to Together, Moments and Future', (tester) async {
+  testWidgets('days together come from the date in Us, never invented', (
+    tester,
+  ) async {
+    setPhoneWindow(tester);
+    final backend = FakeNotebookBackend([
+      fakeEntry(
+        1,
+        NotebookFields(
+          section: NotebookSection.togetherSince,
+          category: 0,
+          status: 0,
+          title: '',
+          date: MomentDate(2025, 10, 19),
+        ),
+      ),
+    ]);
+    await pumpSirfHum(
+      tester,
+      extra: [notebookBackendProvider.overrideWithValue(backend)],
+    );
+    expect(find.text('Together for'), findsOneWidget);
+    expect(find.text('365 days'), findsOneWidget);
+  });
+
+  testWidgets('Home leads to Together, Moments, Future and Us', (tester) async {
     setPhoneWindow(tester);
     final entries = {
-      'Go to Together': ProductArea.together,
-      'Go to Moments': ProductArea.moments,
-      'Go to Future': ProductArea.future,
+      'Watch': ProductArea.together,
+      'Your Moments': ProductArea.moments,
+      'View all': ProductArea.future,
+      'Our Space': ProductArea.us,
     };
     for (final MapEntry(key: label, value: area) in entries.entries) {
       await tester.pumpWidget(const SizedBox());
@@ -123,7 +150,7 @@ void main() {
 
     answer.complete(paired);
     await tester.pumpAndSettle();
-    expect(find.text('Asha & Ravi'), findsOneWidget);
+    expect(find.text('Asha & Ravi.'), findsOneWidget);
     handle.dispose();
   });
 
@@ -168,7 +195,7 @@ void main() {
     );
     await container.read(sessionProvider.notifier).refresh();
     await tester.pumpAndSettle();
-    expect(find.text('Asha & Ravi'), findsOneWidget);
+    expect(find.text('Asha & Ravi.'), findsOneWidget);
   });
 
   testWidgets('no private data or internal IDs on Home or Us', (tester) async {
@@ -195,7 +222,7 @@ void main() {
         ),
       ),
     );
-    expect(find.text('Asha & your person'), findsOneWidget);
+    expect(find.text('Asha & your person.'), findsOneWidget);
   });
 
   testWidgets('web: Home says where private content lives', (tester) async {

@@ -70,8 +70,15 @@ version u8 = 1 | kind u8 = 4 | client time ms u64 BE | notebook schema u16 BE = 
 | date: year u16 BE | month u8 | day u8            (all zero: no date)
 | title len u16 BE | title UTF-8 | note len u16 BE | note UTF-8
 | detail len u8 | detail UTF-8
+| progress u8                                       (schema 2 only)
 ```
 
+- **Dreams (D-157):** Future category 5, `dream`, carries a progress of
+  0–100 that either partner sets. Only a dream is written as schema 2, with
+  the trailing progress byte; every other record is still schema 1, byte
+  for byte, and both are read. A progress byte anywhere else, a dream
+  without one, or a value over 100 is unreadable. A phone too old to know
+  schema 2 shows a dream as "couldn't be opened"; it never misreads it.
 - Code: `lib/security/notebook/notebook_payload.dart`; golden vector in
   `test/security/notebook/notebook_payload_test.dart`.
 - **Strict decode:** exact length, known version/kind/schema/op/section,

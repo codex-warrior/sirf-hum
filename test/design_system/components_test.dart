@@ -95,4 +95,47 @@ void main() {
     expect(find.bySemanticsLabel('A'), findsNothing);
     handle.dispose();
   });
+
+  for (final brightness in Brightness.values) {
+    testWidgets('ActionTile and HeroCard are one labelled button each, with '
+        'the badge read out (${brightness.name})', (tester) async {
+      final handle = tester.ensureSemantics();
+      var tile = 0;
+      var hero = 0;
+      await pump(
+        tester,
+        Column(
+          children: [
+            HeroCard(
+              semanticLabel: 'Together for 12 days',
+              onTap: () => hero++,
+              child: const Text('Together for 12 days'),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: ActionTile(
+                    icon: Icons.videocam_outlined,
+                    label: 'Call',
+                    badge: 'Soon',
+                    onTap: () => tile++,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        brightness: brightness,
+      );
+      expect(find.bySemanticsLabel('Call, Soon'), findsOneWidget);
+      expect(find.bySemanticsLabel('Together for 12 days'), findsOneWidget);
+      await tester.tap(find.text('Call'));
+      await tester.tap(find.text('Together for 12 days'));
+      expect((tile, hero), (1, 1));
+      await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+      await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+      await expectLater(tester, meetsGuideline(textContrastGuideline));
+      handle.dispose();
+    });
+  }
 }

@@ -13,12 +13,16 @@ class AppPage extends StatelessWidget {
     this.title,
     this.subtitle,
     this.header,
+    this.trailing,
     super.key,
   }) : assert(title == null || header == null, 'title or header, not both');
 
   final String? title;
   final String? subtitle;
   final Widget? header;
+
+  /// Beside [title], top right (the couple's mark).
+  final Widget? trailing;
   final List<Widget> children;
 
   @override
@@ -48,9 +52,17 @@ class AppPage extends StatelessWidget {
             children: [
               ?header,
               if (title != null)
-                Semantics(
-                  header: true,
-                  child: Text(title, style: textTheme.displaySmall),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Semantics(
+                        header: true,
+                        child: Text(title, style: textTheme.displaySmall),
+                      ),
+                    ),
+                    ?trailing,
+                  ],
                 ),
               if (subtitle != null) ...[
                 const SizedBox(height: Spacing.sm),

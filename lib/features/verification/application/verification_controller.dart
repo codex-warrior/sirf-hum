@@ -8,15 +8,18 @@ import 'package:sirf_hum/core/logging/log_value.dart';
 import 'package:sirf_hum/features/verification/domain/verification_state.dart';
 import 'package:sirf_hum/security/verification/partner_verification.dart';
 import 'package:sirf_hum/security/verification/safety_number.dart';
+import 'package:sirf_hum/session/private_services.dart';
 import 'package:sirf_hum/session/session_controller.dart';
 import 'package:sirf_hum/session/session_state.dart';
 
-/// The verification port for the signed-in account's couple (D-128).
-/// `null` — the production value today — means no messaging backend is
-/// wired (D-116, D-121); when it is, it is a `PartnerVerificationService`
-/// over this account's core and the server's device registry.
+/// The verification port for the signed-in account's couple (D-128): a
+/// `PartnerVerificationService` over this account's core and the server's
+/// device registry, from this phone's private services. `null` while they
+/// open, when they failed, or where nothing private is wired.
 final partnerVerificationBackendProvider =
-    Provider<PartnerVerificationBackend?>((ref) => null);
+    Provider<PartnerVerificationBackend?>(
+      (ref) => ref.watch(currentPrivateServicesProvider)?.verification,
+    );
 
 /// Reads one QR code with the camera and returns its text, or null when
 /// the person backs out. `null` provider: no camera here (web, tests).
@@ -60,16 +63,25 @@ class PartnerVerificationController extends Notifier<VerificationViewState> {
     }
     final backend = ref.watch(partnerVerificationBackendProvider);
     if (backend == null) {
-      return const VerificationUnavailable(
-        VerificationUnavailableReason.notYetAvailable,
-      );
+      return switch (ref.watch(privateServicesStatusProvider)) {
+        PrivateServicesStatus.starting => const VerificationLoading(),
+        PrivateServicesStatus.failed => const VerificationFailed(
+          VerificationFailedReason.unknown,
+        ),
+        _ => const VerificationUnavailable(
+          VerificationUnavailableReason.notYetAvailable,
+        ),
+      };
     }
     unawaited(Future<void>.microtask(() => _load(backend, generation)));
     return const VerificationLoading();
   }
 
   void retry() {
-    if (state is VerificationFailed) ref.invalidateSelf();
+    if (state is! VerificationFailed) return;
+    ref.read(partnerVerificationBackendProvider) == null
+        ? retryPrivateServices(ref)
+        : ref.invalidateSelf();
   }
 
   /// The person compared the number with their partner and says it matches.

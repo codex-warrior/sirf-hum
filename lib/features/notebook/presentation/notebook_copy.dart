@@ -11,6 +11,7 @@ extension FutureCategoryCopy on FutureCategory {
     FutureCategory.place => 'Places',
     FutureCategory.tryThing => 'Things to try',
     FutureCategory.importantDate => 'Important dates',
+    FutureCategory.dream => 'Our dreams',
   };
 
   /// A choice in the editor.
@@ -19,6 +20,7 @@ extension FutureCategoryCopy on FutureCategory {
     FutureCategory.place => 'Place',
     FutureCategory.tryThing => 'Something to try',
     FutureCategory.importantDate => 'Important date',
+    FutureCategory.dream => 'Dream',
   };
 
   String get titleLabel => switch (this) {
@@ -26,6 +28,7 @@ extension FutureCategoryCopy on FutureCategory {
     FutureCategory.place => 'Where do you want to go?',
     FutureCategory.tryThing => 'What do you want to try?',
     FutureCategory.importantDate => 'What’s the day?',
+    FutureCategory.dream => 'What do you dream of?',
   };
 
   String get titleHint => switch (this) {
@@ -33,6 +36,7 @@ extension FutureCategoryCopy on FutureCategory {
     FutureCategory.place => 'Manali',
     FutureCategory.tryThing => 'That new café',
     FutureCategory.importantDate => 'Our anniversary',
+    FutureCategory.dream => 'A home together',
   };
 
   IconData get icon => switch (this) {
@@ -40,6 +44,7 @@ extension FutureCategoryCopy on FutureCategory {
     FutureCategory.place => Icons.place_outlined,
     FutureCategory.tryThing => Icons.auto_awesome_outlined,
     FutureCategory.importantDate => Icons.event_outlined,
+    FutureCategory.dream => Icons.track_changes_outlined,
   };
 }
 
@@ -79,8 +84,8 @@ String notebookFailureMessage(NotebookFailure? failure) => switch (failure) {
   NotebookFailure.notPaired =>
     'Saving needs your couple to be connected. Nothing was saved.',
   NotebookFailure.notReady =>
-    'Your phones are still connecting. Try again in a moment. Nothing was '
-        'saved.',
+    'Your phones aren’t connected yet: you both compare your safety '
+        'number in Us › Safety first. Nothing was saved.',
   NotebookFailure.outboxFull =>
     'A lot is still waiting to upload. Try again once you’re online. '
         'Nothing was saved.',

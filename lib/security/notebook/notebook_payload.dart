@@ -16,6 +16,7 @@ enum NotebookPayloadFailure {
   invalidCategory,
   invalidStatus,
   invalidDate,
+  invalidProgress,
 }
 
 class NotebookPayloadException implements Exception {
@@ -58,12 +59,14 @@ enum NotebookSection {
   }
 }
 
-/// Future's four kinds of plan (D-120).
+/// Future's kinds of plan (D-120), and dreams: a long-term goal with a
+/// progress the two of you set (D-157).
 enum FutureCategory {
   plan(1),
   place(2),
   tryThing(3),
-  importantDate(4);
+  importantDate(4),
+  dream(5);
 
   const FutureCategory(this.wireValue);
 
@@ -147,6 +150,7 @@ class NotebookFields {
     this.category = 0,
     this.status = 0,
     this.date,
+    this.progress,
     String? title,
     String? note,
     String? detail,
@@ -173,6 +177,16 @@ class NotebookFields {
   final String title;
   final String note;
   final String detail;
+
+  /// How far a dream has come, 0–100, set by either of you. Present exactly
+  /// for [FutureCategory.dream] (D-157).
+  final int? progress;
+
+  static const int maxProgress = 100;
+
+  bool get isDream =>
+      section == NotebookSection.future &&
+      category == FutureCategory.dream.wireValue;
 
   void _validate() {
     void fail(NotebookPayloadFailure f) => throw NotebookPayloadException(f);
@@ -219,6 +233,11 @@ class NotebookFields {
     if (section != NotebookSection.ritual && detail.isNotEmpty) {
       fail(NotebookPayloadFailure.malformed);
     }
+    final progress = this.progress;
+    final progressOk = isDream
+        ? progress != null && progress >= 0 && progress <= maxProgress
+        : progress == null;
+    if (!progressOk) fail(NotebookPayloadFailure.invalidProgress);
   }
 
   static final RegExp _control = RegExp(r'[\u0000-\u001F\u007F-\u009F]');
@@ -243,7 +262,12 @@ class NotebookFields {
 /// | date: year u16 BE | month u8 | day u8            (all zero: no date)
 /// | title len u16 BE | title UTF-8 | note len u16 BE | note UTF-8
 /// | detail len u8 | detail UTF-8
+/// | progress u8                                       (schema 2 only)
 /// ```
+///
+/// Schema 2 (D-157) exists only for dreams: it appends their progress.
+/// Every other record is still written as schema 1, byte for byte, so
+/// nothing that already exists changes; both schemas are read.
 ///
 /// A record's ID is the message ID of its `create`, chosen by the core. No
 /// couple, account or device field exists: the couple is the conversation
@@ -295,6 +319,9 @@ class NotebookPayload {
   static const int kindNotebook = 4;
   static const int schema = 1;
 
+  /// Schema 1 plus a trailing progress byte (dreams, D-157).
+  static const int schemaWithProgress = 2;
+
   static const int _headerBytes = 36;
   static final RegExp _hexId = RegExp(r'^[0-9a-f]{32}$');
   static const String _zeroId = '00000000000000000000000000000000';
@@ -320,13 +347,25 @@ class NotebookPayload {
     final title = utf8.encode(f?.title ?? '');
     final note = utf8.encode(f?.note ?? '');
     final detail = utf8.encode(f?.detail ?? '');
+    final progress = f?.progress;
     final length =
-        _headerBytes + 2 + title.length + 2 + note.length + 1 + detail.length;
+        _headerBytes +
+        2 +
+        title.length +
+        2 +
+        note.length +
+        1 +
+        detail.length +
+        (progress == null ? 0 : 1);
     final out = ByteData(length)
       ..setUint8(0, version)
       ..setUint8(1, kindNotebook)
       ..setUint64(2, clientTimeMs, Endian.big)
-      ..setUint16(10, schema, Endian.big)
+      ..setUint16(
+        10,
+        progress == null ? schema : schemaWithProgress,
+        Endian.big,
+      )
       ..setUint8(12, op.wireValue)
       ..setUint8(29, section.wireValue)
       ..setUint8(30, f?.category ?? 0)
@@ -348,6 +387,8 @@ class NotebookPayload {
     at += 2 + note.length;
     out.setUint8(at, detail.length);
     bytes.setRange(at + 1, at + 1 + detail.length, detail);
+    at += 1 + detail.length;
+    if (progress != null) out.setUint8(at, progress);
     return bytes;
   }
 
@@ -360,7 +401,9 @@ class NotebookPayload {
     );
     if (bytes.length < _headerBytes + 5) throw malformed;
     final view = ByteData.sublistView(bytes);
-    if (!isNotebook(bytes) || view.getUint16(10, Endian.big) != schema) {
+    final wireSchema = view.getUint16(10, Endian.big);
+    if (!isNotebook(bytes) ||
+        (wireSchema != schema && wireSchema != schemaWithProgress)) {
       throw const NotebookPayloadException(NotebookPayloadFailure.unsupported);
     }
     final op = NotebookOp.fromWire(view.getUint8(12));
@@ -398,6 +441,7 @@ class NotebookPayload {
     final title = text(length(2));
     final note = text(length(2));
     final detail = text(length(1));
+    final progress = wireSchema == schemaWithProgress ? length(1) : null;
     if (at != bytes.length) throw malformed;
 
     final category = view.getUint8(30);
@@ -408,6 +452,8 @@ class NotebookPayload {
     final clientTimeMs = view.getUint64(2, Endian.big);
 
     if (op == NotebookOp.remove) {
+      // A remove carries nothing, so it is only ever schema 1.
+      if (progress != null) throw malformed;
       final empty =
           category == 0 &&
           status == 0 &&
@@ -443,6 +489,7 @@ class NotebookPayload {
       category: category,
       status: status,
       date: date,
+      progress: progress,
       title: title,
       note: note,
       detail: detail,

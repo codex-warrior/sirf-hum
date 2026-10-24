@@ -24,8 +24,8 @@ String saveFailureMessage(MomentFailure? failure) => switch (failure) {
   MomentFailure.notPaired =>
     'Saving needs your couple to be connected. Nothing was saved.',
   MomentFailure.notReady =>
-    'Your phones are still connecting. Try again in a moment. Nothing was '
-        'saved.',
+    'Your phones aren’t connected yet: you both compare your safety '
+        'number in Us › Safety first. Nothing was saved.',
   MomentFailure.outboxFull =>
     'A lot is still waiting to upload. Try again once you’re online. Nothing '
         'was saved.',

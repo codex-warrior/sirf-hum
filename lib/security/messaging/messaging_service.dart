@@ -247,6 +247,25 @@ class MessagingService {
     _log('messaging_key_package_published', 'ok');
   }
 
+  /// Brings this device into the couple's conversation, and is safe to
+  /// repeat (app start, after verifying the partner): refreshes trust,
+  /// publishes a KeyPackage while this device has no group and none of its
+  /// own waits on the server, then syncs. The group is created or joined
+  /// only once each side trusts the other's verified lineage (D-085, D-128);
+  /// until then this changes nothing but the published KeyPackage. The core
+  /// keeps every KeyPackage's private key until used, so republishing never
+  /// strands a Welcome.
+  Future<SyncReport> connect() async {
+    await refreshTrust();
+    if (!_hasGroup) {
+      final waiting = await _transport.keyPackages(conversation);
+      if (!waiting.any((k) => k.deviceIdHex == _ownHex)) {
+        await publishKeyPackage();
+      }
+    }
+    return sync();
+  }
+
   // ------------------------------------------------------------------- sync
 
   /// Joins or creates the group if needed, then processes epochs in order.

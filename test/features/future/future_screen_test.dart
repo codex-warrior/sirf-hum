@@ -65,8 +65,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// "+ Add" beside Upcoming: a new plan, any kind.
   Future<void> openAdd(WidgetTester tester) =>
-      tapVisible(tester, find.widgetWithText(FilledButton, 'Add something'));
+      tapScrolled(tester, find.widgetWithText(TextButton, '+ Add').last);
 
   Finder text(String s) => find.text(s);
 
@@ -78,7 +79,7 @@ void main() {
         text('Saving to Future opens in an upcoming version of Sirf Hum.'),
         findsOneWidget,
       );
-      expect(text('Add something'), findsNothing);
+      expect(text('+ Add'), findsNothing);
     });
 
     testWidgets('web: says where Future lives; no private path at all', (
@@ -94,7 +95,7 @@ void main() {
         findsOneWidget,
       );
       expect(text('secret'), findsNothing);
-      expect(text('Add something'), findsNothing);
+      expect(text('+ Add'), findsNothing);
       expect(backend.refreshes, 0);
     });
 
@@ -102,12 +103,9 @@ void main() {
       tester,
     ) async {
       await pumpFuture(tester);
-      expect(text('There’s a lot ahead of you.'), findsOneWidget);
-      expect(text('Save something you want to do together.'), findsOneWidget);
-      expect(
-        find.widgetWithText(FilledButton, 'Add something'),
-        findsOneWidget,
-      );
+      expect(text('Our Shared Goals'), findsOneWidget);
+      expect(text('Dream big'), findsOneWidget);
+      expect(find.widgetWithText(TextButton, '+ Add'), findsWidgets);
     });
 
     testWidgets('blocked: nothing private, no way to add', (tester) async {
@@ -129,7 +127,7 @@ void main() {
       backend.loadError = null;
       await tester.tap(text('Try again'));
       await tester.pumpAndSettle();
-      expect(text('There’s a lot ahead of you.'), findsOneWidget);
+      expect(text('Our Shared Goals'), findsOneWidget);
     });
 
     testWidgets('loading shows a skeleton, then what is on this phone', (
@@ -205,20 +203,30 @@ void main() {
         ]),
       );
       for (final heading in [
-        'Coming up',
+        'Upcoming',
         'Plans',
         'Places',
         'Things to try',
         'Important dates',
         'Done together',
       ]) {
-        expect(text(heading), findsOneWidget, reason: heading);
+        await tester.scrollUntilVisible(
+          text(heading).last,
+          200,
+          scrollable: find.byType(Scrollable).last,
+        );
+        expect(text(heading), findsWidgets, reason: heading);
       }
+      await tester.scrollUntilVisible(
+        text('Go to Udaipur'),
+        -200,
+        scrollable: find.byType(Scrollable).last,
+      );
       expect(text('Go to Udaipur'), findsOneWidget);
       final day = const DefaultMaterialLocalizations().formatMediumDate(
         DateTime(2026, 10, 28),
       );
-      expect(find.text('Plan · $day'), findsOneWidget);
+      expect(find.text(day), findsOneWidget);
       // A past day is shown as a day: never "missed" or "overdue".
       final strings = visibleStrings(tester).join('\n').toLowerCase();
       for (final word in ['missed', 'overdue', 'late', 'streak', '%']) {
@@ -256,8 +264,13 @@ void main() {
       expect(f.date, isNull);
       expect(find.byType(NotebookEditorScreen), findsNothing);
       expect(text('Saved. It’s here for both of you.'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        text('Udaipur'),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
       expect(text('Udaipur'), findsOneWidget);
-      expect(text('Places'), findsOneWidget);
+      expect(text('Places'), findsWidgets);
     });
 
     testWidgets('add with a date: it is coming up', (tester) async {
@@ -337,7 +350,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(NotebookEditorScreen), findsNothing);
       expect(backend.created, isEmpty);
-      expect(text('There’s a lot ahead of you.'), findsOneWidget);
+      expect(text('Our Shared Goals'), findsOneWidget);
     });
 
     testWidgets('mark done from the list: no celebration, no count', (
@@ -345,8 +358,7 @@ void main() {
     ) async {
       final backend = FakeNotebookBackend([fakeEntry(1, plan('Goa'))]);
       await pumpFuture(tester, backend: backend);
-      await tester.tap(find.byTooltip('Mark as done'));
-      await tester.pumpAndSettle();
+      await tapScrolled(tester, find.byTooltip('Mark as done'));
       final (_, fields) = backend.updated.single;
       expect(fields.status, FutureStatus.done.wireValue);
       expect(fields.title, 'Goa');
@@ -362,8 +374,7 @@ void main() {
         fakeEntry(1, plan('Goa', note: 'beach'), addedByYou: false),
       ]);
       await pumpFuture(tester, backend: backend);
-      await tester.tap(text('Goa'));
-      await tester.pumpAndSettle();
+      await tapScrolled(tester, text('Goa'));
       await tester.scrollUntilVisible(
         text('Added by Ravi'),
         200,
@@ -378,8 +389,7 @@ void main() {
       expect(f.note, 'beach');
       expect(f.status, FutureStatus.done.wireValue);
 
-      await tester.tap(text('Goa in March'));
-      await tester.pumpAndSettle();
+      await tapScrolled(tester, text('Goa in March'));
       await tapScrolled(tester, find.widgetWithText(TextButton, 'Remove'));
       expect(text('It will disappear for both of you.'), findsOneWidget);
       await tester.tap(text('Keep'));
@@ -393,13 +403,48 @@ void main() {
       expect(text('Goa in March'), findsNothing);
     });
 
+    testWidgets('a dream: name it, set how far along, see it with its '
+        'progress', (tester) async {
+      final backend = FakeNotebookBackend();
+      await pumpFuture(tester, backend: backend);
+      await tester.tap(find.widgetWithText(TextButton, '+ Add').first);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Dream'))
+            .selected,
+        isTrue,
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'What do you dream of?'),
+        'A home together',
+      );
+      await tester.pump();
+      final slider = find.byType(Slider);
+      await tester.ensureVisible(slider);
+      await tester.pumpAndSettle();
+      // Tap at 40% across the track.
+      final box = tester.getRect(slider);
+      await tester.tapAt(Offset(box.left + box.width * 0.4, box.center.dy));
+      await tester.pumpAndSettle();
+      await tapVisible(tester, find.widgetWithText(TextButton, 'Save'));
+
+      final f = backend.created.single;
+      expect(f.category, FutureCategory.dream.wireValue);
+      expect(f.title, 'A home together');
+      expect(f.progress, inInclusiveRange(30, 50));
+      expect(f.progress! % 5, 0, reason: 'steps of 5%');
+      expect(text('A home together'), findsOneWidget);
+      expect(text('${f.progress}%'), findsOneWidget);
+      expect(text('1 active'), findsOneWidget);
+    });
+
     testWidgets('changed on the other phone meanwhile: says so', (
       tester,
     ) async {
       final backend = FakeNotebookBackend([fakeEntry(1, plan('Goa'))]);
       await pumpFuture(tester, backend: backend);
-      await tester.tap(text('Goa'));
-      await tester.pumpAndSettle();
+      await tapScrolled(tester, text('Goa'));
       backend.writeError = const NotebookException(NotebookFailure.notFound);
       await tapVisible(tester, find.widgetWithText(TextButton, 'Save'));
       expect(
@@ -462,8 +507,7 @@ void main() {
           tester,
           backend: FakeNotebookBackend([fakeEntry(1, plan('Goa'))]),
         );
-        await tester.tap(text('Goa'));
-        await tester.pumpAndSettle();
+        await tapScrolled(tester, text('Goa'));
         await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
         await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
         await expectLater(tester, meetsGuideline(textContrastGuideline));
@@ -478,6 +522,11 @@ void main() {
       await pumpFuture(
         tester,
         backend: FakeNotebookBackend([fakeEntry(1, plan('Goa', done: true))]),
+      );
+      await tester.scrollUntilVisible(
+        find.text('Done'),
+        200,
+        scrollable: find.byType(Scrollable).last,
       );
       expect(find.text('Done'), findsOneWidget);
       expect(find.byTooltip('Mark as not done'), findsOneWidget);

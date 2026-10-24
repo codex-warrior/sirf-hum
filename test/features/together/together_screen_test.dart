@@ -51,15 +51,14 @@ void main() {
   group('the hub', () {
     testWidgets('production today: honest, nothing startable', (tester) async {
       await pumpTogether(tester, noBackend: true);
-      expect(text('What do you want to do?'), findsOneWidget);
-      expect(
-        text('Together opens in an upcoming version of Sirf Hum.'),
-        findsOneWidget,
-      );
+      expect(text('Start a Watch Together'), findsOneWidget);
+      for (final label in ['Listen Together', 'Call', 'Play']) {
+        expect(text(label), findsOneWidget);
+      }
+      expect(text('Soon'), findsNWidgets(4));
       expect(find.byType(FilledButton), findsNothing);
-      expect(text('Not available yet'), findsOneWidget);
-      expect(text('Coming soon'), findsNWidgets(3));
-      expect(text('Presence isn’t shared yet'), findsOneWidget);
+      // Nothing is said about the partner when presence is unknown.
+      expect(find.textContaining('Ravi'), findsNothing);
     });
 
     testWidgets('web: points to the phone, nothing startable', (tester) async {
@@ -68,19 +67,30 @@ void main() {
       expect(find.byType(FilledButton), findsNothing);
     });
 
-    testWidgets('idle: one primary action, coming-soon is never a button', (
-      tester,
-    ) async {
-      await pumpTogether(tester);
-      expect(text('Ravi'), findsOneWidget);
+    testWidgets('idle: time together starts from the hero; what is not '
+        'built says so and starts nothing', (tester) async {
+      final together = FakeTogetherBackend();
+      await pumpTogether(tester, together: together);
       expect(text('Ravi is here'), findsOneWidget);
-      expect(find.byType(FilledButton), findsOneWidget);
-      expect(find.widgetWithText(FilledButton, 'Start'), findsOneWidget);
-      for (final label in ['Call', 'Watch', 'Listen']) {
-        expect(text(label), findsOneWidget);
-        expect(find.widgetWithText(FilledButton, label), findsNothing);
-      }
-      expect(text('Coming soon'), findsNWidgets(3));
+      expect(text('Spend time together'), findsOneWidget);
+      expect(text('Soon'), findsNWidgets(3));
+
+      await tapVisible(tester, text('Call'));
+      await tester.pumpAndSettle();
+      expect(text('Calling is coming soon.'), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, 'OK'));
+      await tester.pumpAndSettle();
+      expect(together.starts, isEmpty);
+    });
+
+    testWidgets('notes and plans lead to where they live', (tester) async {
+      await pumpTogether(tester);
+      await tapVisible(tester, text('Make a Plan'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+        ProductArea.future.index,
+      );
     });
 
     testWidgets('presence is said in words, not colour alone', (tester) async {
@@ -97,7 +107,7 @@ void main() {
       final together = FakeTogetherBackend()..hold = Completer<void>();
       await pumpTogether(tester, together: together);
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Start'));
+      await tester.tap(text('Spend time together'));
       await tester.pump();
       expect(text('Starting time together…'), findsOneWidget);
 
@@ -123,7 +133,7 @@ void main() {
 
       await tester.tap(find.widgetWithText(FilledButton, 'Back to Together'));
       await tester.pumpAndSettle();
-      expect(text('What do you want to do?'), findsOneWidget);
+      expect(text('Spend time together'), findsOneWidget);
       expectNoSecretsOnScreen(tester);
     });
 
@@ -142,7 +152,7 @@ void main() {
     testWidgets('the partner leaving is said plainly', (tester) async {
       final together = FakeTogetherBackend();
       await pumpTogether(tester, together: together);
-      await tester.tap(find.widgetWithText(FilledButton, 'Start'));
+      await tester.tap(text('Spend time together'));
       await tester.pumpAndSettle();
       together.partnerJoins();
       await tester.pumpAndSettle();
@@ -194,7 +204,7 @@ void main() {
     final session = FakeAccountSession(alice);
     final together = FakeTogetherBackend();
     await pumpTogether(tester, together: together, session: session);
-    await tester.tap(find.widgetWithText(FilledButton, 'Start'));
+    await tester.tap(text('Spend time together'));
     await tester.pumpAndSettle();
     together.partnerJoins();
     await tester.pumpAndSettle();
@@ -213,9 +223,9 @@ void main() {
       tester,
       extra: [togetherBackendProvider.overrideWithValue(FakeTogetherBackend())],
     );
-    await tester.tap(find.widgetWithText(FilledButton, 'Go to Together'));
+    await tester.tap(find.text('Watch'));
     await tester.pumpAndSettle();
-    expect(text('What do you want to do?'), findsOneWidget);
+    expect(text('Spend time together'), findsOneWidget);
   });
 
   group('accessibility', () {
@@ -226,7 +236,7 @@ void main() {
     ) async {
       switch (name) {
         case 'waiting':
-          await tapVisible(tester, find.widgetWithText(FilledButton, 'Start'));
+          await tapVisible(tester, text('Spend time together'));
         case 'invited':
           together.partnerStarts();
         case 'active':
@@ -279,19 +289,18 @@ void main() {
           together: together,
           size: const Size(360, 740),
         );
-        await tester.scrollUntilVisible(
-          find.text('What do you want to do?'),
-          100,
-        );
         await toState(tester, name, together);
         expect(tester.takeException(), isNull);
       });
     }
 
-    testWidgets('Start is announced with its activity', (tester) async {
+    testWidgets('the start is announced with its activity', (tester) async {
       final handle = tester.ensureSemantics();
       await pumpTogether(tester);
-      expect(find.bySemanticsLabel('Start time together'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel(RegExp('^Spend time together')),
+        findsOneWidget,
+      );
       handle.dispose();
     });
 

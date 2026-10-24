@@ -13,11 +13,11 @@ void main() {
       tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex;
 
   final areaTitles = {
-    ProductArea.home: 'Asha & Ravi',
-    ProductArea.together: 'Spend time together, wherever you are.',
-    ProductArea.moments: 'Your memories, just for the two of you.',
-    ProductArea.future: 'Things you want to do together.',
-    ProductArea.us: 'The two of you.',
+    ProductArea.home: 'Asha & Ravi.',
+    ProductArea.together: 'Things to do, together.',
+    ProductArea.moments: 'Your shared memories, in one place.',
+    ProductArea.future: 'Plan, build and dream together.',
+    ProductArea.us: 'The little things about the two of you.',
   };
 
   testWidgets('phone layout shows the five areas in a bottom bar', (
@@ -87,7 +87,7 @@ void main() {
 
     expect(find.byType(NavigationRail), findsOneWidget);
     expect(find.byType(NavigationBar), findsNothing);
-    expect(find.text('Asha & Ravi'), findsOneWidget);
+    expect(find.text('Asha & Ravi.'), findsOneWidget);
   });
 
   testWidgets('no shell without a couple, whatever the deep link', (

@@ -23,16 +23,28 @@ import 'package:sirf_hum/infrastructure/firebase/firebase_bootstrap.dart';
 import 'package:sirf_hum/infrastructure/firebase/firebase_config.dart';
 import 'package:sirf_hum/infrastructure/firebase/firebase_email_link_sign_in.dart';
 import 'package:sirf_hum/infrastructure/firebase/firebase_google_sign_in.dart';
+import 'package:sirf_hum/infrastructure/firebase/firebase_media_storage.dart';
+import 'package:sirf_hum/infrastructure/firebase/firestore_conversation_transport.dart';
+import 'package:sirf_hum/infrastructure/firebase/firestore_couple_conversation_locator.dart';
 import 'package:sirf_hum/infrastructure/firebase/firestore_couple_profiles.dart';
 import 'package:sirf_hum/infrastructure/firebase/firestore_device_registry.dart';
+import 'package:sirf_hum/platform/io_media_files.dart';
 import 'package:sirf_hum/platform/secure_key_store.dart';
 import 'package:sirf_hum/platform/text_share.dart';
 import 'package:sirf_hum/security/account/account_session.dart';
+import 'package:sirf_hum/security/device/local_device_identity.dart';
+import 'package:sirf_hum/session/private_services.dart';
 import 'package:sirf_hum/session/session_controller.dart';
 import 'package:sirf_hum/session/sign_in_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // The bundled brand typeface's licence, on the app's licences page (OFL).
+  LicenseRegistry.addLicense(() async* {
+    yield LicenseEntryWithLineBreaks([
+      'Plus Jakarta Sans',
+    ], await rootBundle.loadString('assets/fonts/OFL.txt'));
+  });
 
   final config = AppConfig.fromEnvironment();
   // A build whose flavor, SH_ENV and Firebase project disagree must not run.
@@ -114,6 +126,23 @@ List<Override> sessionPortOverrides(FirebaseStatus status) => switch (status) {
         ),
       ),
       textShareProvider.overrideWithValue(const PlatformTextShare()),
+      privateServicesOpenerProvider.overrideWithValue(
+        LocalPrivateServicesOpener(
+          identities: LocalDeviceIdentityService(
+            keyStore: const PlatformSecureKeyStore(),
+          ),
+          locator: FirestoreCoupleConversationLocator(),
+          registry: FirestoreDeviceRegistry(),
+          transport: FirestoreConversationTransport(),
+          storage: FirebaseMediaStorage(),
+          files: const IoMediaFiles(),
+          mediaDirectory: (account) async => IoMediaFiles.mediaDirectoryOf(
+            await const PlatformSecureKeyStore().slotDirectory(
+              LocalDeviceIdentityService.slotFor(account),
+            ),
+          ),
+        ),
+      ),
     ],
   ],
 };

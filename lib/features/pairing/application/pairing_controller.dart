@@ -50,6 +50,12 @@ class PairingController extends Notifier<PairingViewState> {
   PairingViewState build() {
     final generation = ++_generation;
     ref.onDispose(_release);
+    // Release this phone's keys the moment the couple exists, not when this
+    // provider next rebuilds: the private services open the same identity
+    // next, and two open cores must never share one sealed state.
+    ref.listen(sessionProvider.select((s) => s is SessionPaired), (_, paired) {
+      if (paired) _release();
+    });
     final active = ref.watch(
       sessionProvider.select(
         (s) => s is SessionNotPaired || s is SessionPairing,

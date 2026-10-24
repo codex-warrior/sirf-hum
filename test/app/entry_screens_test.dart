@@ -140,7 +140,7 @@ void main() {
       fail = false;
       await tester.tap(find.text('Try again'));
       await tester.pumpAndSettle();
-      expect(find.text('Asha & Ravi'), findsOneWidget);
+      expect(find.text('Asha & Ravi.'), findsOneWidget);
       handle.dispose();
     });
 

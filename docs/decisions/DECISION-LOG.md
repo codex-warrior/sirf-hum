@@ -140,6 +140,9 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-152 | App Check enforcement paused on production callables only until Play Console links Play Integrity | Accepted by the owner; **temporary** | 2026-10-24 |
 | D-154 | RUSTSEC-2026-0387 (crypto-bigint 0.5.5 timing) ignored while the core uses only the X25519/Ed25519 suite (re-verified each run) | Accepted by the owner; re-assess with the next OpenMLS upgrade | 2026-10-24 |
 | D-153 | Pairing UI: phone set-up after sign-in, invite shared as a message, join by pasting it, inviter types the invitee's code; launcher icon | Accepted (owner request) | 2026-10-24 |
+| D-155 | Production wires the couple's private services after pairing: Moments, Future + Us (notebook) and partner verification run over the existing MLS conversation; the group forms once both partners verified each other | Accepted (owner request); unreviewed, NOT production E2EE | 2026-10-24 |
+| D-156 | Visual identity v1, "night intimacy": owner-chosen reference screens for Home, Together and Moments; dark-first, peach accent, painted dusk scene, Plus Jakarta Sans (bundled); unbuilt activities marked "Soon", numbers always real | Accepted (owner choice) | 2026-10-24 |
+| D-157 | Future and Us in visual identity v1; dreams with a shared progress (notebook schema 2, dreams only); the reference's Investments/Savings tiles replaced by Goals/Plans/Places/To try — Our Money stays out of V1 | Accepted (owner choice) | 2026-10-24 |
 
 ---
 
@@ -1498,3 +1501,42 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Decision:** the owner chose this documented exception over upgrading OpenMLS now (2026-10-24).
 - **Re-assess:** at the next OpenMLS upgrade, or if a second ciphersuite is ever added. In the independent review scope (P0).
 - **Status:** Accepted by the owner · 2026-10-24.
+
+### D-155 — The couple's private services are wired in production (owner request; resolves D-116/D-121 "nothing wired", builds on D-085, D-086, D-128)
+- **Context:** the friends-beta build (D-151) paired two phones, but `main.dart` wired no messaging service: Moments, Future, Us and partner verification could only show "opens in an upcoming version". The owner reported that nothing in the app works. The server side (rules, Storage, `requestCommitChallenge`/`submitMlsCommit`) was already deployed to production.
+- **Decision:**
+  - `lib/session/private_services.dart`: while the session is paired on a phone, `privateServicesProvider` opens the account's device identity (`LocalDeviceIdentityService`, platform key store), reads the couple conversation from `accountPartners/{uid}` (`FirestoreCoupleConversationLocator`; a malformed record is "no couple") and builds one `MessagingService` with `MomentsService`, `NotebookService` and `PartnerVerificationService` over it. Any session change closes the core. Features see only a settled, current value (`currentPrivateServicesProvider`): the closed services of an earlier account are never handed out while the provider reloads.
+  - `MessagingService.connect()`: refresh trust, publish a KeyPackage only while the device has no group and none of its own waits on the server, then sync. Run at open and again after this phone verifies the partner, in the conversation's exclusive lane. The group forms only once each side trusts the other's verified root (D-128 unchanged): no trust on first use.
+  - Opening shows the features' loading state; a failed open shows their failure with a retry that opens again (no automatic retry).
+  - `PairingController` releases its core the moment the session becomes paired, so two cores never hold one sealed state.
+- **Unchanged:** no new server schema, rules, Functions, crypto or ABI. Web never opens private services (D-046).
+- **Not done:** chat UI, Together backend, calls (LiveKit), push for new content, approving a second phone.
+- **Tests:** `test/session/private_services_test.dart` (gating, account, loading/failure/retry, record parsing), `messaging_service_test.dart` (connect publishes once, idempotent; native, CI).
+- **Status:** Accepted (owner request) · 2026-10-24. Unreviewed; Sirf Hum is NOT production E2EE.
+
+### D-156 — Visual identity v1: "night intimacy" (owner choice; resolves DESIGN-CONSTITUTION's open identity, amends D-109)
+- **Context:** the owner found the interface "very bad": default Material type, grey blocks, mostly text. From three mockup directions they chose reference screens for Home, Together and Moments (dark, a dusk-sky hero card, soft tiles, peach accent).
+- **Decision:**
+  - Dark-first: the app always uses the dark theme; warm near-blacks; one peach accent (`#EBA48E`). The light theme stays complete and tested but is not shown.
+  - Typeface: Plus Jakarta Sans, bundled under `assets/fonts` (OFL, on the licences page). Never fetched at runtime.
+  - `DuskScene`: a painted sky with a crescent moon and foliage, the brand's one illustration, behind `HeroCard`s and as the missing-photo placeholder. No image assets.
+  - New components `HeroCard`, `HeroIcon`, `ActionTile`; `CoupleMark` in accent rings; `AppPage.trailing`; a navigation bar without an indicator pill (accent plus a filled icon and bold label mark the selection).
+  - Home: brand row and couple mark, greeting, "Together for N days", Watch/Listen/Call/Play, Your Moments (two real covers, real count), Our Space, Coming up with "+ Plan".
+  - Together: a hero choice (time together when the backend supports it, otherwise Watch Together marked "Soon"), and six tiles: Listen, Call and Play marked "Soon"; Share a Note, Make a Plan and Our Lists open Us and Future.
+  - Moments: kind chips (photos only today; Videos, Notes and Voice say "coming soon"), a "Create a new memory" hero, highlight cards per month, and a dated timeline rail with photo mosaics and note cards.
+- **Honesty rules kept (amends the references):** numbers are never invented. Days come from "together since" in Us (if it is unset, "Add your day"); memory counts and covers come from this phone's timeline. Unbuilt activities carry a visible "Soon" mark and say so when tapped; they never pretend to start. The references' sample categories ("Trips", "Dates") are not shown, because no such data exists: highlights are months.
+- **Tests:** home, Together, Moments, shell, entry and pairing tests updated; new component tests (semantics, tap targets, contrast in both themes); 200% text on the redesigned screens.
+- **Status:** Accepted (owner choice) · 2026-10-24.
+
+### D-157 — Future and Us redesigned; dreams with progress (owner choice; amends D-119, D-120; builds on D-156)
+- **Context:** the owner sent reference screens for Future and Us. Two parts went beyond the product: Future showed **Investments** and **Savings ₹28,500**, and dreams with **progress percentages**.
+- **Owner decisions (2026-10-24):**
+  - Money: replace the tiles. The tiles are Goals, Plans, Places and To try, with real counts. **PRODUCT-CONSTITUTION's "Our Money (not V1)" is unchanged:** no placeholder, no simulated savings or investments.
+  - Dreams: add a real progress that either of you sets.
+- **Format (amends D-119):** `FutureCategory.dream = 5` with `progress` 0–100. Only dreams are written as notebook schema 2 (one trailing byte); everything else stays schema 1 byte for byte. Decode is strict (see FUTURE-AND-US-ARCHITECTURE §2). Old phones show a dream as unreadable, never misread. No server, rules, crypto or ABI change. The payload stays inside MLS ciphertext like every notebook record.
+- **Product (amends D-120's "no progress"):** progress exists only for dreams, set by hand, never computed, never a streak or score. Plans keep planned/done and are never "overdue".
+- **Future:** a hero ("Our Shared Goals", hills variant of the dusk scene) that adds a dream; four count tiles that open a list per kind; Our Dreams with progress bars; Upcoming as date cards with a menu (mark done, edit); undated plans, places and things to try by kind; Important dates; Done together.
+- **Us:** a "Your Story" hero with the days together (from "together since", which you set there); cards for Our Profile (names; editing them is "coming soon"), Privacy & Safety (the safety-number status and the comparison page), Devices ("coming soon") and Settings (notifications "coming soon", licences, sign out); About Us rows for Our Story, Little Things and Our Rituals, each on its own page.
+- **Copy differences from the reference, deliberate:** "Privacy & Safety" with the real safety-number status replaces "Your space, always safe" (no security claim before the independent review). "Your favourites, quirks and more" replaces "likes" (no social vocabulary, D-115).
+- **Tests:** payload (schema 2 round trip, schema 1 unchanged, strict failures), assembly (progress follows the latest version), Future (dream end to end, sections, 200% text, guidelines), Us rewritten for the new structure (parts, cards, sign-out, no security claims, 200% text, guidelines), shell, verification and integration copy.
+- **Status:** Accepted (owner choice) · 2026-10-24. Unreviewed; Sirf Hum is NOT production E2EE.

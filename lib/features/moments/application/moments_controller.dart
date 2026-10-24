@@ -8,16 +8,18 @@ import 'package:sirf_hum/core/logging/log_value.dart';
 import 'package:sirf_hum/features/moments/domain/moments_state.dart';
 import 'package:sirf_hum/security/moments/moment.dart';
 import 'package:sirf_hum/security/moments/moments_service.dart';
+import 'package:sirf_hum/session/private_services.dart';
 import 'package:sirf_hum/session/session_controller.dart';
 import 'package:sirf_hum/session/session_state.dart';
 import 'package:sirf_hum_crypto/sirf_hum_crypto.dart';
 
-/// The moments port for the signed-in account's couple. `null` — the
-/// production value today — means no messaging service is wired yet (no
-/// sign-in method, D-107; device activation needs Blaze, D-025), and
-/// Moments says so (D-116). When it is wired, it is a `MomentsService` built
-/// from the server's pairing answer for exactly this account.
-final momentsBackendProvider = Provider<MomentsBackend?>((ref) => null);
+/// The moments port for the signed-in account's couple: the
+/// `MomentsService` of this phone's private services, built from the
+/// server's couple record for exactly this account. `null` while they open,
+/// when they failed, or where nothing private is wired (web, tests).
+final momentsBackendProvider = Provider<MomentsBackend?>(
+  (ref) => ref.watch(currentPrivateServicesProvider)?.moments,
+);
 
 final momentsProvider = NotifierProvider<MomentsController, MomentsState>(
   MomentsController.new,
@@ -79,7 +81,11 @@ class MomentsController extends Notifier<MomentsState> {
     }
     final backend = ref.watch(momentsBackendProvider);
     if (backend == null) {
-      return _initial(MomentsUnavailableReason.notYetAvailable);
+      return switch (ref.watch(privateServicesStatusProvider)) {
+        PrivateServicesStatus.starting => const MomentsLoading(),
+        PrivateServicesStatus.failed => const MomentsFailed(null),
+        _ => _initial(MomentsUnavailableReason.notYetAvailable),
+      };
     }
     unawaited(Future<void>.microtask(() => _start(backend, generation)));
     _log(const MomentsLoading());
@@ -111,7 +117,10 @@ class MomentsController extends Notifier<MomentsState> {
 
   /// Starts over after a failure.
   void retry() {
-    if (state is MomentsFailed) ref.invalidateSelf();
+    if (state is! MomentsFailed) return;
+    ref.read(momentsBackendProvider) == null
+        ? retryPrivateServices(ref)
+        : ref.invalidateSelf();
   }
 
   Future<void> _start(MomentsBackend backend, int generation) async {
