@@ -63,7 +63,8 @@ NotebookFailure notebookFailureOf(NotebookPayloadFailure failure) =>
       NotebookPayloadFailure.detailTooLong => NotebookFailure.detailTooLong,
       NotebookPayloadFailure.invalidText => NotebookFailure.invalidText,
       NotebookPayloadFailure.invalidCategory ||
-      NotebookPayloadFailure.invalidStatus => NotebookFailure.invalidCategory,
+      NotebookPayloadFailure.invalidStatus ||
+      NotebookPayloadFailure.invalidProgress => NotebookFailure.invalidCategory,
       NotebookPayloadFailure.invalidDate => NotebookFailure.invalidDate,
       NotebookPayloadFailure.malformed ||
       NotebookPayloadFailure.unsupported => NotebookFailure.rejected,

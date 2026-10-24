@@ -8,16 +8,27 @@ import 'package:sirf_hum/design_system/tokens/color_palette.dart';
 /// an image, so it is crisp at any size and costs no asset or network.
 /// Decorative: excluded from semantics.
 class DuskScene extends StatelessWidget {
-  const DuskScene({super.key});
+  const DuskScene({this.horizon = DuskHorizon.tree, super.key});
+
+  final DuskHorizon horizon;
 
   @override
-  Widget build(BuildContext context) => const ExcludeSemantics(
-    child: CustomPaint(painter: _DuskPainter(), child: SizedBox.expand()),
+  Widget build(BuildContext context) => ExcludeSemantics(
+    child: CustomPaint(
+      painter: _DuskPainter(horizon),
+      child: const SizedBox.expand(),
+    ),
   );
 }
 
+/// What stands against the sky: a tree (being together now) or distant
+/// hills (what is ahead of you).
+enum DuskHorizon { tree, hills }
+
 class _DuskPainter extends CustomPainter {
-  const _DuskPainter();
+  const _DuskPainter(this.horizon);
+
+  final DuskHorizon horizon;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -56,7 +67,44 @@ class _DuskPainter extends CustomPainter {
     );
 
     _moon(canvas, Offset(w * 0.8, h * 0.26), math.min(h * 0.1, 20));
-    _tree(canvas, size);
+    switch (horizon) {
+      case DuskHorizon.tree:
+        _tree(canvas, size);
+      case DuskHorizon.hills:
+        _hills(canvas, size);
+    }
+  }
+
+  /// Two ridges rising to the right, the nearer one darker.
+  void _hills(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    Path ridge(double base, List<(double, double)> peaks) {
+      final path = Path()..moveTo(0, h);
+      path.lineTo(0, h * base);
+      var x = 0.0;
+      var y = h * base;
+      for (final (px, py) in peaks) {
+        final nx = w * px;
+        final ny = h * py;
+        path.quadraticBezierTo((x + nx) / 2, (y + ny) / 2 - h * 0.02, nx, ny);
+        x = nx;
+        y = ny;
+      }
+      return path
+        ..lineTo(w, h)
+        ..close();
+    }
+
+    canvas
+      ..drawPath(
+        ridge(0.98, [(0.45, 0.94), (0.72, 0.7), (0.86, 0.76), (1, 0.66)]),
+        Paint()..color = ColorPalette.dusk1.withValues(alpha: 0.85),
+      )
+      ..drawPath(
+        ridge(1.02, [(0.5, 1), (0.78, 0.84), (1, 0.9)]),
+        Paint()..color = ColorPalette.duskFoliage,
+      );
   }
 
   void _moon(Canvas canvas, Offset c, double r) {
@@ -149,5 +197,6 @@ class _DuskPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_DuskPainter oldDelegate) => false;
+  bool shouldRepaint(_DuskPainter oldDelegate) =>
+      oldDelegate.horizon != horizon;
 }

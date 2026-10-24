@@ -34,8 +34,10 @@ NotebookFields _ritual(String title, {String? often}) => NotebookFields(
 NotebookFields _since(MomentDate date) =>
     NotebookFields(section: NotebookSection.togetherSince, date: date);
 
-String _day(MomentDate d) =>
-    const DefaultMaterialLocalizations().formatMediumDate(d.toLocal());
+/// "Mar 12, 2021", as the story card says it.
+String _sinceDay(MomentDate d) =>
+    '${const DefaultMaterialLocalizations().formatShortMonthDay(d.toLocal())}'
+    ', ${d.year}';
 
 void main() {
   setUpAll(() => WidgetController.hitTestWarningShouldBeFatal = true);
@@ -62,23 +64,23 @@ void main() {
     );
   }
 
-  Future<void> tapScrolled(WidgetTester tester, Finder finder) async {
-    await tester.scrollUntilVisible(
-      finder,
-      200,
-      scrollable: find.byType(Scrollable).last,
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(finder);
-    await tester.pumpAndSettle();
-  }
-
   Future<void> scrollTo(WidgetTester tester, Finder finder) =>
       tester.scrollUntilVisible(
         finder,
         200,
         scrollable: find.byType(Scrollable).last,
       );
+
+  Future<void> tapScrolled(WidgetTester tester, Finder finder) async {
+    await scrollTo(tester, finder);
+    await tester.pumpAndSettle();
+    await tester.tap(finder);
+    await tester.pumpAndSettle();
+  }
+
+  /// Opens one part of About Us (Our Story, Little Things, Our Rituals).
+  Future<void> openPart(WidgetTester tester, String title) =>
+      tapScrolled(tester, find.text(title));
 
   Finder text(String s) => find.text(s);
 
@@ -94,14 +96,6 @@ void main() {
     ),
     fakeEntry(3, _thing(LittleThingKind.ourSong, 'Tum Hi Ho')),
     fakeEntry(4, _ritual('Friday movie', often: 'Every Friday')),
-    fakeEntry(
-      5,
-      plan(
-        'Anniversary',
-        category: FutureCategory.importantDate,
-        date: MomentDate(2027, 3, 12),
-      ),
-    ),
     fakeEntry(6, plan('Goa')), // a plan: Future only, not Us
   ];
 
@@ -111,17 +105,13 @@ void main() {
     ) async {
       await pumpUs(tester, noBackend: true);
       expect(text('Asha & Ravi'), findsOneWidget);
-      expect(text('This is your space.'), findsOneWidget);
-      expect(
-        text('Fill it with the little things that are yours.'),
-        findsOneWidget,
-      );
+      await scrollTo(tester, text('This is your space.'));
       expect(
         text('Saving to Us opens in an upcoming version of Sirf Hum.'),
         findsOneWidget,
       );
       expect(text('Add the day you got together'), findsNothing);
-      await scrollTo(tester, text('Sign out'));
+      await tapScrolled(tester, text('Settings'));
       expect(text('Sign out'), findsOneWidget);
     });
 
@@ -130,9 +120,9 @@ void main() {
       final backend = FakeNotebookBackend(List.of(full));
       await pumpUs(tester, backend: backend, privateContent: false);
       expect(text('Asha & Ravi'), findsOneWidget);
-      expect(
+      await scrollTo(
+        tester,
         text('Us stays private to your phones. Open it in the Sirf Hum app.'),
-        findsOneWidget,
       );
       for (final secret in ['How we started', 'Tum Hi Ho', 'Friday movie']) {
         expect(find.textContaining(secret), findsNothing);
@@ -141,20 +131,19 @@ void main() {
       expect(backend.refreshes, 0);
     });
 
-    testWidgets('empty: the product’s own words, and a way into each part', (
-      tester,
-    ) async {
+    testWidgets('empty: the story card invites the day, and each part has '
+        'a way in', (tester) async {
       await pumpUs(tester);
-      expect(text('This is your space.'), findsOneWidget);
       expect(text('Add the day you got together'), findsOneWidget);
-      for (final add in [
-        'Add to your story',
-        'Add a little thing',
-        'Add a ritual',
-        'Add an important date',
+      for (final (part, add) in [
+        ('Our Story', 'Add to your story'),
+        ('Little Things', 'Add a little thing'),
+        ('Our Rituals', 'Add a ritual'),
       ]) {
-        await scrollTo(tester, text(add));
+        await openPart(tester, part);
         expect(text(add), findsOneWidget, reason: add);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
       }
     });
 
@@ -167,45 +156,63 @@ void main() {
         );
       await pumpUs(tester, backend: backend);
       expect(text('Asha & Ravi'), findsOneWidget);
-      expect(text('Us isn’t available on this phone.'), findsOneWidget);
+      await scrollTo(tester, text('Us isn’t available on this phone.'));
       expect(find.textContaining('Tum Hi Ho'), findsNothing);
       expect(find.textContaining('Together since'), findsNothing);
-      await scrollTo(tester, text('Sign out'));
+      await tapScrolled(tester, text('Settings'));
+      expect(text('Sign out'), findsOneWidget);
       expectNoSecretsOnScreen(tester);
     });
   });
 
   group('who you are', () {
-    testWidgets('since, story, little things, rituals and dates — and no '
-        'plans', (tester) async {
+    testWidgets('days together come from the saved day, never invented', (
+      tester,
+    ) async {
       await pumpUs(tester, backend: FakeNotebookBackend(List.of(full)));
       expect(
-        text('Together since ${_day(MomentDate(2021, 3, 12))}'),
+        text('Together since ${_sinceDay(MomentDate(2021, 3, 12))}'),
         findsOneWidget,
       );
-      expect(text('This is your space.'), findsNothing);
-      for (final t in [
-        'How we started',
-        'Tum Hi Ho',
-        'Our song',
-        'Friday movie',
-        'Every Friday',
-        'Anniversary',
+      // Home's clock in tests: 2026-10-19.
+      final days = DateTime.utc(
+        2026,
+        10,
+        19,
+      ).difference(DateTime.utc(2021, 3, 12)).inDays;
+      expect(
+        text(const DefaultMaterialLocalizations().formatDecimal(days)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('story, little things and rituals each on their page — and '
+        'no plans', (tester) async {
+      await pumpUs(tester, backend: FakeNotebookBackend(List.of(full)));
+      for (final (part, shown) in [
+        ('Our Story', ['How we started', 'A rainy Tuesday.']),
+        ('Little Things', ['Tum Hi Ho', 'Our song']),
+        ('Our Rituals', ['Friday movie', 'Every Friday']),
       ]) {
-        await scrollTo(tester, find.textContaining(t));
-        expect(find.textContaining(t), findsWidgets, reason: t);
-      }
-      expect(text('Goa'), findsNothing);
-      final strings = visibleStrings(tester).join('\n');
-      expect(strings, isNot(contains('beef')), reason: 'a handle leaked');
-      for (final word in ['score', 'streak', 'followers', 'likes']) {
-        expect(strings.toLowerCase(), isNot(contains(word)));
+        await openPart(tester, part);
+        for (final t in shown) {
+          expect(find.textContaining(t), findsWidgets, reason: t);
+        }
+        expect(text('Goa'), findsNothing);
+        final strings = visibleStrings(tester).join('\n');
+        expect(strings, isNot(contains('beef')), reason: 'a handle leaked');
+        for (final word in ['score', 'streak', 'followers', 'likes']) {
+          expect(strings.toLowerCase(), isNot(contains(word)));
+        }
+        await tester.pageBack();
+        await tester.pumpAndSettle();
       }
     });
 
     testWidgets('add a little thing: kind and name', (tester) async {
       final backend = FakeNotebookBackend();
       await pumpUs(tester, backend: backend);
+      await openPart(tester, 'Little Things');
       await tapScrolled(tester, text('Add a little thing'));
       expect(find.byType(NotebookEditorScreen), findsOneWidget);
       await tester.tap(find.widgetWithText(ChoiceChip, 'Our song'));
@@ -222,13 +229,14 @@ void main() {
       expect(f.category, LittleThingKind.ourSong.wireValue);
       expect(f.title, 'Tum Hi Ho');
       expect(text('Saved. It’s here for both of you.'), findsOneWidget);
-      await scrollTo(tester, text('Tum Hi Ho'));
+      expect(text('Tum Hi Ho'), findsOneWidget);
       expect(text('Our song'), findsOneWidget);
     });
 
     testWidgets('a story can start from a suggestion', (tester) async {
       final backend = FakeNotebookBackend();
       await pumpUs(tester, backend: backend);
+      await openPart(tester, 'Our Story');
       await tapScrolled(tester, text('Add to your story'));
       await tester.tap(find.widgetWithText(ActionChip, 'How we started'));
       await tester.pumpAndSettle();
@@ -249,6 +257,7 @@ void main() {
     testWidgets('a ritual: name and how often, no schedule', (tester) async {
       final backend = FakeNotebookBackend();
       await pumpUs(tester, backend: backend);
+      await openPart(tester, 'Our Rituals');
       await tapScrolled(tester, text('Add a ritual'));
       await tester.enterText(
         find.widgetWithText(TextField, 'What do you do?'),
@@ -267,9 +276,7 @@ void main() {
       expect(f.date, isNull);
     });
 
-    testWidgets('together since: a day, required, then changeable', (
-      tester,
-    ) async {
+    testWidgets('together since: a day, required, then shown', (tester) async {
       final backend = FakeNotebookBackend();
       await pumpUs(tester, backend: backend);
       await tester.tap(text('Add the day you got together'));
@@ -287,34 +294,6 @@ void main() {
       expect(f.section, NotebookSection.togetherSince);
       expect(f.date, MomentDate.of(DateTime.now()));
       expect(find.textContaining('Together since'), findsOneWidget);
-      expect(text('Change the day you got together'), findsOneWidget);
-    });
-
-    testWidgets('an important date added in Us is a Future important date', (
-      tester,
-    ) async {
-      final backend = FakeNotebookBackend();
-      await pumpUs(tester, backend: backend);
-      await tapScrolled(tester, text('Add an important date'));
-      expect(
-        tester
-            .widget<ChoiceChip>(
-              find.widgetWithText(ChoiceChip, 'Important date'),
-            )
-            .selected,
-        isTrue,
-      );
-      await tester.enterText(find.byType(TextField).first, 'Ravi’s birthday');
-      await tester.pump();
-      await tester.tap(find.widgetWithText(TextButton, 'Save'));
-      await tester.pumpAndSettle();
-      final f = backend.created.single;
-      expect(f.section, NotebookSection.future);
-      expect(f.category, FutureCategory.importantDate.wireValue);
-
-      await tester.tap(find.byIcon(ProductArea.future.icon));
-      await tester.pumpAndSettle();
-      expect(text('Ravi’s birthday'), findsOneWidget);
     });
 
     testWidgets('a full part says so instead of offering more', (tester) async {
@@ -329,6 +308,7 @@ void main() {
             fakeEntry(i, _ritual('r$i')),
         ]),
       );
+      await openPart(tester, 'Our Rituals');
       await scrollTo(
         tester,
         text('That’s all the room there is here for now.'),
@@ -336,9 +316,10 @@ void main() {
       expect(text('Add a ritual'), findsNothing);
     });
 
-    testWidgets('back from an editor returns to Us unchanged', (tester) async {
+    testWidgets('back from an editor returns unchanged', (tester) async {
       final backend = FakeNotebookBackend(List.of(full));
       await pumpUs(tester, backend: backend);
+      await openPart(tester, 'Our Rituals');
       await tapScrolled(tester, text('Friday movie'));
       expect(find.byType(NotebookEditorScreen), findsOneWidget);
       // System back, as on Android.
@@ -347,6 +328,32 @@ void main() {
       expect(find.byType(NotebookEditorScreen), findsNothing);
       expect(backend.updated, isEmpty);
       expect(text('Friday movie'), findsOneWidget);
+    });
+  });
+
+  group('cards', () {
+    testWidgets('profile shows the names; devices says it is coming', (
+      tester,
+    ) async {
+      await pumpUs(tester);
+      await tapScrolled(tester, text('Our Profile'));
+      expect(text('Asha'), findsOneWidget);
+      expect(text('Ravi'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tapScrolled(tester, text('Devices'));
+      expect(text('Managing your devices is coming soon.'), findsOneWidget);
+    });
+
+    testWidgets('safety never claims more than the safety number says', (
+      tester,
+    ) async {
+      await pumpUs(tester);
+      final strings = visibleStrings(tester).join('\n').toLowerCase();
+      for (final claim in ['always safe', 'encrypted', 'secure']) {
+        expect(strings, isNot(contains(claim)), reason: claim);
+      }
+      expect(text('Privacy & Safety'), findsOneWidget);
     });
   });
 
@@ -366,8 +373,10 @@ void main() {
           ),
         ],
       );
-      expect(text('Asha & Ravi'), findsOneWidget);
-      await tapScrolled(tester, text('Sign out'));
+      await scrollTo(tester, text('Asha & Ravi'));
+      await tapScrolled(tester, text('Settings'));
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Sign out'));
+      await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(TextButton, 'Sign out'));
       await tester.pumpAndSettle();
       expect(session.signOuts, 1);
@@ -414,7 +423,9 @@ void main() {
           size: size,
         );
         expect(tester.takeException(), isNull);
-        await scrollTo(tester, text('Sign out'));
+        await scrollTo(tester, text('Our Rituals'));
+        expect(tester.takeException(), isNull);
+        await openPart(tester, 'Our Story');
         expect(tester.takeException(), isNull);
       });
     }
@@ -422,17 +433,26 @@ void main() {
     testWidgets('the editor for each part meets guidelines', (tester) async {
       final handle = tester.ensureSemantics();
       await pumpUs(tester);
-      for (final add in [
-        'Add the day you got together',
-        'Add to your story',
-        'Add a little thing',
-        'Add a ritual',
+      await tester.tap(text('Add the day you got together'));
+      await tester.pumpAndSettle();
+      await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+      await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+      await expectLater(tester, meetsGuideline(textContrastGuideline));
+      await tester.tap(find.byTooltip('Close'));
+      await tester.pumpAndSettle();
+      for (final (part, add) in [
+        ('Our Story', 'Add to your story'),
+        ('Little Things', 'Add a little thing'),
+        ('Our Rituals', 'Add a ritual'),
       ]) {
+        await openPart(tester, part);
         await tapScrolled(tester, text(add));
         await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
         await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
         await expectLater(tester, meetsGuideline(textContrastGuideline));
         await tester.tap(find.byTooltip('Close'));
+        await tester.pumpAndSettle();
+        await tester.pageBack();
         await tester.pumpAndSettle();
       }
       handle.dispose();

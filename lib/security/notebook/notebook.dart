@@ -40,6 +40,7 @@ final class NotebookEntry {
     required this.changedAt,
     required this.saving,
     this.date,
+    this.progress,
   });
 
   final NotebookHandle handle;
@@ -50,6 +51,9 @@ final class NotebookEntry {
   final String note;
   final String detail;
   final MomentDate? date;
+
+  /// A dream's progress, 0–100 (D-157); null for everything else.
+  final int? progress;
 
   /// Who wrote the create, and who wrote the version shown (both
   /// MLS-authenticated sender devices of this account or the partner's).
@@ -82,6 +86,7 @@ final class NotebookEntry {
     category: category,
     status: status,
     date: date,
+    progress: progress,
     title: title,
     note: note,
     detail: detail,
@@ -188,6 +193,7 @@ NotebookSnapshot assembleNotebook(
             note: r.fields.note,
             detail: r.fields.detail,
             date: r.fields.date,
+            progress: r.fields.progress,
             addedByYou: r.addedByYou,
             changedByYou: r.changedByYou,
             addedAt: r.addedAt,

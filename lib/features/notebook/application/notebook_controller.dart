@@ -103,6 +103,7 @@ class NotebookController extends Notifier<NotebookState> {
         category: f.category,
         status: (done ? FutureStatus.done : FutureStatus.planned).wireValue,
         date: f.date,
+        progress: f.progress,
         title: f.title,
         note: f.note,
         detail: f.detail,

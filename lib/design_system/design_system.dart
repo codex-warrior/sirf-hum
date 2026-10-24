@@ -14,6 +14,7 @@ export 'package:sirf_hum/design_system/components/scannable_code.dart';
 export 'package:sirf_hum/design_system/components/section.dart';
 export 'package:sirf_hum/design_system/components/sirf_hum_mark.dart';
 export 'package:sirf_hum/design_system/components/skeleton.dart';
+export 'package:sirf_hum/design_system/components/soon_sheet.dart';
 export 'package:sirf_hum/design_system/theme/app_theme.dart';
 export 'package:sirf_hum/design_system/tokens/layout_tokens.dart';
 export 'package:sirf_hum/design_system/tokens/motion.dart';

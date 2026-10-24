@@ -309,9 +309,9 @@ void main() {
       initialLocation: '/us',
       extra: [partnerVerificationBackendProvider.overrideWithValue(backend)],
     );
-    await tester.scrollUntilVisible(find.text('Safety number'), 200);
-    expect(find.text('Not verified'), findsOneWidget);
-    await tester.tap(find.text('Safety number'));
+    await tester.scrollUntilVisible(find.text('Privacy & Safety'), 200);
+    expect(find.text('Compare your safety number'), findsOneWidget);
+    await tester.tap(find.text('Privacy & Safety'));
     await tester.pumpAndSettle();
     expect(find.text('Verify Ravi'), findsOneWidget);
     expect(find.text('Not verified'), findsOneWidget);
