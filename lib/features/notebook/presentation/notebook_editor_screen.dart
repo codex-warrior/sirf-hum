@@ -82,6 +82,10 @@ class _NotebookEditorScreenState extends ConsumerState<NotebookEditorScreen> {
   late final TextEditingController _detail;
   late int _category;
   late bool _done;
+
+  /// A dream's progress, 0–100 (D-157). Kept while switching kinds; saved
+  /// only for a dream.
+  late int _progress;
   MomentDate? _date;
   bool _saving = false;
   bool _failed = false;
@@ -108,6 +112,7 @@ class _NotebookEditorScreenState extends ConsumerState<NotebookEditorScreen> {
           _ => 0,
         };
     _done = e?.done ?? false;
+    _progress = e?.progress ?? 0;
     _date = e?.date;
     for (final c in [_title, _note, _detail]) {
       c.addListener(_changed);
@@ -232,6 +237,14 @@ class _NotebookEditorScreenState extends ConsumerState<NotebookEditorScreen> {
                 _Suggestions(enabled: !_saving, onPick: (s) => _title.text = s),
               const SizedBox(height: Spacing.md),
             ],
+            if (category == FutureCategory.dream) ...[
+              _ProgressField(
+                value: _progress,
+                enabled: !_saving,
+                onChanged: (v) => setState(() => _progress = v),
+              ),
+              const SizedBox(height: Spacing.md),
+            ],
             if (_section == NotebookSection.ritual) ...[
               TextField(
                 controller: _detail,
@@ -348,6 +361,7 @@ class _NotebookEditorScreenState extends ConsumerState<NotebookEditorScreen> {
         ? (_done ? FutureStatus.done : FutureStatus.planned).wireValue
         : 0,
     date: _date,
+    progress: _futureCategory == FutureCategory.dream ? _progress : null,
     title: _title.text,
     note: _note.text,
     detail: _detail.text,
@@ -583,6 +597,47 @@ class _Byline extends ConsumerWidget {
       style: Theme.of(
         context,
       ).textTheme.bodyMedium?.copyWith(color: context.colors.textSecondary),
+    );
+  }
+}
+
+/// How far a dream has come, in steps of 5%. The value is said in words.
+class _ProgressField extends StatelessWidget {
+  const _ProgressField({
+    required this.value,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final int value;
+  final bool enabled;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text('How far along are you?', style: textTheme.bodyLarge),
+            ),
+            ExcludeSemantics(
+              child: Text('$value%', style: textTheme.titleMedium),
+            ),
+          ],
+        ),
+        Slider(
+          value: value.toDouble(),
+          max: NotebookFields.maxProgress.toDouble(),
+          divisions: NotebookFields.maxProgress ~/ 5,
+          label: '$value%',
+          semanticFormatterCallback: (v) => '${v.round()} percent',
+          onChanged: enabled ? (v) => onChanged(v.round()) : null,
+        ),
+      ],
     );
   }
 }

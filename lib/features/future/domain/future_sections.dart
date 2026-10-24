@@ -10,26 +10,33 @@ import 'package:sirf_hum/security/notebook/notebook_payload.dart';
 ///   — no date, or a day that has passed (never "missed") — newest first.
 /// - **Important dates:** anniversaries, birthdays and other days, by day.
 /// - **Done:** what you have done together, most recent first.
+/// - **Dreams:** long-term goals with their progress (D-157), on their own,
+///   newest first; never in the lists above.
 class FutureSections {
   FutureSections._(
     this.comingUp,
     this.byCategory,
     this.importantDates,
     this.done,
+    this.dreams,
   );
 
   factory FutureSections.of(Iterable<NotebookEntry> entries, MomentDate today) {
     final comingUp = <NotebookEntry>[];
     final byCategory = {
       for (final c in FutureCategory.values)
-        if (c != FutureCategory.importantDate) c: <NotebookEntry>[],
+        if (c != FutureCategory.importantDate && c != FutureCategory.dream)
+          c: <NotebookEntry>[],
     };
+    final dreams = <NotebookEntry>[];
     final dates = <NotebookEntry>[];
     final done = <NotebookEntry>[];
     for (final e in entries) {
       final category = e.futureCategory;
       if (category == null) continue;
-      if (category == FutureCategory.importantDate) {
+      if (category == FutureCategory.dream) {
+        dreams.add(e);
+      } else if (category == FutureCategory.importantDate) {
         dates.add(e);
       } else if (e.done) {
         done.add(e);
@@ -54,6 +61,7 @@ class FutureSections {
     comingUp.sort(byDay);
     dates.sort(byDay);
     done.sort((a, b) => b.changedAt.compareTo(a.changedAt));
+    dreams.sort(newest);
     for (final list in byCategory.values) {
       list.sort(newest);
     }
@@ -65,6 +73,7 @@ class FutureSections {
       }),
       List.unmodifiable(dates),
       List.unmodifiable(done),
+      List.unmodifiable(dreams),
     );
   }
 
@@ -74,11 +83,13 @@ class FutureSections {
   final Map<FutureCategory, List<NotebookEntry>> byCategory;
   final List<NotebookEntry> importantDates;
   final List<NotebookEntry> done;
+  final List<NotebookEntry> dreams;
 
   bool get isEmpty =>
       comingUp.isEmpty &&
       importantDates.isEmpty &&
       done.isEmpty &&
+      dreams.isEmpty &&
       byCategory.values.every((l) => l.isEmpty);
 
   /// The soonest plan ahead, for Home.

@@ -26,6 +26,7 @@ NotebookEntry fakeEntry(
     note: fields.note,
     detail: fields.detail,
     date: fields.date,
+    progress: fields.progress,
     addedByYou: addedByYou,
     changedByYou: addedByYou,
     addedAt: at,

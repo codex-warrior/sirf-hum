@@ -273,4 +273,26 @@ void main() {
     expect('${snap.entries.single}', isNot(contains('SECRET')));
     expect('${snap.entries.single.handle}', isNot(contains(_id(1))));
   });
+
+  test('a dream keeps the progress of its latest version, from either '
+      'phone (D-157)', () {
+    NotebookFields dream(int progress) => NotebookFields(
+      section: NotebookSection.future,
+      category: FutureCategory.dream.wireValue,
+      status: FutureStatus.planned.wireValue,
+      title: 'A home together',
+      progress: progress,
+    );
+    final snap = _assemble([
+      _msg(1, _create(dream(10))),
+      _msg(2, _update(1, dream(42)), sender: _partner),
+      _msg(3, _create(_plan('Goa'))),
+    ]);
+    final entries = snap.section(NotebookSection.future).toList();
+    final home = entries.singleWhere((e) => e.title == 'A home together');
+    expect(home.progress, 42);
+    expect(home.futureCategory, FutureCategory.dream);
+    expect(home.fields.progress, 42, reason: 'an edit starts from it');
+    expect(entries.singleWhere((e) => e.title == 'Goa').progress, isNull);
+  });
 }

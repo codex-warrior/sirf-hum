@@ -58,7 +58,7 @@ void main() {
   ) async {
     await pumpSirfHum(tester, initialLocation: ProductArea.future.path);
     expect(find.text('There’s a lot ahead of you.'), findsOneWidget);
-    expect(find.text('Add something'), findsNothing);
+    expect(find.text('+ Add'), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
     final backend = FakeNotebookBackend();
@@ -67,7 +67,8 @@ void main() {
       initialLocation: ProductArea.future.path,
       extra: [notebookBackendProvider.overrideWithValue(backend)],
     );
-    await tester.tap(find.widgetWithText(FilledButton, 'Add something'));
+    // "+ Add" beside Our Dreams, near the top on any phone.
+    await tester.tap(find.widgetWithText(TextButton, '+ Add').first);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, 'On the device');
     await tester.pump();
@@ -78,7 +79,7 @@ void main() {
 
     await tester.tap(find.byIcon(ProductArea.us.icon));
     await tester.pumpAndSettle();
-    expect(find.text('This is your space.'), findsOneWidget);
+    expect(find.text('About Us'), findsOneWidget);
     expect(tester.takeException(), isNull);
     expectNoSecretsOnScreen(tester);
   });

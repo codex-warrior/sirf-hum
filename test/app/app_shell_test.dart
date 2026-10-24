@@ -16,8 +16,8 @@ void main() {
     ProductArea.home: 'Asha & Ravi.',
     ProductArea.together: 'Things to do, together.',
     ProductArea.moments: 'Your shared memories, in one place.',
-    ProductArea.future: 'Things you want to do together.',
-    ProductArea.us: 'The two of you.',
+    ProductArea.future: 'Plan, build and dream together.',
+    ProductArea.us: 'The little things about the two of you.',
   };
 
   testWidgets('phone layout shows the five areas in a bottom bar', (

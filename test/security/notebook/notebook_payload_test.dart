@@ -270,7 +270,7 @@ void main() {
     });
 
     test('unknown version, kind, schema, op or section is unsupported', () {
-      for (final (at, value) in [(0, 2), (1, 3), (11, 2), (12, 9), (29, 9)]) {
+      for (final (at, value) in [(0, 2), (1, 3), (11, 3), (12, 9), (29, 9)]) {
         final b = valid()..[at] = value;
         expect(
           () => NotebookPayload.decode(b),
@@ -349,6 +349,108 @@ void main() {
       expect(
         '${NotebookPayload.create(fields: f, clientTimeMs: 1)}',
         isNot(contains('SECRET')),
+      );
+    });
+  });
+
+  group('dreams (D-157)', () {
+    NotebookFields dream({int? progress = 42, bool done = false}) =>
+        NotebookFields(
+          section: NotebookSection.future,
+          category: FutureCategory.dream.wireValue,
+          status: (done ? FutureStatus.done : FutureStatus.planned).wireValue,
+          title: 'A home together',
+          progress: progress,
+        );
+
+    test('a dream is schema 2 with one trailing progress byte, and '
+        'round-trips', () {
+      final bytes = NotebookPayload.create(
+        fields: dream(),
+        clientTimeMs: 1,
+      ).encode();
+      expect(ByteData.sublistView(bytes).getUint16(10), 2);
+      expect(bytes.last, 42);
+      final back = NotebookPayload.decode(bytes).fields!;
+      expect(back.progress, 42);
+      expect(back.isDream, isTrue);
+      expect(back.title, 'A home together');
+    });
+
+    test('everything else is still schema 1, byte for byte', () {
+      final bytes = NotebookPayload.create(
+        fields: _future(),
+        clientTimeMs: 1,
+      ).encode();
+      expect(ByteData.sublistView(bytes).getUint16(10), 1);
+      expect(NotebookPayload.decode(bytes).fields!.progress, isNull);
+    });
+
+    test('progress belongs to dreams only, from 0 to 100', () {
+      for (final p in [0, 100]) {
+        expect(dream(progress: p).progress, p);
+      }
+      for (final p in [null, -1, 101]) {
+        expect(
+          () => dream(progress: p),
+          fails(NotebookPayloadFailure.invalidProgress),
+          reason: '$p',
+        );
+      }
+      expect(
+        () => NotebookFields(
+          section: NotebookSection.future,
+          category: FutureCategory.plan.wireValue,
+          status: FutureStatus.planned.wireValue,
+          title: 'Udaipur',
+          progress: 10,
+        ),
+        fails(NotebookPayloadFailure.invalidProgress),
+      );
+    });
+
+    test('a progress byte on a plan, a missing one on a dream, or one out '
+        'of range fails closed', () {
+      final plan = NotebookPayload.create(
+        fields: _future(),
+        clientTimeMs: 1,
+      ).encode();
+      final planWithProgress = Uint8List.fromList([...plan, 10]);
+      ByteData.sublistView(planWithProgress).setUint16(10, 2);
+      expect(
+        () => NotebookPayload.decode(planWithProgress),
+        fails(NotebookPayloadFailure.invalidProgress),
+      );
+
+      final d = NotebookPayload.create(
+        fields: dream(),
+        clientTimeMs: 1,
+      ).encode();
+      final noByte = Uint8List.fromList(d.sublist(0, d.length - 1));
+      ByteData.sublistView(noByte).setUint16(10, 1);
+      expect(
+        () => NotebookPayload.decode(noByte),
+        fails(NotebookPayloadFailure.invalidProgress),
+      );
+
+      final tooMuch = Uint8List.fromList(d)..[d.length - 1] = 101;
+      expect(
+        () => NotebookPayload.decode(tooMuch),
+        fails(NotebookPayloadFailure.invalidProgress),
+      );
+    });
+
+    test('a remove is never schema 2', () {
+      final remove = NotebookPayload.remove(
+        target: _target,
+        section: NotebookSection.future,
+        clientTimeMs: 1,
+      ).encode();
+      final withByte = Uint8List.fromList([...remove, 0]);
+      ByteData.sublistView(withByte).setUint16(10, 2);
+      expect(
+        () => NotebookPayload.decode(withByte),
+        fails(NotebookPayloadFailure.malformed),
       );
     });
   });

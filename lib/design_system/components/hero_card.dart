@@ -13,8 +13,11 @@ class HeroCard extends StatelessWidget {
     required this.semanticLabel,
     this.onTap,
     this.minHeight = Spacing.xxxl * 3 + Spacing.xl,
+    this.horizon = DuskHorizon.tree,
     super.key,
   });
+
+  final DuskHorizon horizon;
 
   final Widget child;
 
@@ -45,7 +48,7 @@ class HeroCard extends StatelessWidget {
             onTap: onTap,
             child: Stack(
               children: [
-                const Positioned.fill(child: DuskScene()),
+                Positioned.fill(child: DuskScene(horizon: horizon)),
                 Padding(
                   padding: const EdgeInsets.all(Spacing.xl),
                   child: DefaultTextStyle.merge(

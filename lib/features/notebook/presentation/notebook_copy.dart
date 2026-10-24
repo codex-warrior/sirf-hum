@@ -11,6 +11,7 @@ extension FutureCategoryCopy on FutureCategory {
     FutureCategory.place => 'Places',
     FutureCategory.tryThing => 'Things to try',
     FutureCategory.importantDate => 'Important dates',
+    FutureCategory.dream => 'Our dreams',
   };
 
   /// A choice in the editor.
@@ -19,6 +20,7 @@ extension FutureCategoryCopy on FutureCategory {
     FutureCategory.place => 'Place',
     FutureCategory.tryThing => 'Something to try',
     FutureCategory.importantDate => 'Important date',
+    FutureCategory.dream => 'Dream',
   };
 
   String get titleLabel => switch (this) {
@@ -26,6 +28,7 @@ extension FutureCategoryCopy on FutureCategory {
     FutureCategory.place => 'Where do you want to go?',
     FutureCategory.tryThing => 'What do you want to try?',
     FutureCategory.importantDate => 'What’s the day?',
+    FutureCategory.dream => 'What do you dream of?',
   };
 
   String get titleHint => switch (this) {
@@ -33,6 +36,7 @@ extension FutureCategoryCopy on FutureCategory {
     FutureCategory.place => 'Manali',
     FutureCategory.tryThing => 'That new café',
     FutureCategory.importantDate => 'Our anniversary',
+    FutureCategory.dream => 'A home together',
   };
 
   IconData get icon => switch (this) {
@@ -40,6 +44,7 @@ extension FutureCategoryCopy on FutureCategory {
     FutureCategory.place => Icons.place_outlined,
     FutureCategory.tryThing => Icons.auto_awesome_outlined,
     FutureCategory.importantDate => Icons.event_outlined,
+    FutureCategory.dream => Icons.track_changes_outlined,
   };
 }
 

@@ -11,6 +11,7 @@ class ActionTile extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.badge,
+    this.caption,
     this.height = Spacing.xxxl * 2 + Spacing.lg,
     super.key,
   });
@@ -19,15 +20,19 @@ class ActionTile extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
   final String? badge;
+
+  /// A quieter second line under the label ("3 active").
+  final String? caption;
   final double height;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final badge = this.badge;
+    final caption = this.caption;
     return Semantics(
       button: true,
-      label: badge == null ? label : '$label, $badge',
+      label: [label, ?caption, ?badge].join(', '),
       excludeSemantics: true,
       child: Material(
         color: colors.surface,
@@ -62,6 +67,15 @@ class ActionTile extends StatelessWidget {
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.bodyLarge,
                         ),
+                        if (caption != null) ...[
+                          const SizedBox(height: Spacing.xxs),
+                          Text(
+                            caption,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: colors.textSecondary),
+                          ),
+                        ],
                       ],
                     ),
                   ),

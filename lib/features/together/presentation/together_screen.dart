@@ -210,49 +210,6 @@ class TogetherScreen extends ConsumerWidget {
       activity.label.toLowerCase();
 }
 
-/// Says plainly that something is not built yet. Never starts anything.
-void _showSoon(BuildContext context, String what) {
-  final textTheme = Theme.of(context).textTheme;
-  showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: context.colors.surface,
-    showDragHandle: true,
-    builder: (context) => SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          Spacing.xl,
-          0,
-          Spacing.xl,
-          Spacing.xl,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('$what is coming soon.', style: textTheme.titleLarge),
-            const SizedBox(height: Spacing.sm),
-            Text(
-              'We’re building it now. It will appear right here, just for '
-              'the two of you.',
-              style: textTheme.bodyLarge?.copyWith(
-                color: context.colors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: Spacing.xl),
-            Align(
-              alignment: AlignmentDirectional.centerEnd,
-              child: TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('OK'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
 /// The idle hub: one hero choice, then six tiles.
 class _Hub extends StatelessWidget {
   const _Hub({
@@ -281,7 +238,7 @@ class _Hub extends StatelessWidget {
     bool startable(TogetherActivity a) =>
         onStart != null && supported.contains(a);
     void tap(TogetherActivity activity, String name) =>
-        startable(activity) ? onStart!(activity) : _showSoon(context, name);
+        startable(activity) ? onStart!(activity) : showSoonSheet(context, name);
     String? soon(TogetherActivity a) => startable(a) ? null : 'Soon';
     final presenceLine = _presenceLine(presence, partnerName);
     final notice = this.notice;
@@ -327,7 +284,7 @@ class _Hub extends StatelessWidget {
               icon: Icons.sports_esports_outlined,
               label: 'Play',
               badge: 'Soon',
-              onTap: () => _showSoon(context, 'Playing together'),
+              onTap: () => showSoonSheet(context, 'Playing together'),
             ),
             ActionTile(
               icon: Icons.edit_outlined,
