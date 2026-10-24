@@ -15,44 +15,70 @@ abstract final class FontWeights {
 /// The bundled family name (pubspec `fonts:`).
 const String brandFontFamily = 'PlusJakartaSans';
 
+/// Tuned for a premium, calm read (D-158): one step smaller than Material's
+/// defaults, with explicit letter spacing (Material adds +0.5 to body text,
+/// which makes this geometric face look loose). Headlines are tight, body
+/// text is neutral.
 abstract final class TypeScale {
   static const display = TextStyle(
     fontFamily: brandFontFamily,
-    fontSize: 34,
-    height: 40 / 34,
+    fontSize: 28,
+    height: 34 / 28,
     fontWeight: FontWeights.bold,
     letterSpacing: -0.6,
   );
+
+  /// Hero card titles: a step above section titles.
+  static const hero = TextStyle(
+    fontFamily: brandFontFamily,
+    fontSize: 22,
+    height: 28 / 22,
+    fontWeight: FontWeights.bold,
+    letterSpacing: -0.4,
+  );
   static const title = TextStyle(
     fontFamily: brandFontFamily,
-    fontSize: 24,
-    height: 30 / 24,
+    fontSize: 20,
+    height: 26 / 20,
     fontWeight: FontWeights.semibold,
-    letterSpacing: -0.2,
+    letterSpacing: -0.3,
   );
   static const heading = TextStyle(
     fontFamily: brandFontFamily,
-    fontSize: 18,
-    height: 24 / 18,
+    fontSize: 16,
+    height: 22 / 16,
     fontWeight: FontWeights.semibold,
+    letterSpacing: -0.1,
   );
   static const body = TextStyle(
     fontFamily: brandFontFamily,
-    fontSize: 16,
-    height: 24 / 16,
+    fontSize: 15,
+    height: 22 / 15,
     fontWeight: FontWeights.regular,
+    letterSpacing: 0,
   );
   static const bodyStrong = TextStyle(
     fontFamily: brandFontFamily,
-    fontSize: 16,
-    height: 24 / 16,
+    fontSize: 15,
+    height: 22 / 15,
     fontWeight: FontWeights.medium,
+    letterSpacing: 0,
   );
-  static const label = TextStyle(
+
+  /// Supporting lines under a title (subtitles, details).
+  static const secondary = TextStyle(
     fontFamily: brandFontFamily,
     fontSize: 14,
     height: 20 / 14,
+    fontWeight: FontWeights.regular,
+    letterSpacing: 0,
+  );
+  static const label = TextStyle(
+    fontFamily: brandFontFamily,
+    fontSize: 13,
+    height: 18 / 13,
     fontWeight: FontWeights.medium,
+    letterSpacing: 0.1,
   );
   // Floor for any readable text. Nothing smaller than this ships.
   static const caption = TextStyle(
@@ -60,5 +86,6 @@ abstract final class TypeScale {
     fontSize: 12,
     height: 16 / 12,
     fontWeight: FontWeights.regular,
+    letterSpacing: 0.1,
   );
 }

@@ -86,6 +86,18 @@ class SessionController extends Notifier<SessionState> {
     await _resolve(account, generation);
   }
 
+  /// Saves the name the signed-in person chose (their own profile only)
+  /// and re-reads the couple, so both names show at once. The account never
+  /// leaves this controller. Throws [CoupleProfileException].
+  Future<void> setYourName(String name) async {
+    final account = _account;
+    if (account == null || state is! SessionPaired) {
+      throw const CoupleProfileException(CoupleProfileFailure.unavailable);
+    }
+    await ref.read(coupleProfilesProvider).setYourName(account, name);
+    await refresh();
+  }
+
   /// Ends the account session, then forgets the Google account choice so
   /// the next "Continue with Google" asks again (D-150). Device keys and
   /// trust are untouched: signing out is not revocation.

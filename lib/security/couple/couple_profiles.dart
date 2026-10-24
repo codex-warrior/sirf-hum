@@ -43,6 +43,34 @@ abstract interface class CoupleProfiles {
   /// Best effort: failures return [CoupleNames.unknown], never an error,
   /// because names are presentation, not state.
   Future<CoupleNames> names(AccountId account);
+
+  /// Saves the name [account] chose for itself (its own profile only, the
+  /// rules' exact fields). Throws [CoupleProfileException] when the name is
+  /// not acceptable or the save did not happen.
+  Future<void> setYourName(AccountId account, String name);
+}
+
+enum CoupleProfileFailure {
+  /// Empty, too long or with control characters (the rules' constraint).
+  invalidName,
+
+  /// Network or backend unavailable; nothing was saved.
+  unavailable,
+}
+
+class CoupleProfileException implements Exception {
+  const CoupleProfileException(this.failure);
+
+  final CoupleProfileFailure failure;
+
+  @override
+  String toString() => 'CoupleProfileException(${failure.name})';
+}
+
+/// The name as it will be saved, or null when the rules would refuse it.
+String? acceptableName(String input) {
+  final name = input.trim();
+  return CoupleNames.sanitize(name) == null ? null : name;
 }
 
 class NoCoupleProfiles implements CoupleProfiles {
@@ -50,4 +78,8 @@ class NoCoupleProfiles implements CoupleProfiles {
 
   @override
   Future<CoupleNames> names(AccountId account) async => CoupleNames.unknown;
+
+  @override
+  Future<void> setYourName(AccountId account, String name) async =>
+      throw const CoupleProfileException(CoupleProfileFailure.unavailable);
 }

@@ -63,7 +63,11 @@ class HomeScreen extends ConsumerWidget {
         ?.date;
 
     return AppPage(
-      header: _Header(greeting: greetingFor(now), names: couple.names),
+      header: _Header(
+        greeting: greetingFor(now),
+        names: couple.names,
+        onAddName: onOpenUs,
+      ),
       children: [
         _SinceCard(since: since, today: now, onOpen: onOpenUs),
         const SizedBox(height: Spacing.lg),
@@ -96,10 +100,17 @@ class HomeScreen extends ConsumerWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.greeting, required this.names});
+  const _Header({
+    required this.greeting,
+    required this.names,
+    required this.onAddName,
+  });
 
   final String greeting;
   final CoupleNames names;
+
+  /// While you have no name, a quiet way to add one (in Us).
+  final VoidCallback onAddName;
 
   @override
   Widget build(BuildContext context) {
@@ -134,6 +145,13 @@ class _Header extends StatelessWidget {
           header: true,
           child: Text('${coupleTitle(names)}.', style: textTheme.displaySmall),
         ),
+        if (names.yours == null)
+          TextButton.icon(
+            style: TextButton.styleFrom(padding: EdgeInsets.zero),
+            onPressed: onAddName,
+            icon: const Icon(Icons.edit_outlined, size: IconSizes.sm),
+            label: const Text('Add your name'),
+          ),
       ],
     );
   }
