@@ -21,6 +21,9 @@ abstract final class Radii {
   static const double sm = 6;
   static const double md = 12;
   static const double lg = 20;
+
+  /// Hero cards (the dusk scene).
+  static const double xl = 28;
   static const double pill = 999;
 }
 

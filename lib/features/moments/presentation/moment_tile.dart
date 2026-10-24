@@ -27,19 +27,28 @@ String momentLabel(
   };
 }
 
-/// One square in the timeline: the moment's first photo, a count when it
-/// holds more, and a quiet mark while it is saving. No social affordances.
+/// A moment's cover in the timeline: its first photo, a count when it holds
+/// more (unless the mosaic beside it shows them), and a quiet mark while it
+/// is saving. Square unless [height] is given. No social affordances.
 class MomentTile extends StatelessWidget {
   const MomentTile({
     required this.entry,
     required this.size,
     required this.partnerName,
     required this.onOpen,
+    this.height,
+    this.radius = Radii.sm,
+    this.showCount = true,
     super.key,
   });
 
   final MomentEntry entry;
+
+  /// The width (and height, when [height] is null).
   final double size;
+  final double? height;
+  final double radius;
+  final bool showCount;
   final String partnerName;
   final VoidCallback onOpen;
 
@@ -60,17 +69,20 @@ class MomentTile extends StatelessWidget {
       excludeSemantics: true,
       child: Material(
         color: context.colors.surfaceMuted,
-        borderRadius: BorderRadius.circular(Radii.sm),
+        borderRadius: BorderRadius.circular(radius),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onOpen,
-          child: SizedBox.square(
-            dimension: size,
+          child: SizedBox(
+            width: size,
+            height: height ?? size,
             child: Stack(
               fit: StackFit.expand,
               children: [
                 cover,
-                if (entry case Moment(:final photoCount) when photoCount > 1)
+                if (entry case Moment(
+                  :final photoCount,
+                ) when showCount && photoCount > 1)
                   PositionedDirectional(
                     top: Spacing.xs,
                     end: Spacing.xs,

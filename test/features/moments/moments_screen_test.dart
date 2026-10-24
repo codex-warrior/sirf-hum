@@ -7,6 +7,7 @@ import 'package:sirf_hum/features/moments/application/moment_photo_picker.dart';
 import 'package:sirf_hum/features/moments/application/moments_controller.dart';
 import 'package:sirf_hum/features/moments/presentation/moment_photo_view.dart';
 import 'package:sirf_hum/features/moments/presentation/moment_tile.dart';
+import 'package:sirf_hum/features/moments/presentation/moments_screen.dart';
 import 'package:sirf_hum/security/moments/moment.dart';
 import 'package:sirf_hum/security/moments/moment_payload.dart';
 import 'package:sirf_hum/security/moments/moments_service.dart';
@@ -71,7 +72,7 @@ void main() {
         text('Saving memories opens in an upcoming version of Sirf Hum.'),
         findsOneWidget,
       );
-      expect(text('Add a memory'), findsNothing);
+      expect(find.text('Create a new memory'), findsNothing);
       expect(find.byType(FilledButton), findsNothing);
     });
 
@@ -87,7 +88,7 @@ void main() {
         findsOneWidget,
       );
       expect(text('secret'), findsNothing);
-      expect(text('Add a memory'), findsNothing);
+      expect(find.text('Create a new memory'), findsNothing);
       expect(backend.opened, isEmpty);
     });
 
@@ -96,7 +97,7 @@ void main() {
     ) async {
       await pumpMoments(tester);
       expect(text('Your first memory is waiting.'), findsOneWidget);
-      expect(find.widgetWithText(FilledButton, 'Add a memory'), findsOneWidget);
+      expect(find.text('Create a new memory'), findsOneWidget);
     });
 
     testWidgets('local first: this phone’s memories show while the check '
@@ -161,9 +162,10 @@ void main() {
       );
       expect(text('October 2026'), findsOneWidget);
       expect(text('March 2024'), findsOneWidget);
+      // Highlights run newest first, left to right.
       expect(
-        tester.getTopLeft(text('October 2026')).dy,
-        lessThan(tester.getTopLeft(text('March 2024')).dy),
+        tester.getTopLeft(text('October 2026')).dx,
+        lessThan(tester.getTopLeft(text('March 2024')).dx),
       );
       expect(
         find.bySemanticsLabel(
@@ -224,7 +226,7 @@ void main() {
           ),
         ]),
       );
-      await tester.tap(find.byType(MomentTile).first);
+      await tapVisible(tester, find.byType(MomentTile).first);
       await tester.pumpAndSettle();
       expect(text('This memory couldn’t be opened.'), findsOneWidget);
       expectNoHandles(tester);
@@ -243,7 +245,7 @@ void main() {
       );
       final backend = FakeMomentsBackend([m]);
       await pumpMoments(tester, backend: backend);
-      await tester.tap(find.byType(MomentTile).first);
+      await tapVisible(tester, find.byType(MomentTile).first);
       await tester.pumpAndSettle();
       expect(text('Our first evening by the sea'), findsOneWidget);
       expect(text('Sunday, October 18, 2026'), findsOneWidget);
@@ -270,7 +272,7 @@ void main() {
         MomentFailure.unavailable,
       );
       await pumpMoments(tester, backend: backend);
-      await tester.tap(find.byType(MomentTile).first);
+      await tapVisible(tester, find.byType(MomentTile).first);
       await tester.pumpAndSettle();
       expect(text('This photo couldn’t be opened.'), findsOneWidget);
       expect(text('This photo isn’t on this phone yet.'), findsOneWidget);
@@ -295,7 +297,7 @@ void main() {
           ),
         ]),
       );
-      await tester.tap(find.byType(MomentTile).first);
+      await tapVisible(tester, find.byType(MomentTile).first);
       await tester.pumpAndSettle();
       expect(text('Some photos are still on their way.'), findsOneWidget);
       expect(find.byType(MomentPhotoView), findsOneWidget);
@@ -310,7 +312,7 @@ void main() {
         session: session,
         backend: FakeMomentsBackend([fakeMoment(1, caption: 'ours')]),
       );
-      await tester.tap(find.byType(MomentTile).first);
+      await tapVisible(tester, find.byType(MomentTile).first);
       await tester.pumpAndSettle();
       session.emit(null);
       await tester.pumpAndSettle();
@@ -327,7 +329,7 @@ void main() {
       final backend = FakeMomentsBackend()
         ..onCreated = (d) => fakeMoment(5, caption: d.caption?.trim());
       await pumpMoments(tester, backend: backend, picker: picker);
-      await tester.tap(find.widgetWithText(FilledButton, 'Add a memory'));
+      await tapVisible(tester, find.text('Create a new memory'));
       await tester.pumpAndSettle();
       expect(text('Keep a memory'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Save memory'), findsOneWidget);
@@ -362,7 +364,7 @@ void main() {
       final backend = FakeMomentsBackend()
         ..outcome = MomentSaveOutcome.savedOnPhone;
       await pumpMoments(tester, backend: backend, picker: picker);
-      await tester.tap(find.widgetWithText(FilledButton, 'Add a memory'));
+      await tapVisible(tester, find.text('Create a new memory'));
       await tester.pumpAndSettle();
       picker.next = [picker.photo()];
       await tester.tap(find.widgetWithText(FilledButton, 'Choose photos'));
@@ -384,7 +386,7 @@ void main() {
       final backend = FakeMomentsBackend()
         ..createError = const MomentException(MomentFailure.photoTooLarge);
       await pumpMoments(tester, backend: backend, picker: picker);
-      await tester.tap(find.widgetWithText(FilledButton, 'Add a memory'));
+      await tapVisible(tester, find.text('Create a new memory'));
       await tester.pumpAndSettle();
       picker.next = [picker.photo()];
       await tester.tap(find.widgetWithText(FilledButton, 'Choose photos'));
@@ -407,7 +409,7 @@ void main() {
       final picker = FakePhotoPicker();
       final backend = FakeMomentsBackend()..createGate = Completer();
       await pumpMoments(tester, backend: backend, picker: picker);
-      await tester.tap(find.widgetWithText(FilledButton, 'Add a memory'));
+      await tapVisible(tester, find.text('Create a new memory'));
       await tester.pumpAndSettle();
       picker.next = [picker.photo()];
       await tester.tap(find.widgetWithText(FilledButton, 'Choose photos'));
@@ -436,7 +438,7 @@ void main() {
       location: ProductArea.home.path,
       backend: FakeMomentsBackend([fakeMoment(1), fakeMoment(2)]),
     );
-    expect(text('You’ve kept 2 memories together.'), findsOneWidget);
+    expect(text('2 memories'), findsOneWidget);
     expect(text('Your first memory is waiting.'), findsNothing);
   });
 
@@ -487,14 +489,14 @@ void main() {
           picker: picker,
           backend: FakeMomentsBackend([fakeMoment(1, caption: 'Goa')]),
         );
-        await tester.tap(find.byType(MomentTile).first);
+        await tapVisible(tester, find.byType(MomentTile).first);
         await tester.pumpAndSettle();
         await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
         await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
         await expectLater(tester, meetsGuideline(textContrastGuideline));
         await tester.pageBack();
         await tester.pumpAndSettle();
-        await tester.tap(find.widgetWithText(FilledButton, 'Add a memory'));
+        await tapVisible(tester, find.text('Create a new memory'));
         await tester.pumpAndSettle();
         picker.next = [picker.photo()];
         await tester.tap(find.widgetWithText(FilledButton, 'Choose photos'));
@@ -529,14 +531,33 @@ void main() {
           fakeMoment(1, caption: 'A long caption ' * 10, photos: 2),
         ]),
       );
+      await tester.scrollUntilVisible(
+        find.byType(MomentTile),
+        200,
+        // The page, not the chips or highlights strips inside it.
+        scrollable: find
+            .descendant(
+              of: find.byType(MomentsScreen),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      expect(tester.takeException(), isNull, reason: 'timeline at 200%');
       await tapVisible(tester, find.byType(MomentTile).first);
       expect(tester.takeException(), isNull);
       await tester.pageBack();
       await tester.pumpAndSettle();
-      await tapVisible(
-        tester,
-        find.widgetWithText(FilledButton, 'Add a memory'),
+      await tester.scrollUntilVisible(
+        find.text('Create a new memory'),
+        -200,
+        scrollable: find
+            .descendant(
+              of: find.byType(MomentsScreen),
+              matching: find.byType(Scrollable),
+            )
+            .first,
       );
+      await tapVisible(tester, find.text('Create a new memory'));
       picker.next = [
         for (var i = 0; i < MomentPayload.maxPhotos; i++) picker.photo(),
       ];
@@ -547,7 +568,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('wide windows: four columns, readable width', (tester) async {
+    testWidgets('wide windows: a readable width', (tester) async {
       await pumpMoments(
         tester,
         size: const Size(1280, 900),
@@ -557,7 +578,7 @@ void main() {
         ]),
       );
       final first = tester.getSize(find.byType(MomentTile).first);
-      expect(first.width, lessThan(720 / 3));
+      expect(first.width, lessThan(720));
       expect(tester.takeException(), isNull);
     });
   });

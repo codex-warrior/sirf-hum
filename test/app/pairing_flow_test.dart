@@ -114,7 +114,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(phone.calls.last, 'confirm:482913');
     expect(find.byType(NavigationBar), findsOneWidget);
-    expect(find.text('Asha & Ravi'), findsOneWidget);
+    expect(find.text('Asha & Ravi.'), findsOneWidget);
     expect(phone.closed, isTrue, reason: 'keys released once paired');
   });
 

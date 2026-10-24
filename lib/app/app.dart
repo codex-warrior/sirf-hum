@@ -55,6 +55,9 @@ class _SirfHumAppState extends ConsumerState<SirfHumApp> {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
+      // Visual identity v1 is night-first (D-156): the dusk scenes and warm
+      // blacks are the brand. The light theme stays complete and tested.
+      themeMode: ThemeMode.dark,
       routerConfig: _router,
     );
   }

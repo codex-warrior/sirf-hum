@@ -141,6 +141,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-154 | RUSTSEC-2026-0387 (crypto-bigint 0.5.5 timing) ignored while the core uses only the X25519/Ed25519 suite (re-verified each run) | Accepted by the owner; re-assess with the next OpenMLS upgrade | 2026-10-24 |
 | D-153 | Pairing UI: phone set-up after sign-in, invite shared as a message, join by pasting it, inviter types the invitee's code; launcher icon | Accepted (owner request) | 2026-10-24 |
 | D-155 | Production wires the couple's private services after pairing: Moments, Future + Us (notebook) and partner verification run over the existing MLS conversation; the group forms once both partners verified each other | Accepted (owner request); unreviewed, NOT production E2EE | 2026-10-24 |
+| D-156 | Visual identity v1, "night intimacy": owner-chosen reference screens for Home, Together and Moments; dark-first, peach accent, painted dusk scene, Plus Jakarta Sans (bundled); unbuilt activities marked "Soon", numbers always real | Accepted (owner choice) | 2026-10-24 |
 
 ---
 
@@ -1511,3 +1512,17 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Not done:** chat UI, Together backend, calls (LiveKit), push for new content, approving a second phone.
 - **Tests:** `test/session/private_services_test.dart` (gating, account, loading/failure/retry, record parsing), `messaging_service_test.dart` (connect publishes once, idempotent; native, CI).
 - **Status:** Accepted (owner request) · 2026-10-24. Unreviewed; Sirf Hum is NOT production E2EE.
+
+### D-156 — Visual identity v1: "night intimacy" (owner choice; resolves DESIGN-CONSTITUTION's open identity, amends D-109)
+- **Context:** the owner found the interface "very bad": default Material type, grey blocks, mostly text. From three mockup directions they chose reference screens for Home, Together and Moments (dark, a dusk-sky hero card, soft tiles, peach accent).
+- **Decision:**
+  - Dark-first: the app always uses the dark theme; warm near-blacks; one peach accent (`#EBA48E`). The light theme stays complete and tested but is not shown.
+  - Typeface: Plus Jakarta Sans, bundled under `assets/fonts` (OFL, on the licences page). Never fetched at runtime.
+  - `DuskScene`: a painted sky with a crescent moon and foliage, the brand's one illustration, behind `HeroCard`s and as the missing-photo placeholder. No image assets.
+  - New components `HeroCard`, `HeroIcon`, `ActionTile`; `CoupleMark` in accent rings; `AppPage.trailing`; a navigation bar without an indicator pill (accent plus a filled icon and bold label mark the selection).
+  - Home: brand row and couple mark, greeting, "Together for N days", Watch/Listen/Call/Play, Your Moments (two real covers, real count), Our Space, Coming up with "+ Plan".
+  - Together: a hero choice (time together when the backend supports it, otherwise Watch Together marked "Soon"), and six tiles: Listen, Call and Play marked "Soon"; Share a Note, Make a Plan and Our Lists open Us and Future.
+  - Moments: kind chips (photos only today; Videos, Notes and Voice say "coming soon"), a "Create a new memory" hero, highlight cards per month, and a dated timeline rail with photo mosaics and note cards.
+- **Honesty rules kept (amends the references):** numbers are never invented. Days come from "together since" in Us (if it is unset, "Add your day"); memory counts and covers come from this phone's timeline. Unbuilt activities carry a visible "Soon" mark and say so when tapped; they never pretend to start. The references' sample categories ("Trips", "Dates") are not shown, because no such data exists: highlights are months.
+- **Tests:** home, Together, Moments, shell, entry and pairing tests updated; new component tests (semantics, tap targets, contrast in both themes); 200% text on the redesigned screens.
+- **Status:** Accepted (owner choice) · 2026-10-24.

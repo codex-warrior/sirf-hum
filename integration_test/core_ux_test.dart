@@ -16,7 +16,7 @@ void main() {
     tester,
   ) async {
     await pumpSirfHum(tester);
-    expect(find.text('Asha & Ravi'), findsOneWidget);
+    expect(find.text('Asha & Ravi.'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     for (final area in ProductArea.values) {
@@ -62,6 +62,6 @@ void main() {
     fail = false;
     await tester.tap(find.text('Try again'));
     await tester.pumpAndSettle();
-    expect(find.text('Asha & Ravi'), findsOneWidget);
+    expect(find.text('Asha & Ravi.'), findsOneWidget);
   });
 }
