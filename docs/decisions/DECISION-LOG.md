@@ -140,6 +140,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-152 | App Check enforcement paused on production callables only until Play Console links Play Integrity | Accepted by the owner; **temporary** | 2026-10-24 |
 | D-154 | RUSTSEC-2026-0387 (crypto-bigint 0.5.5 timing) ignored while the core uses only the X25519/Ed25519 suite (re-verified each run) | Accepted by the owner; re-assess with the next OpenMLS upgrade | 2026-10-24 |
 | D-153 | Pairing UI: phone set-up after sign-in, invite shared as a message, join by pasting it, inviter types the invitee's code; launcher icon | Accepted (owner request) | 2026-10-24 |
+| D-155 | Production wires the couple's private services after pairing: Moments, Future + Us (notebook) and partner verification run over the existing MLS conversation; the group forms once both partners verified each other | Accepted (owner request); unreviewed, NOT production E2EE | 2026-10-24 |
 
 ---
 
@@ -1498,3 +1499,15 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Decision:** the owner chose this documented exception over upgrading OpenMLS now (2026-10-24).
 - **Re-assess:** at the next OpenMLS upgrade, or if a second ciphersuite is ever added. In the independent review scope (P0).
 - **Status:** Accepted by the owner · 2026-10-24.
+
+### D-155 — The couple's private services are wired in production (owner request; resolves D-116/D-121 "nothing wired", builds on D-085, D-086, D-128)
+- **Context:** the friends-beta build (D-151) paired two phones, but `main.dart` wired no messaging service: Moments, Future, Us and partner verification could only show "opens in an upcoming version". The owner reported that nothing in the app works. The server side (rules, Storage, `requestCommitChallenge`/`submitMlsCommit`) was already deployed to production.
+- **Decision:**
+  - `lib/session/private_services.dart`: while the session is paired on a phone, `privateServicesProvider` opens the account's device identity (`LocalDeviceIdentityService`, platform key store), reads the couple conversation from `accountPartners/{uid}` (`FirestoreCoupleConversationLocator`; a malformed record is "no couple") and builds one `MessagingService` with `MomentsService`, `NotebookService` and `PartnerVerificationService` over it. Any session change closes the core. Features see only a settled, current value (`currentPrivateServicesProvider`): the closed services of an earlier account are never handed out while the provider reloads.
+  - `MessagingService.connect()`: refresh trust, publish a KeyPackage only while the device has no group and none of its own waits on the server, then sync. Run at open and again after this phone verifies the partner, in the conversation's exclusive lane. The group forms only once each side trusts the other's verified root (D-128 unchanged): no trust on first use.
+  - Opening shows the features' loading state; a failed open shows their failure with a retry that opens again (no automatic retry).
+  - `PairingController` releases its core the moment the session becomes paired, so two cores never hold one sealed state.
+- **Unchanged:** no new server schema, rules, Functions, crypto or ABI. Web never opens private services (D-046).
+- **Not done:** chat UI, Together backend, calls (LiveKit), push for new content, approving a second phone.
+- **Tests:** `test/session/private_services_test.dart` (gating, account, loading/failure/retry, record parsing), `messaging_service_test.dart` (connect publishes once, idempotent; native, CI).
+- **Status:** Accepted (owner request) · 2026-10-24. Unreviewed; Sirf Hum is NOT production E2EE.

@@ -7,16 +7,17 @@ import 'package:sirf_hum/features/notebook/domain/notebook_state.dart';
 import 'package:sirf_hum/security/notebook/notebook.dart';
 import 'package:sirf_hum/security/notebook/notebook_payload.dart';
 import 'package:sirf_hum/security/notebook/notebook_service.dart';
+import 'package:sirf_hum/session/private_services.dart';
 import 'package:sirf_hum/session/session_controller.dart';
 import 'package:sirf_hum/session/session_state.dart';
 
-/// The notebook port for the signed-in account's couple. `null` — the
-/// production value today — means no messaging service is wired yet (no
-/// sign-in method, D-107; device activation needs Blaze, D-025), and Future
-/// and Us say so (D-121). When it is wired, it is a `NotebookService` built
-/// from the server's pairing answer for exactly this account, over the same
-/// `MessagingService` as Moments.
-final notebookBackendProvider = Provider<NotebookBackend?>((ref) => null);
+/// The notebook port for the signed-in account's couple: the
+/// `NotebookService` of this phone's private services, over the same
+/// `MessagingService` as Moments. `null` while they open, when they failed,
+/// or where nothing private is wired (web, tests).
+final notebookBackendProvider = Provider<NotebookBackend?>(
+  (ref) => ref.watch(currentPrivateServicesProvider)?.notebook,
+);
 
 final notebookProvider = NotifierProvider<NotebookController, NotebookState>(
   NotebookController.new,
@@ -52,7 +53,11 @@ class NotebookController extends Notifier<NotebookState> {
     }
     final backend = ref.watch(notebookBackendProvider);
     if (backend == null) {
-      return _initial(NotebookUnavailableReason.notYetAvailable);
+      return switch (ref.watch(privateServicesStatusProvider)) {
+        PrivateServicesStatus.starting => const NotebookLoading(),
+        PrivateServicesStatus.failed => const NotebookFailed(null),
+        _ => _initial(NotebookUnavailableReason.notYetAvailable),
+      };
     }
     unawaited(Future<void>.microtask(() => _start(backend, generation)));
     _log(const NotebookLoading());
@@ -68,7 +73,10 @@ class NotebookController extends Notifier<NotebookState> {
 
   /// Starts over after a failure.
   void retry() {
-    if (state is NotebookFailed) ref.invalidateSelf();
+    if (state is! NotebookFailed) return;
+    ref.read(notebookBackendProvider) == null
+        ? retryPrivateServices(ref)
+        : ref.invalidateSelf();
   }
 
   Future<NotebookSaveOutcome> create(NotebookFields fields) =>

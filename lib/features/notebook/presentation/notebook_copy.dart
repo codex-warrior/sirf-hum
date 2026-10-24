@@ -79,8 +79,8 @@ String notebookFailureMessage(NotebookFailure? failure) => switch (failure) {
   NotebookFailure.notPaired =>
     'Saving needs your couple to be connected. Nothing was saved.',
   NotebookFailure.notReady =>
-    'Your phones are still connecting. Try again in a moment. Nothing was '
-        'saved.',
+    'Your phones aren’t connected yet: you both compare your safety '
+        'number in Us › Safety first. Nothing was saved.',
   NotebookFailure.outboxFull =>
     'A lot is still waiting to upload. Try again once you’re online. '
         'Nothing was saved.',

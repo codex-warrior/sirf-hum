@@ -269,6 +269,23 @@ void main() {
       root.deleteSync(recursive: true);
     });
 
+    test('connect publishes a KeyPackage only while outside the group, and '
+        'is safe to repeat', () async {
+      final a1Package = server.keyPackageDocs[hex('a1')];
+      expect((await services['a1']!.connect()).epoch, 1);
+      expect(identical(server.keyPackageDocs[hex('a1')], a1Package), isTrue);
+
+      await enroll('a3', accountA, approver: 'a1');
+      anchorRoots('a3');
+      final a3 = serviceFor('a3', accountA);
+      final first = await a3.connect();
+      expect(first.joined, isFalse);
+      final a3Package = server.keyPackageDocs[hex('a3')];
+      expect(a3Package, isNotNull);
+      await a3.connect();
+      expect(identical(server.keyPackageDocs[hex('a3')], a3Package), isTrue);
+    });
+
     test('A1, A2, B1, B2: every device reaches every other device', () async {
       for (final sender in ['a1', 'a2', 'b1', 'b2']) {
         expect(
