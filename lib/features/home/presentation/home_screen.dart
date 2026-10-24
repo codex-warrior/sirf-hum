@@ -257,7 +257,7 @@ class _MomentsRow extends StatelessWidget {
     final subtitle = switch (total) {
       0 => 'Your first memory is waiting.',
       1 => '1 memory',
-      _ => '$total memories',
+      _ => '${MaterialLocalizations.of(context).formatDecimal(total)} memories',
     };
     return Semantics(
       button: true,
