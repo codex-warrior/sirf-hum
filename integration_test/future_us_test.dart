@@ -67,8 +67,12 @@ void main() {
       initialLocation: ProductArea.future.path,
       extra: [notebookBackendProvider.overrideWithValue(backend)],
     );
-    // "+ Add" beside Our Dreams, near the top on any phone.
-    await tester.tap(find.widgetWithText(TextButton, '+ Add').first);
+    // "+ Add" beside Our Dreams: on a small screen it starts under the
+    // navigation bar, so bring it into view first.
+    final add = find.widgetWithText(TextButton, '+ Add').first;
+    await tester.ensureVisible(add);
+    await tester.pumpAndSettle();
+    await tester.tap(add);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, 'On the device');
     await tester.pump();
@@ -79,6 +83,11 @@ void main() {
 
     await tester.tap(find.byIcon(ProductArea.us.icon));
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('About Us'),
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
     expect(find.text('About Us'), findsOneWidget);
     expect(tester.takeException(), isNull);
     expectNoSecretsOnScreen(tester);
