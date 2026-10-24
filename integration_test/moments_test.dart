@@ -55,6 +55,12 @@ class _Registries implements DeviceRegistry {
 /// Home's Moments entry sits below the fold on small screens.
 Future<void> openMoments(WidgetTester tester) async {
   final go = find.text('Your Moments');
+  // Home is a lazy list: scroll until the row is built, then tap it.
+  await tester.scrollUntilVisible(
+    go,
+    200,
+    scrollable: find.byType(Scrollable).first,
+  );
   await tester.ensureVisible(go);
   await tester.pumpAndSettle();
   await tester.tap(go);
