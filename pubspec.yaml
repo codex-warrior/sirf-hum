@@ -12,21 +12,21 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  firebase_core: ^4.15.0
-  flutter_riverpod: ^3.3.2
+  firebase_core: ^5.0.0
+  flutter_riverpod: ^3.4.3
   go_router: ^17.5.0
-  firebase_app_check: ^0.4.8
-  firebase_crashlytics: ^5.4.0
+  firebase_app_check: ^0.5.0
+  firebase_crashlytics: ^6.0.0
   # Device registry (Prompt 07, D-069): the pending record in Firestore and
   # the challenge/activation callables. Imported only by lib/infrastructure.
-  cloud_firestore: ^6.10.0
-  cloud_functions: ^6.5.0
+  cloud_firestore: ^7.0.0
+  cloud_functions: ^7.0.0
   # Encrypted media objects (Prompt 11, D-095): ciphertext uploads and
   # downloads only. Imported only by lib/infrastructure.
-  firebase_storage: ^13.6.0
+  firebase_storage: ^14.0.0
   # Content-free push wake-ups (Prompt 11, D-097, D-098): the device's FCM
   # token and incoming signals. Imported only by lib/infrastructure.
-  firebase_messaging: ^16.7.0
+  firebase_messaging: ^17.0.0
   # Crypto core (Rust + OpenMLS 0.9.1, D-063). Builds via its native-assets
   # hook, so Android/iOS builds need the Rust toolchain (rustup).
   sirf_hum_crypto:
@@ -34,7 +34,7 @@ dependencies:
   # Account session (Prompt 13, D-107) and sign-in (email link D-148,
   # Google D-150): observes, restores and signs in the account, and signs
   # out. Imported only by lib/infrastructure.
-  firebase_auth: ^6.7.0
+  firebase_auth: ^7.0.0
   # Google sign-in (D-150): Android Credential Manager returns a Google ID
   # token that is exchanged once with Firebase Auth (signInWithCredential).
   # Identity only, never device trust. Pinned like the other security-path
