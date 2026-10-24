@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:sirf_hum/design_system/theme/app_theme.dart';
 import 'package:sirf_hum/design_system/tokens/layout_tokens.dart';
 
-/// Two overlapping initials: the couple's mark until photos exist. Purely
-/// visual; the names it stands for are announced by the text beside it.
+/// Two overlapping initials in accent rings: the couple's mark until
+/// profile photos exist (D-156). Purely visual; the names it stands for are
+/// announced by the text beside it.
 class CoupleMark extends StatelessWidget {
   const CoupleMark({required this.yours, required this.partner, super.key});
 
@@ -35,15 +36,15 @@ class CoupleMark extends StatelessWidget {
                 letter: yours,
                 fill: colors.surfaceMuted,
                 ink: colors.textPrimary,
-                ring: colors.background,
+                ring: colors.accent,
               ),
               Positioned(
                 left: _size - Spacing.md,
                 child: _Circle(
                   letter: partner,
-                  fill: colors.accent,
-                  ink: colors.onAccent,
-                  ring: colors.background,
+                  fill: colors.accent.withValues(alpha: 0.32),
+                  ink: colors.textPrimary,
+                  ring: colors.accent,
                 ),
               ),
             ],
@@ -77,7 +78,7 @@ class _Circle extends StatelessWidget {
       decoration: BoxDecoration(
         color: fill,
         shape: BoxShape.circle,
-        border: Border.all(color: ring, width: Spacing.xs - 1),
+        border: Border.all(color: ring, width: Spacing.xxs),
       ),
       child: letter == null
           ? Icon(Icons.person_outline, color: ink, size: IconSizes.md)

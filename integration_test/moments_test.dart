@@ -54,7 +54,13 @@ class _Registries implements DeviceRegistry {
 /// in-memory server stand-ins. Throwaway accounts; slots removed.
 /// Home's Moments entry sits below the fold on small screens.
 Future<void> openMoments(WidgetTester tester) async {
-  final go = find.widgetWithText(TextButton, 'Go to Moments');
+  final go = find.text('Your Moments');
+  // Home is a lazy list: scroll until the row is built, then tap it.
+  await tester.scrollUntilVisible(
+    go,
+    200,
+    scrollable: find.byType(Scrollable).first,
+  );
   await tester.ensureVisible(go);
   await tester.pumpAndSettle();
   await tester.tap(go);
@@ -72,7 +78,7 @@ void main() {
     await pumpSirfHum(tester);
     await openMoments(tester);
     expect(find.text('Your first memory is waiting.'), findsOneWidget);
-    expect(find.text('Add a memory'), findsNothing);
+    expect(find.text('Create a new memory'), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
     final picker = FakePhotoPicker();
@@ -86,7 +92,7 @@ void main() {
       ],
     );
     await openMoments(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'Add a memory'));
+    await tester.tap(find.text('Create a new memory'));
     await tester.pumpAndSettle();
     picker.next = [picker.photo()];
     final choose = find.widgetWithText(FilledButton, 'Choose photos');

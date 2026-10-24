@@ -122,8 +122,12 @@ Widget _areaScreen(BuildContext context, ProductArea area) => switch (area) {
     onOpenTogether: () => context.go(ProductArea.together.path),
     onOpenMoments: () => context.go(ProductArea.moments.path),
     onOpenFuture: () => context.go(ProductArea.future.path),
+    onOpenUs: () => context.go(ProductArea.us.path),
   ),
-  ProductArea.together => const TogetherScreen(),
+  ProductArea.together => TogetherScreen(
+    onOpenFuture: () => context.go(ProductArea.future.path),
+    onOpenUs: () => context.go(ProductArea.us.path),
+  ),
   ProductArea.moments => const MomentsScreen(),
   ProductArea.future => const FutureScreen(),
   ProductArea.us => const UsScreen(),

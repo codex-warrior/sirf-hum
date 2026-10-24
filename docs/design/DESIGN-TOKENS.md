@@ -35,10 +35,10 @@ Feature widgets (read Theme / context.colors / token constants — never literal
 | Category | Tokens | Notes |
 | --- | --- | --- |
 | Color (semantic) | see above, light + dark | AA contrast enforced by tests |
-| Typography | `display 34`, `title 24`, `heading 18`, `body 16`, `bodyStrong 16`, `label 14`, `caption 12` | Font family = platform default (provisional). 12 is the floor. |
-| Font weights | `regular 400`, `medium 500`, `semibold 600` | |
+| Typography | `display 34`, `title 24`, `heading 18`, `body 16`, `bodyStrong 16`, `label 14`, `caption 12` | Plus Jakarta Sans, bundled (`assets/fonts`, OFL; D-156). 12 is the floor. |
+| Font weights | `regular 400`, `medium 500`, `semibold 600`, `bold 700` | `display` is bold |
 | Spacing | `xxs 2, xs 4, sm 8, md 12, lg 16, xl 24, xxl 32, xxxl 48`; gutters 16/24 | 4-pt grid |
-| Radii | `none 0, sm 6, md 12, lg 20, pill 999` | Rounding is not a default; use deliberately |
+| Radii | `none 0, sm 6, md 12, lg 20, xl 28, pill 999` | `xl` is for hero cards only |
 | Elevation | `flat 0, raised 1, overlay 3, modal 6` | Used sparingly |
 | Icon sizes | `sm 16, md 24, lg 32` | |
 | Touch targets | `minimum 48`, `comfortable 56` | 48 satisfies Material 48dp and Apple 44pt |
@@ -49,11 +49,21 @@ Feature widgets (read Theme / context.colors / token constants — never literal
 Shadows: none defined beyond Material elevation. Add shadow tokens only
 when the identity phase specifies them.
 
-## Provisional palette
+## Visual identity v1: "night intimacy" (D-156)
 
-Warm neutrals ("paper" `#FBF7F2` to "ink" `#120F0D`) with one clay accent.
-Chosen only to be warm, calm and accessible while the real identity is
-designed. **Not a brand decision.**
+Chosen by the owner from reference screens (2026-10-24).
+
+- **Night first.** The app runs in the dark theme (`themeMode: dark`). Warm
+  near-blacks: background `#0E0B0A`, tiles `#1A1514`, borders `#241D1B`. The
+  light theme stays complete and tested, but is not shown.
+- **One peach accent** `#EBA48E`: icons in tiles, the selected tab, the one
+  filled button.
+- **The dusk scene** (`DuskScene`): a painted evening sky (violet to peach),
+  a crescent moon and a leafy silhouette. The brand's only illustration,
+  used behind hero cards and as the placeholder for a missing photo. Painted,
+  so there are no image assets and no network.
+- **Typeface:** Plus Jakarta Sans, bundled. Devanagari is not covered; Hindi
+  text falls back to the system font (open question below).
 
 ## Components (Prompt 13, D-109)
 
@@ -68,15 +78,19 @@ barrel. Add one only when a second screen needs it.
 | `ErrorState` | Human copy + one action (or none when no tap helps); takes copy, never exceptions |
 | `Skeleton` / `SkeletonBlock` | Layout-shaped loading; one screen-reader label; still under reduced motion |
 | `Notice` | Quiet inline fact (web private-content boundary, "coming in an upcoming version") |
-| `CoupleMark` | Two overlapping initials until photos exist; decorative to screen readers |
+| `CoupleMark` | Two overlapping initials in accent rings until photos exist; decorative to screen readers |
+| `HeroCard` (+ `HeroIcon`) | The one large card on a screen, over the dusk scene; one button with one label |
+| `ActionTile` | Soft square choice (icon + label); an optional badge ("Soon") for what is not built, which still answers a tap to say so |
+| `DuskScene` | The painted sky, decorative |
 
 Buttons come from `AppTheme`:
 
 - `FilledButton` (accent, 56 dp high) is the one primary action per screen.
 - `OutlinedButton` and `TextButton` (48 dp minimum) are for everything else.
 
-The navigation bar and rail use `textPrimary` for the selected destination,
-`textSecondary` otherwise, and a `surfaceMuted` indicator.
+The navigation bar shows the selected destination in the accent with a
+bolder label and filled icon (no indicator pill); the others use
+`textPrimary`.
 
 ## Guarantees enforced by tests
 
@@ -101,5 +115,6 @@ The navigation bar and rail use `textPrimary` for the selected destination,
 
 ## Open questions
 
-Brand typeface (and Devanagari/other Indic script support), final palette,
-iconography set, haptics tokens, illustration/photography treatment.
+Devanagari/other Indic script support (pair Plus Jakarta Sans with a Hindi
+face), iconography set (Material outlines today), haptics tokens, profile
+photos in `CoupleMark`, a light-theme identity.

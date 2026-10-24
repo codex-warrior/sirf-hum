@@ -39,6 +39,12 @@ import 'package:sirf_hum/session/sign_in_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // The bundled brand typeface's licence, on the app's licences page (OFL).
+  LicenseRegistry.addLicense(() async* {
+    yield LicenseEntryWithLineBreaks([
+      'Plus Jakarta Sans',
+    ], await rootBundle.loadString('assets/fonts/OFL.txt'));
+  });
 
   final config = AppConfig.fromEnvironment();
   // A build whose flavor, SH_ENV and Firebase project disagree must not run.

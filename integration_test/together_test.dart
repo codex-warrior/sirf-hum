@@ -16,9 +16,9 @@ void main() {
     tester,
   ) async {
     await pumpSirfHum(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'Go to Together'));
+    await tester.tap(find.text('Watch'));
     await tester.pumpAndSettle();
-    expect(find.text('What do you want to do?'), findsOneWidget);
+    expect(find.text('Start a Watch Together'), findsOneWidget);
     expect(find.byType(FilledButton), findsNothing);
   });
 
@@ -32,9 +32,9 @@ void main() {
       extra: [togetherBackendProvider.overrideWithValue(together)],
     );
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Go to Together'));
+    await tester.tap(find.text('Watch'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Start'));
+    await tester.tap(find.text('Spend time together'));
     await tester.pumpAndSettle();
     expect(find.text('Waiting for Ravi…'), findsOneWidget);
 
@@ -48,7 +48,7 @@ void main() {
 
     await tester.tap(find.widgetWithText(FilledButton, 'Back to Together'));
     await tester.pumpAndSettle();
-    expect(find.text('What do you want to do?'), findsOneWidget);
+    expect(find.text('Spend time together'), findsOneWidget);
     expect(tester.takeException(), isNull);
     expectNoSecretsOnScreen(tester);
   });

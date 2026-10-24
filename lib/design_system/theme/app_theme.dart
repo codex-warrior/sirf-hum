@@ -44,6 +44,7 @@ abstract final class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
+      fontFamily: brandFontFamily,
       colorScheme: scheme,
       scaffoldBackgroundColor: colors.background,
       textTheme: textTheme,
@@ -96,25 +97,30 @@ abstract final class AppTheme {
           borderRadius: BorderRadius.all(Radius.circular(Radii.lg)),
         ),
       ),
+      // The selected area glows in the accent (icon and label); there is
+      // no pill behind it. Shape and weight, not colour alone, also mark it:
+      // the selected icon is filled and its label is bolder.
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: colors.background,
-        indicatorColor: colors.surfaceMuted,
+        indicatorColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
         elevation: Elevation.flat,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         iconTheme: WidgetStateProperty.resolveWith(
           (states) => IconThemeData(
-            size: IconSizes.md,
+            size: IconSizes.md + Spacing.xs,
             color: states.contains(WidgetState.selected)
-                ? colors.textPrimary
-                : colors.textSecondary,
+                ? colors.accent
+                : colors.textPrimary,
           ),
         ),
         labelTextStyle: WidgetStateProperty.resolveWith(
-          (states) => TypeScale.label.copyWith(
-            color: states.contains(WidgetState.selected)
-                ? colors.textPrimary
-                : colors.textSecondary,
-          ),
+          (states) => states.contains(WidgetState.selected)
+              ? TypeScale.label.copyWith(
+                  color: colors.accent,
+                  fontWeight: FontWeights.bold,
+                )
+              : TypeScale.label.copyWith(color: colors.textPrimary),
         ),
       ),
       navigationRailTheme: NavigationRailThemeData(

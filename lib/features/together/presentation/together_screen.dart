@@ -10,14 +10,22 @@ import 'package:sirf_hum/features/together/domain/together_backend.dart';
 import 'package:sirf_hum/features/together/domain/together_state.dart';
 import 'package:sirf_hum/session/session_controller.dart';
 
-/// The Together hub (Prompt 14, D-111): who you're with, what you can do,
-/// and — while a session runs — exactly where it stands.
+/// The Together hub (Prompt 14, D-111; visual identity v1, D-156): things to
+/// do together and, while a session runs, exactly where it stands.
 ///
-/// Only activities the backend supports can start. Everything else is shown
-/// as coming, never as a button. Copy and actions come from [TogetherState]
-/// alone; no backend error text reaches the screen.
+/// Only activities the backend supports can start. Watch, Listen, Call and
+/// Play carry a "Soon" mark and say so when tapped; they never pretend to
+/// start. Copy and actions come from [TogetherState] alone; no backend error
+/// text reaches the screen.
 class TogetherScreen extends ConsumerWidget {
-  const TogetherScreen({super.key});
+  const TogetherScreen({
+    required this.onOpenFuture,
+    required this.onOpenUs,
+    super.key,
+  });
+
+  final VoidCallback onOpenFuture;
+  final VoidCallback onOpenUs;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -26,19 +34,14 @@ class TogetherScreen extends ConsumerWidget {
     final partner = names?.partner;
     final partnerName = partner ?? 'Your person';
 
-    // Presence belongs to the hub; during a session the panel says it all.
-    final presence = switch (state) {
-      TogetherIdle(:final presence) => presence,
-      TogetherUnavailable() => PartnerPresence.unavailable,
-      _ => null,
-    };
-
     return AppPage(
       title: 'Together',
-      subtitle: 'Spend time together, wherever you are.',
+      subtitle: 'Things to do, together.',
+      trailing: CoupleMark(
+        yours: CoupleMark.initialOf(names?.yours),
+        partner: CoupleMark.initialOf(partner),
+      ),
       children: [
-        _PartnerRow(yours: names?.yours, partner: partner, presence: presence),
-        const SizedBox(height: Spacing.xxl),
         AnimatedSwitcher(
           duration: Motion.resolve(context, Motion.standard),
           switchInCurve: Motion.enter,
@@ -67,9 +70,13 @@ class TogetherScreen extends ConsumerWidget {
   ) {
     final controller = ref.read(togetherProvider.notifier);
     return switch (state) {
-      TogetherUnavailable(:final reason) => _Activities(
+      TogetherUnavailable(:final reason) => _Hub(
         supported: const {},
         onStart: null,
+        presence: null,
+        partnerName: partnerName,
+        onOpenFuture: onOpenFuture,
+        onOpenUs: onOpenUs,
         notice: switch (reason) {
           TogetherUnavailableReason.needsPhone => const Notice(
             icon: Icons.phone_android_outlined,
@@ -78,25 +85,29 @@ class TogetherScreen extends ConsumerWidget {
                 'where your keys live.',
           ),
           TogetherUnavailableReason.notYetAvailable ||
-          TogetherUnavailableReason.notPaired => const Notice(
-            icon: Icons.schedule_outlined,
-            message: 'Together opens in an upcoming version of Sirf Hum.',
-          ),
+          TogetherUnavailableReason.notPaired => null,
         },
       ),
       TogetherLoading() => const Skeleton(
         label: 'Loading Together',
         child: Column(
           children: [
-            SkeletonBlock(height: TouchTargets.comfortable),
+            SkeletonBlock(
+              height: Spacing.xxxl * 3 + Spacing.xl,
+              radius: Radii.xl,
+            ),
             SizedBox(height: Spacing.md),
-            SkeletonBlock(height: TouchTargets.comfortable),
+            SkeletonBlock(height: Spacing.xxxl * 2 + Spacing.lg),
           ],
         ),
       ),
-      TogetherIdle(:final supported) => _Activities(
+      TogetherIdle(:final supported, :final presence) => _Hub(
         supported: supported,
         onStart: controller.start,
+        presence: presence,
+        partnerName: partnerName,
+        onOpenFuture: onOpenFuture,
+        onOpenUs: onOpenUs,
       ),
       TogetherStarting(:final activity) => _SessionPanel(
         title: 'Starting ${_lower(activity)}…',
@@ -199,31 +210,151 @@ class TogetherScreen extends ConsumerWidget {
       activity.label.toLowerCase();
 }
 
-class _PartnerRow extends StatelessWidget {
-  const _PartnerRow({
-    required this.yours,
-    required this.partner,
+/// Says plainly that something is not built yet. Never starts anything.
+void _showSoon(BuildContext context, String what) {
+  final textTheme = Theme.of(context).textTheme;
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: context.colors.surface,
+    showDragHandle: true,
+    builder: (context) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          Spacing.xl,
+          0,
+          Spacing.xl,
+          Spacing.xl,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('$what is coming soon.', style: textTheme.titleLarge),
+            const SizedBox(height: Spacing.sm),
+            Text(
+              'We’re building it now. It will appear right here, just for '
+              'the two of you.',
+              style: textTheme.bodyLarge?.copyWith(
+                color: context.colors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: Spacing.xl),
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// The idle hub: one hero choice, then six tiles.
+class _Hub extends StatelessWidget {
+  const _Hub({
+    required this.supported,
+    required this.onStart,
     required this.presence,
+    required this.partnerName,
+    required this.onOpenFuture,
+    required this.onOpenUs,
+    this.notice,
   });
 
-  final String? yours;
-  final String? partner;
+  final Set<TogetherActivity> supported;
+  final void Function(TogetherActivity)? onStart;
 
-  /// Null outside the idle hub, where presence is not the point.
+  /// Null when unknown (unavailable): nothing is said about the partner.
   final PartnerPresence? presence;
+  final String partnerName;
+  final VoidCallback onOpenFuture;
+  final VoidCallback onOpenUs;
+  final Widget? notice;
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final name = partner ?? 'Your person';
-    final presence = this.presence;
-    // Shape and words carry the meaning, never colour alone.
+    final onStart = this.onStart;
+    bool startable(TogetherActivity a) =>
+        onStart != null && supported.contains(a);
+    void tap(TogetherActivity activity, String name) =>
+        startable(activity) ? onStart!(activity) : _showSoon(context, name);
+    String? soon(TogetherActivity a) => startable(a) ? null : 'Soon';
+    final presenceLine = _presenceLine(presence, partnerName);
+    final notice = this.notice;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (presenceLine != null) ...[
+          presenceLine,
+          const SizedBox(height: Spacing.lg),
+        ],
+        if (startable(TogetherActivity.timeTogether))
+          _HeroChoice(
+            icon: Icons.favorite_outline,
+            title: 'Spend time together',
+            subtitle: TogetherActivity.timeTogether.description,
+            onTap: () => onStart!(TogetherActivity.timeTogether),
+          )
+        else
+          _HeroChoice(
+            icon: Icons.play_arrow_rounded,
+            title: 'Start a Watch Together',
+            subtitle: 'Movies, shows and more.',
+            badge: soon(TogetherActivity.watch),
+            onTap: () => tap(TogetherActivity.watch, 'Watch Together'),
+          ),
+        const SizedBox(height: Spacing.md),
+        _Grid(
+          tiles: [
+            ActionTile(
+              icon: Icons.headphones_outlined,
+              label: 'Listen Together',
+              badge: soon(TogetherActivity.listen),
+              onTap: () => tap(TogetherActivity.listen, 'Listen Together'),
+            ),
+            ActionTile(
+              icon: Icons.videocam_outlined,
+              label: 'Call',
+              badge: soon(TogetherActivity.call),
+              onTap: () => tap(TogetherActivity.call, 'Calling'),
+            ),
+            ActionTile(
+              icon: Icons.sports_esports_outlined,
+              label: 'Play',
+              badge: 'Soon',
+              onTap: () => _showSoon(context, 'Playing together'),
+            ),
+            ActionTile(
+              icon: Icons.edit_outlined,
+              label: 'Share a Note',
+              onTap: onOpenUs,
+            ),
+            ActionTile(
+              icon: Icons.event_outlined,
+              label: 'Make a Plan',
+              onTap: onOpenFuture,
+            ),
+            ActionTile(
+              icon: Icons.checklist_rounded,
+              label: 'Our Lists',
+              onTap: onOpenFuture,
+            ),
+          ],
+        ),
+        if (notice != null) ...[const SizedBox(height: Spacing.xl), notice],
+      ],
+    );
+  }
+
+  // Shape and words carry the meaning, never colour alone.
+  static Widget? _presenceLine(PartnerPresence? presence, String name) {
     final (icon, text) = switch (presence) {
-      null => (null, null),
-      PartnerPresence.unavailable => (
-        Icons.remove_circle_outline,
-        'Presence isn’t shared yet',
-      ),
+      null || PartnerPresence.unavailable => (null, null),
       PartnerPresence.online => (Icons.circle, '$name is here'),
       PartnerPresence.away => (Icons.dark_mode_outlined, '$name is away'),
       PartnerPresence.offline => (
@@ -235,140 +366,145 @@ class _PartnerRow extends StatelessWidget {
         '$name is in time together',
       ),
     };
-    return MergeSemantics(
+    if (icon == null || text == null) return null;
+    return _PresenceLine(
+      icon: icon,
+      text: text,
+      online: presence == PartnerPresence.online,
+    );
+  }
+}
+
+class _PresenceLine extends StatelessWidget {
+  const _PresenceLine({
+    required this.icon,
+    required this.text,
+    required this.online,
+  });
+
+  final IconData icon;
+  final String text;
+  final bool online;
+
+  @override
+  Widget build(BuildContext context) => MergeSemantics(
+    child: Row(
+      children: [
+        ExcludeSemantics(
+          child: Icon(
+            icon,
+            size: IconSizes.sm,
+            color: online
+                ? context.colors.success
+                : context.colors.textSecondary,
+          ),
+        ),
+        const SizedBox(width: Spacing.sm),
+        Expanded(
+          child: Text(
+            text,
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+              color: context.colors.textSecondary,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// The hero card's choice: icon well, title, one line, chevron.
+class _HeroChoice extends StatelessWidget {
+  const _HeroChoice({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.badge,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final String? badge;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final badge = this.badge;
+    return HeroCard(
+      semanticLabel: [title, subtitle, ?badge].join(', '),
+      onTap: onTap,
       child: Row(
         children: [
-          CoupleMark(
-            yours: CoupleMark.initialOf(yours),
-            partner: CoupleMark.initialOf(partner),
-          ),
+          HeroIcon(icon),
           const SizedBox(width: Spacing.lg),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(name, style: textTheme.titleMedium),
-                if (icon != null && text != null) ...[
-                  const SizedBox(height: Spacing.xxs),
-                  Row(
-                    children: [
-                      ExcludeSemantics(
-                        child: Icon(
-                          icon,
-                          size: IconSizes.sm,
-                          color: presence == PartnerPresence.online
-                              ? context.colors.success
-                              : context.colors.textSecondary,
-                        ),
-                      ),
-                      const SizedBox(width: Spacing.xs),
-                      Expanded(
-                        child: Text(
-                          text,
-                          style: textTheme.bodyMedium?.copyWith(
-                            color: context.colors.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The choices. Only [supported] activities get a button.
-class _Activities extends StatelessWidget {
-  const _Activities({
-    required this.supported,
-    required this.onStart,
-    this.notice,
-  });
-
-  final Set<TogetherActivity> supported;
-  final void Function(TogetherActivity)? onStart;
-  final Widget? notice;
-
-  @override
-  Widget build(BuildContext context) {
-    final notice = this.notice;
-    return AppSection(
-      title: 'What do you want to do?',
-      divider: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (final (i, activity) in TogetherActivity.values.indexed) ...[
-            if (i > 0) const Divider(height: Spacing.xl),
-            _ActivityRow(
-              activity: activity,
-              onStart: supported.contains(activity) && onStart != null
-                  ? () => onStart!(activity)
-                  : null,
-            ),
-          ],
-          if (notice != null) ...[const SizedBox(height: Spacing.xl), notice],
-        ],
-      ),
-    );
-  }
-}
-
-class _ActivityRow extends StatelessWidget {
-  const _ActivityRow({required this.activity, required this.onStart});
-
-  final TogetherActivity activity;
-  final VoidCallback? onStart;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final onStart = this.onStart;
-    final muted = context.colors.textSecondary;
-    return Row(
-      children: [
-        Expanded(
-          child: MergeSemantics(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  activity.label,
-                  style: textTheme.titleMedium?.copyWith(
-                    color: onStart == null ? muted : null,
-                  ),
-                ),
-                const SizedBox(height: Spacing.xxs),
-                Text(
-                  activity.description,
-                  style: textTheme.bodyMedium?.copyWith(color: muted),
-                ),
-                if (onStart == null) ...[
-                  const SizedBox(height: Spacing.xxs),
+                if (badge != null) ...[
                   Text(
-                    activity == TogetherActivity.timeTogether
-                        ? 'Not available yet'
-                        : 'Coming soon',
-                    style: textTheme.labelMedium?.copyWith(color: muted),
+                    badge,
+                    style: textTheme.labelMedium?.copyWith(
+                      color: HeroCard.mutedTextColor,
+                    ),
                   ),
+                  const SizedBox(height: Spacing.xxs),
                 ],
+                Text(
+                  title,
+                  style: textTheme.titleLarge?.copyWith(
+                    color: HeroCard.textColor,
+                  ),
+                ),
+                const SizedBox(height: Spacing.xs),
+                Text(
+                  subtitle,
+                  style: textTheme.bodyLarge?.copyWith(
+                    color: HeroCard.mutedTextColor,
+                  ),
+                ),
               ],
             ),
           ),
-        ),
-        if (onStart != null) ...[
-          const SizedBox(width: Spacing.lg),
-          FilledButton(
-            onPressed: onStart,
-            child: Semantics(
-              label: 'Start ${activity.label.toLowerCase()}',
-              excludeSemantics: true,
-              child: const Text('Start'),
+          const Icon(Icons.chevron_right),
+        ],
+      ),
+    );
+  }
+}
+
+/// Three tiles a row (two with very large text); every tile in a row is as
+/// tall as the tallest.
+class _Grid extends StatelessWidget {
+  const _Grid({required this.tiles});
+
+  final List<Widget> tiles;
+
+  @override
+  Widget build(BuildContext context) {
+    final columns = MediaQuery.textScalerOf(context).scale(1) > 1.5 ? 2 : 3;
+    final rows = [
+      for (var i = 0; i < tiles.length; i += columns)
+        tiles.sublist(i, (i + columns).clamp(0, tiles.length)),
+    ];
+    return Column(
+      children: [
+        for (final (r, row) in rows.indexed) ...[
+          if (r > 0) const SizedBox(height: Spacing.md),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var c = 0; c < columns; c++) ...[
+                  if (c > 0) const SizedBox(width: Spacing.md),
+                  Expanded(
+                    child: c < row.length ? row[c] : const SizedBox.shrink(),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
