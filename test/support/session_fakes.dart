@@ -265,7 +265,7 @@ void setPhoneWindow(WidgetTester tester, [Size size = const Size(390, 844)]) {
 /// Reduced motion: waiting indicators stand still, so screens settle.
 void reduceMotion(WidgetTester tester) {
   tester.platformDispatcher.accessibilityFeaturesTestValue =
-      FakeAccessibilityFeatures(disableAnimations: true);
+      const FakeAccessibilityFeatures(disableAnimations: true);
   addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
 }
 
