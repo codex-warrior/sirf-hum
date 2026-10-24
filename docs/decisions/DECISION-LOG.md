@@ -138,6 +138,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-150 | "Continue with Google" (primary) + email link (fallback); identity only, no linking, per-environment OAuth clients; gated production build workflow | Accepted (owner request); console setup pending | 2026-10-21 |
 | D-151 | Owner opens production for an invite-only friends beta (sideloaded APK) before the independent review | Accepted by the owner; P0 gates still FAIL | 2026-10-22 |
 | D-152 | App Check enforcement paused on production callables only until Play Console links Play Integrity | Accepted by the owner; **temporary** | 2026-10-24 |
+| D-154 | RUSTSEC-2026-0387 (crypto-bigint 0.5.5 timing) ignored while the core uses only the X25519/Ed25519 suite (re-verified each run) | Accepted by the owner; re-assess with the next OpenMLS upgrade | 2026-10-24 |
 | D-153 | Pairing UI: phone set-up after sign-in, invite shared as a message, join by pasting it, inviter types the invitee's code; launcher icon | Accepted (owner request) | 2026-10-24 |
 
 ---
@@ -1488,3 +1489,12 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Not done:** approving a second phone, display-name editing (the partner name is shown only when a profile exists), deep links for invitations, push for pairing events.
 - **Tests:** `test/app/pairing_flow_test.dart` (both roles end to end over fakes, wrong code, refusal, cancel, reject, setup failure/retry, second phone, removed phone, sign-out releases keys, token/code never logged, token extraction), `entry_screens_test.dart`.
 - **Status:** Accepted (owner request) · 2026-10-24.
+
+### D-154 — RUSTSEC-2026-0387 (crypto-bigint 0.5.5) is not reachable with secrets (owner-approved; amends D-068)
+- **Advisory (2026-10-23):** timing variability in crypto-bigint operations meant to be constant-time; fixed in 0.7.6, no 0.5.x backport.
+- **Where it is:** only via `elliptic-curve` 0.13 → `p256`, `p384`, `k256`, pulled in by `openmls_rust_crypto` 0.6.0 / `hpke-rs-rust-crypto` 0.7.0 / `openmls_basic_credential` 0.6.0 (D-054 pins). The fix needs elliptic-curve 0.14 and so a newer OpenMLS stack: a crypto pin change, not done here.
+- **Why it does not apply:** the core creates and joins groups only with `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519` (`engine.rs` `CIPHERSUITE`; its key packages carry only that suite, so a Welcome for another suite cannot be joined) and signs only with Ed25519. No P-256/P-384/K-256 secret is ever generated or used; at most a peer's public data is verified, where timing reveals nothing secret.
+- **Gate:** `tool/crypto_audit.sh` ignores the advisory only while non-test sources name no other ciphersuite or signature scheme and `CIPHERSUITE` is unchanged; otherwise CI fails.
+- **Decision:** the owner chose this documented exception over upgrading OpenMLS now (2026-10-24).
+- **Re-assess:** at the next OpenMLS upgrade, or if a second ciphersuite is ever added. In the independent review scope (P0).
+- **Status:** Accepted by the owner · 2026-10-24.

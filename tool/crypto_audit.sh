@@ -2,7 +2,7 @@
 # Known-vulnerability gate for the crypto core (D-068). Fails closed.
 #
 # Runs `cargo audit --deny warnings` on the crypto core's Cargo.lock. Exactly
-# three advisories are ignored, each only while the fact that makes it
+# four advisories are ignored, each only while the fact that makes it
 # inapplicable is re-verified below on every run. If a fact stops holding,
 # this script fails, and the ignore must be re-assessed (never just widened).
 #
@@ -15,6 +15,14 @@
 #   RUSTSEC-2026-0173 — proc-macro-error2 2.0.1 unmaintained (not a
 #     vulnerability). Used only by proc-macro crates (hax-lib-macros), so it
 #     runs at compile time and never ships in the binary. No release exists.
+#   RUSTSEC-2026-0387 — crypto-bigint 0.5.5 timing variability (fixed in
+#     0.7.6), D-154, owner-approved. Reached only through elliptic-curve 0.13
+#     (P-256, P-384, K-256) in the OpenMLS RustCrypto provider. The core uses
+#     one MLS ciphersuite (X25519 / AES-128-GCM / SHA-256 / Ed25519) and
+#     Ed25519 signatures only, so it never holds a secret on those curves; at
+#     most it verifies a peer's public data, where timing reveals nothing
+#     secret. The fix needs elliptic-curve 0.14, which the D-054 OpenMLS pins
+#     do not accept.
 set -euo pipefail
 cd "$(dirname "$0")/../packages/sirf_hum_crypto/native"
 
@@ -44,10 +52,24 @@ if bad:
     print("non-proc-macro users of proc-macro-error2:", bad, file=sys.stderr); sys.exit(1)
 ' || fail "proc-macro-error2 usage changed; re-assess RUSTSEC-2026-0173 (D-068)."
 
-echo "==> cargo audit --deny warnings (3 documented ignores)"
+echo "==> re-verify: the core uses only the X25519/Ed25519 ciphersuite"
+# Non-test sources may name exactly one ciphersuite and one signature scheme.
+others="$(grep -rhoE 'Ciphersuite::[A-Za-z0-9_]+|SignatureScheme::[A-Za-z0-9_]+' src \
+  --include='*.rs' --exclude='*_tests.rs' --exclude='tests.rs' \
+  | sort -u \
+  | grep -vxE 'Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519|SignatureScheme::ED25519' || true)"
+if [ -n "$others" ]; then
+  echo "$others" >&2
+  fail "the core now names another ciphersuite or signature scheme; RUSTSEC-2026-0387 may apply (D-154)."
+fi
+grep -q 'pub const CIPHERSUITE: Ciphersuite = Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519;' src/engine.rs \
+  || fail "CIPHERSUITE changed; re-assess RUSTSEC-2026-0387 (D-154)."
+
+echo "==> cargo audit --deny warnings (4 documented ignores)"
 cargo audit --file Cargo.lock --deny warnings \
   --ignore RUSTSEC-2026-0330 \
   --ignore RUSTSEC-2026-0331 \
-  --ignore RUSTSEC-2026-0173
+  --ignore RUSTSEC-2026-0173 \
+  --ignore RUSTSEC-2026-0387
 
 echo "crypto audit passed"
