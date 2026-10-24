@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/misc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sirf_hum/app/app.dart';
 import 'package:sirf_hum/features/home/application/home_providers.dart';
+import 'package:sirf_hum/features/pairing/application/pairing_controller.dart';
+import 'package:sirf_hum/features/pairing/application/pairing_device.dart';
 import 'package:sirf_hum/security/account/account_session.dart';
 import 'package:sirf_hum/security/couple/couple_profiles.dart';
 import 'package:sirf_hum/security/couple/pairing.dart';
@@ -118,6 +120,84 @@ class FakePairingBackend implements PairingBackend {
       throw StateError('no signed pairing step from the UI');
 }
 
+/// This phone's signed pairing steps, as the pairing screen drives them.
+/// [state] asks [backend], so `stateCalls` counts every server read.
+class FakePairingSession implements PairingSession {
+  FakePairingSession(this.backend);
+
+  final PairingBackend? backend;
+  final calls = <String>[];
+  PairingFailure? fail;
+  bool closed = false;
+  Completer<void>? gate;
+
+  static const token = 'AbCdEfGhIjKlMnOpQrStUv';
+
+  Future<void> _step(String name) async {
+    calls.add(name);
+    await gate?.future;
+    if (fail case final f?) throw PairingException(f);
+  }
+
+  @override
+  Future<PairingInvitation> createInvitation() async {
+    await _step('create');
+    return PairingInvitation(
+      pairingId: testPairingId,
+      token: token,
+      expiresAt: DateTime.utc(2026, 10, 20),
+    );
+  }
+
+  @override
+  Future<PairingAcceptance> acceptInvitation(String token) async {
+    await _step('accept:$token');
+    return PairingAcceptance(
+      pairingId: testPairingId,
+      code: '482913',
+      partnerDisplayName: 'Ravi',
+      confirmBy: DateTime.utc(2026, 10, 20),
+    );
+  }
+
+  @override
+  Future<CoupleMembership> confirm(String pairingId, String code) async {
+    await _step('confirm:$code');
+    return const CoupleMembership(
+      coupleId: testCoupleId,
+      conversationId: testConversationId,
+    );
+  }
+
+  @override
+  Future<void> reject(String pairingId) => _step('reject');
+
+  @override
+  Future<void> cancel(String pairingId) => _step('cancel');
+
+  @override
+  Future<PairingState> state() =>
+      backend?.state() ??
+      Future.error(const PairingException(PairingFailure.unavailable));
+
+  @override
+  void close() => closed = true;
+}
+
+class FakePairingDeviceSetup implements PairingDeviceSetup {
+  FakePairingDeviceSetup(this.result);
+
+  /// Returns the next result (or throws).
+  Future<DeviceSetupResult> Function() result;
+  final accounts = <AccountId>[];
+
+  @override
+  Future<DeviceSetupResult> setUp(AccountId account) {
+    accounts.add(account);
+    return result();
+  }
+}
+
 class FakeCoupleProfiles implements CoupleProfiles {
   FakeCoupleProfiles([this.value = CoupleNames.unknown]);
 
@@ -158,6 +238,7 @@ List<Override> sessionOverrides({
   CoupleProfiles? profiles,
   bool privateContent = true,
   DateTime? now,
+  PairingDeviceSetup? deviceSetup,
   List<Override> extra = const [],
 }) => [
   accountSessionProvider.overrideWithValue(session),
@@ -165,6 +246,13 @@ List<Override> sessionOverrides({
   coupleProfilesProvider.overrideWithValue(profiles ?? FakeCoupleProfiles()),
   privateContentAvailableProvider.overrideWithValue(privateContent),
   homeClockProvider.overrideWithValue(() => now ?? DateTime(2026, 10, 19, 19)),
+  // A phone that is already trusted, reading the same server answers.
+  pairingDeviceSetupProvider.overrideWithValue(
+    deviceSetup ??
+        FakePairingDeviceSetup(
+          () async => DeviceSetupReady(FakePairingSession(backend)),
+        ),
+  ),
   ...extra,
 ];
 
@@ -172,6 +260,13 @@ void setPhoneWindow(WidgetTester tester, [Size size = const Size(390, 844)]) {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
+}
+
+/// Reduced motion: waiting indicators stand still, so screens settle.
+void reduceMotion(WidgetTester tester) {
+  tester.platformDispatcher.accessibilityFeaturesTestValue =
+      const FakeAccessibilityFeatures(disableAnimations: true);
+  addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
 }
 
 /// Pumps the real app (router, shell, screens) over fakes.
@@ -183,6 +278,7 @@ Future<void> pumpSirfHum(
   bool privateContent = true,
   String? initialLocation,
   bool settle = true,
+  PairingDeviceSetup? deviceSetup,
   List<Override> extra = const [],
 }) async {
   await tester.pumpWidget(
@@ -192,6 +288,7 @@ Future<void> pumpSirfHum(
         backend: backend ?? FakePairingBackend.returning(paired),
         profiles: profiles ?? FakeCoupleProfiles(names),
         privateContent: privateContent,
+        deviceSetup: deviceSetup,
         extra: extra,
       ),
       child: SirfHumApp(initialLocation: initialLocation),

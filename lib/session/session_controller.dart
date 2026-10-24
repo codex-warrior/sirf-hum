@@ -55,6 +55,10 @@ class SessionController extends Notifier<SessionState> {
   AccountId? _account;
   int _generation = 0;
 
+  /// The signed-in account, for features that open its device identity
+  /// (pairing). Null while signed out or unknown.
+  AccountId? get account => _account;
+
   @override
   SessionState build() {
     final subscription = ref

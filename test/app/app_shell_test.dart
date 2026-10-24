@@ -103,7 +103,7 @@ void main() {
         initialLocation: area.path,
       );
       expect(find.byType(NavigationBar), findsNothing, reason: area.name);
-      expect(find.text('Invite your person.'), findsOneWidget);
+      expect(find.text('Bring your person in.'), findsOneWidget);
     }
   });
 
@@ -154,7 +154,7 @@ void main() {
 
     bobAnswer.complete(const PairingNone());
     await tester.pumpAndSettle();
-    expect(find.text('Invite your person.'), findsOneWidget);
+    expect(find.text('Bring your person in.'), findsOneWidget);
     expect(find.textContaining('Asha'), findsNothing);
   });
 

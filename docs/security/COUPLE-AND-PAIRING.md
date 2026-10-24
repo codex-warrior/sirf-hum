@@ -282,11 +282,9 @@ E47–E60 in [THREAT-MODEL](THREAT-MODEL.md). In short:
 
 - **Deployment:** the callables need Functions (Blaze, D-025). Until then
   pairing runs only in the emulator, so no real couple can form.
-- **UI:**
-  - links or QR for the token;
-  - the code comparison screen;
-  - profile editing;
-  - partner verification (safety numbers).
+- **UI:** built in D-153 (share the invite as a message, paste to join,
+  code comparison with the inviter typing the code). Still missing:
+  links or QR for the token, profile editing.
 - **Unpairing / couple dissolution:** a unilateral, instant unpair is
   required (PAIRING-AND-DEVICE-TRUST, abuse considerations). It is blocked on
   open decision 6 (shared history), MLS removal and rules for dissolved

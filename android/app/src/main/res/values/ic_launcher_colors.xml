@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher and launch-screen colors: ColorPalette.neutral900 (provisional
+     identity, docs/design/DESIGN-TOKENS.md). Android resources cannot read
+     Dart tokens, so they are mirrored here. -->
+<resources>
+    <color name="ic_launcher_background">#1C1815</color>
+</resources>
