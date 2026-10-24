@@ -65,6 +65,7 @@ adds an explicit status, evidence and owner action per gate.
 | Conversation recovery | **PASS** (implementation) | D-135; `recovery.test.mjs` (9), R and native D tests | P0-5 |
 | Unpairing | **PASS** (implementation) | D-136 + D-144; `unpair.test.mjs` (15, incl. two P3-15 tests) | P0-5 |
 | Revocation and identity reset | **PASS** (implementation) | D-081, D-082; emulator and Rust tests (TEST-MATRIX) | P0-5 |
+| Identity-reset delay is 7 days in production | **FAIL** (temporary beta exception, D-159) | `functions/.env.production` sets `SH_IDENTITY_RESET_DELAY_HOURS=1` for the friends beta; code bounds it to 1–168 h and defaults to 7 days (`reset_delay.test.mjs`) | **Remove the line and redeploy Functions before any public launch** |
 | Reset and revocation alerts delivered | **FAIL** | Triggers built (D-132, D-097) but undeployed (Eventarc) | INF-2 |
 
 ## P2 — before public launch

@@ -26,6 +26,7 @@ import {
   DeviceError,
   type DeviceFailure,
   deviceRef,
+  identityResetDelayMs,
   input,
   RECORD_ID_PATTERN,
   requireAccount,
@@ -33,7 +34,6 @@ import {
   requirePattern,
   toUnixSeconds,
   trustRef,
-  TTL,
 } from './common';
 import { bumpEpoch } from './epoch';
 import { consume, requireBudget } from './rateLimit';
@@ -68,7 +68,7 @@ export async function requestIdentityReset(
     if (!trust.exists || trust.get('bootstrapOpen') === true) return 'reset_unavailable';
     const existing = pendingReset(trust);
     if (existing !== null) return { status: 'pending', effectiveAtMillis: existing.effectiveAtMillis };
-    const effectiveAtMillis = now.getTime() + TTL.identityResetDelayMs;
+    const effectiveAtMillis = now.getTime() + identityResetDelayMs();
     bumpEpoch(tx, trust.ref, trust, {
       reset: { status: 'pending', requestedAt: FieldValue.serverTimestamp(), effectiveAtMillis },
     });

@@ -8,6 +8,7 @@ import 'package:sirf_hum/features/moments/presentation/add_moment_screen.dart';
 import 'package:sirf_hum/features/moments/presentation/moment_detail_screen.dart';
 import 'package:sirf_hum/features/moments/presentation/moment_photo_view.dart';
 import 'package:sirf_hum/features/moments/presentation/moment_tile.dart';
+import 'package:sirf_hum/features/phone_setup/presentation/phone_setup_screen.dart';
 import 'package:sirf_hum/security/moments/moment.dart';
 import 'package:sirf_hum/security/moments/moments_service.dart';
 import 'package:sirf_hum/session/session_controller.dart';
@@ -92,11 +93,16 @@ class MomentsScreen extends ConsumerWidget {
       ],
     ),
     MomentsLoading() => const _TimelineSkeleton(),
-    MomentsBlocked() => const ErrorState(
-      title: 'Moments aren’t available on this phone.',
+    MomentsBlocked() => ErrorState(
+      title: 'Set up this phone to open Moments.',
       message:
-          'This phone is no longer one of your trusted devices, so it '
-          'can’t open or add memories. Use a phone you trust.',
+          'This phone has new keys (for example after reinstalling), so it '
+          'can’t open or add memories yet. Nothing is lost on your person’s '
+          'phone.',
+      action: StateAction(
+        label: 'Set up this phone',
+        onPressed: () => openPhoneSetup(context),
+      ),
     ),
     MomentsFailed(:final failure) => ErrorState(
       title: 'Your moments couldn’t be opened.',

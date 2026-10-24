@@ -235,6 +235,10 @@ class _Cards extends ConsumerWidget {
         reason: VerificationUnavailableReason.needsPhone,
       ) =>
         'On your phone',
+      VerificationUnavailable(
+        reason: VerificationUnavailableReason.needsSetup,
+      ) =>
+        'Set up this phone first',
       VerificationUnavailable() => 'Not available yet',
       VerificationFailed() => 'Couldn’t check',
     };

@@ -156,7 +156,7 @@ void main() {
         );
       await pumpUs(tester, backend: backend);
       expect(text('Asha & Ravi'), findsOneWidget);
-      await scrollTo(tester, text('Us isn’t available on this phone.'));
+      await scrollTo(tester, text('Set up this phone to open Us.'));
       expect(find.textContaining('Tum Hi Ho'), findsNothing);
       expect(find.textContaining('Together since'), findsNothing);
       await tapScrolled(tester, text('Settings'));

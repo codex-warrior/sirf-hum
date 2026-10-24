@@ -81,6 +81,7 @@ class _Unavailable extends StatelessWidget {
       VerificationUnavailableReason.notPaired => 'Pair first',
       VerificationUnavailableReason.notYetAvailable =>
         'Verification is on its way',
+      VerificationUnavailableReason.needsSetup => 'Set up this phone first',
     },
     message: switch (reason) {
       VerificationUnavailableReason.needsPhone =>
@@ -89,6 +90,9 @@ class _Unavailable extends StatelessWidget {
         "Once you're paired, you can check it's really them.",
       VerificationUnavailableReason.notYetAvailable =>
         'It opens here once your phones are set up for each other.',
+      VerificationUnavailableReason.needsSetup =>
+        'This phone has new keys since Sirf Hum was reinstalled. Set it up '
+            'again from Moments, Future or Us, then compare.',
     },
   );
 }

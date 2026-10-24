@@ -13,6 +13,7 @@ import 'package:sirf_hum/features/moments/data/picker_cache_sweeper.dart';
 import 'package:sirf_hum/features/moments/data/system_photo_picker.dart';
 import 'package:sirf_hum/features/pairing/application/pairing_controller.dart';
 import 'package:sirf_hum/features/pairing/application/pairing_device.dart';
+import 'package:sirf_hum/features/phone_setup/application/phone_setup_controller.dart';
 import 'package:sirf_hum/features/verification/application/verification_controller.dart';
 import 'package:sirf_hum/features/verification/data/camera_qr_code_scanner.dart';
 import 'package:sirf_hum/infrastructure/firebase/app_check_bootstrap.dart';
@@ -32,7 +33,9 @@ import 'package:sirf_hum/platform/io_media_files.dart';
 import 'package:sirf_hum/platform/secure_key_store.dart';
 import 'package:sirf_hum/platform/text_share.dart';
 import 'package:sirf_hum/security/account/account_session.dart';
+import 'package:sirf_hum/security/device/device_registration.dart';
 import 'package:sirf_hum/security/device/local_device_identity.dart';
+import 'package:sirf_hum/session/phone_setup.dart';
 import 'package:sirf_hum/session/private_services.dart';
 import 'package:sirf_hum/session/session_controller.dart';
 import 'package:sirf_hum/session/sign_in_controller.dart';
@@ -126,6 +129,16 @@ List<Override> sessionPortOverrides(FirebaseStatus status) => switch (status) {
         ),
       ),
       textShareProvider.overrideWithValue(const PlatformTextShare()),
+      phoneSetupFactoryProvider.overrideWithValue(
+        (account) => LocalPhoneSetup(
+          account: account,
+          identities: LocalDeviceIdentityService(
+            keyStore: const PlatformSecureKeyStore(),
+          ),
+          registry: FirestoreDeviceRegistry(),
+          platform: DevicePlatform.android,
+        ),
+      ),
       privateServicesOpenerProvider.overrideWithValue(
         LocalPrivateServicesOpener(
           identities: LocalDeviceIdentityService(

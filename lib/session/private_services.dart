@@ -6,6 +6,7 @@ import 'package:sirf_hum/core/logging/app_logger.dart';
 import 'package:sirf_hum/core/logging/log_value.dart';
 import 'package:sirf_hum/security/couple/couple_conversation.dart';
 import 'package:sirf_hum/security/device/device_registration.dart';
+import 'package:sirf_hum/security/device/device_status.dart';
 import 'package:sirf_hum/security/device/local_device_identity.dart';
 import 'package:sirf_hum/security/media/media_storage.dart';
 import 'package:sirf_hum/security/messaging/conversation_transport.dart';
@@ -117,6 +118,10 @@ enum PrivateServicesProblem {
 
   /// This phone's sealed state could not be opened.
   unreadable,
+
+  /// This phone does not hold the account's trusted identity (reinstalled,
+  /// data cleared, revoked): it must be set up again (D-159).
+  needsSetup,
 }
 
 class PrivateServicesException implements Exception {
@@ -179,6 +184,14 @@ class LocalPrivateServicesOpener implements PrivateServicesOpener {
         core = ready;
     }
     try {
+      // Only an active device opens private services. Anything else is
+      // "set this phone up again", never "you are no longer trusted".
+      final own = PendingDeviceRegistration.hexOf(
+        core.publicIdentity().deviceId,
+      );
+      if (await _registry.status(account, own) != DeviceStatus.active) {
+        throw const PrivateServicesException(PrivateServicesProblem.needsSetup);
+      }
       final messaging = MessagingService(
         core: core,
         account: account,
@@ -272,6 +285,9 @@ enum PrivateServicesStatus {
 
   /// Opening failed; [retryPrivateServices] starts over.
   failed,
+
+  /// This phone must be set up again before anything private opens.
+  needsSetup,
 }
 
 final privateServicesStatusProvider = Provider<PrivateServicesStatus>((ref) {
@@ -281,6 +297,12 @@ final privateServicesStatusProvider = Provider<PrivateServicesStatus>((ref) {
   return switch (services) {
     AsyncData(value: null) => PrivateServicesStatus.notWired,
     AsyncData() => PrivateServicesStatus.ready,
+    AsyncError(
+      error: PrivateServicesException(
+        problem: PrivateServicesProblem.needsSetup,
+      ),
+    ) =>
+      PrivateServicesStatus.needsSetup,
     AsyncError() => PrivateServicesStatus.failed,
     _ => PrivateServicesStatus.starting,
   };

@@ -22,6 +22,22 @@ export const TTL = {
   identityResetDelayMs: 7 * 24 * 60 * 60 * 1000,
 } as const;
 
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * The identity-reset delay in force (D-082, D-159). 7 days, unless the
+ * environment sets `SH_IDENTITY_RESET_DELAY_HOURS` to a whole number of
+ * hours from 1 to 168. Anything else (absent, malformed, out of range)
+ * keeps 7 days: the delay can be shortened only explicitly, never by a
+ * mistake, and never below an hour.
+ */
+export function identityResetDelayMs(value: string | undefined = process.env.SH_IDENTITY_RESET_DELAY_HOURS): number {
+  if (value === undefined || !/^[0-9]{1,3}$/.test(value)) return TTL.identityResetDelayMs;
+  const hours = Number(value);
+  if (hours < 1 || hours > 168) return TTL.identityResetDelayMs;
+  return hours * HOUR_MS;
+}
+
 /** At most this many pending devices per account at a time. */
 export const MAX_PENDING_DEVICES = 3;
 
