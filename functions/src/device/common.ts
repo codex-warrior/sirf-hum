@@ -22,6 +22,24 @@ export const TTL = {
   identityResetDelayMs: 7 * 24 * 60 * 60 * 1000,
 } as const;
 
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * The identity-reset delay in force (D-082, D-159, D-160). 7 days, unless
+ * the environment sets `SH_IDENTITY_RESET_DELAY_HOURS` to a whole number of
+ * hours from 0 to 168. `0` is the WhatsApp-style model (D-160): a signed-in
+ * account re-registers a phone at once, and the partner is told the
+ * security code changed. Anything else (absent, malformed, out of range)
+ * keeps 7 days: the delay changes only explicitly, never by a mistake.
+ */
+export function identityResetDelayMs(value: string | undefined = process.env.SH_IDENTITY_RESET_DELAY_HOURS): number {
+  if (value === undefined || !/^[0-9]{1,3}$/.test(value)) return TTL.identityResetDelayMs;
+  const hours = Number(value);
+  if (value.length > 1 && value.startsWith('0')) return TTL.identityResetDelayMs;
+  if (hours > 168) return TTL.identityResetDelayMs;
+  return hours * HOUR_MS;
+}
+
 /** At most this many pending devices per account at a time. */
 export const MAX_PENDING_DEVICES = 3;
 

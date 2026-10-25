@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:sirf_hum/design_system/design_system.dart';
 import 'package:sirf_hum/features/notebook/application/notebook_controller.dart';
 import 'package:sirf_hum/features/notebook/domain/notebook_state.dart';
+import 'package:sirf_hum/features/phone_setup/presentation/phone_setup_screen.dart';
 import 'package:sirf_hum/security/notebook/notebook_service.dart';
 
 /// Every notebook state except [NotebookReady], the same way in Future and
@@ -44,10 +45,15 @@ class NotebookStatusView extends StatelessWidget {
     ),
     NotebookLoading() => const NotebookSkeleton(),
     NotebookBlocked() => ErrorState(
-      title: '$areaName isn’t available on this phone.',
+      title: 'Set up this phone to open $areaName.',
       message:
-          'This phone is no longer one of your trusted devices, so it can’t '
-          'open or change what you’ve saved together. Use a phone you trust.',
+          'This phone has new keys (for example after reinstalling), so it '
+          'can’t open what you’ve saved together yet. Nothing is lost on your '
+          'person’s phone.',
+      action: StateAction(
+        label: 'Set up this phone',
+        onPressed: () => openPhoneSetup(context),
+      ),
     ),
     NotebookFailed(:final failure) => ErrorState(
       title: '$areaName couldn’t be opened.',
@@ -92,8 +98,8 @@ class NotebookNotices extends StatelessWidget {
                   'Couldn’t check for changes. You’re seeing what’s on this '
                       'phone.',
                 NotebookNotice.connecting =>
-                  'Your phones aren’t connected yet. You both compare your '
-                      'safety number in Us › Safety; then changes are shared.',
+                  'Your phones are still connecting. Changes appear once both '
+                      'of you have opened Sirf Hum.',
               },
             ),
             if (notice == NotebookNotice.offline)

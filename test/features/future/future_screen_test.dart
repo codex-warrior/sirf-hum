@@ -114,9 +114,14 @@ void main() {
           NotebookFailure.deviceNotTrusted,
         );
       await pumpFuture(tester, backend: backend);
-      expect(text('Future isn’t available on this phone.'), findsOneWidget);
+      expect(text('Set up this phone to open Future.'), findsOneWidget);
       expect(text('ours'), findsNothing);
-      expect(find.byType(FilledButton), findsNothing);
+      // The one way forward is setting the phone up again; nothing to add.
+      expect(
+        find.widgetWithText(FilledButton, 'Set up this phone'),
+        findsOneWidget,
+      );
+      expect(text('+ Add'), findsNothing);
       expectNoHandles(tester);
     });
 

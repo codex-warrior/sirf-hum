@@ -365,6 +365,14 @@ sequenceDiagram
 | B. Terminal "no recovery" state | Safe, but leaves a legitimate user with no path at all |
 | **C. Delayed, cancellable reset to a NEW identity** | **Selected:** the delay gives any surviving device time to cancel with a signature; the result is a new identity that partners must re-verify, so an attacker gains no inherited trust |
 
+**Delay setting (D-159, D-160):** 7 days by default. An environment may set
+`SH_IDENTITY_RESET_DELAY_HOURS` to a whole number of hours from 0 to 168;
+anything else keeps 7 days. Production uses **0** (owner decision, D-160,
+WhatsApp-style): a reinstalled phone re-registers itself as soon as the
+account signs in; the partner's phone trusts the new identity automatically
+and says "security code changed". With a non-zero delay the app's "Set up
+this phone" page offers the recovery key or the waiting reset.
+
 **Cancellation statement:** `"SirfHum-IdentityResetCancel-v1" | version 1 |
 len|account | device id[16] | len|certificate | challenge[32] |
 expires_at u64`.

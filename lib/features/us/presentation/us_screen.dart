@@ -16,6 +16,7 @@ import 'package:sirf_hum/security/moments/moment_payload.dart';
 import 'package:sirf_hum/security/notebook/notebook.dart';
 import 'package:sirf_hum/security/notebook/notebook_payload.dart';
 import 'package:sirf_hum/security/notebook/notebook_service.dart';
+import 'package:sirf_hum/session/private_services.dart';
 import 'package:sirf_hum/session/session_controller.dart';
 
 /// Who the two of you are together (Prompt 16, D-120; visual identity v1,
@@ -227,14 +228,21 @@ class _Cards extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final codeChanged = ref.watch(partnerCodeChangedProvider);
+    final partnerName = names.partner ?? 'Your person';
     final safety = switch (ref.watch(partnerVerificationProvider)) {
-      VerificationReady(verified: true) => 'Safety number verified',
-      VerificationReady() => 'Compare your safety number',
+      _ when codeChanged => '$partnerName’s security code changed',
+      VerificationReady(verified: true) => 'Security code verified',
+      VerificationReady() => 'Encrypted · verify (optional)',
       VerificationLoading() => 'Checking…',
       VerificationUnavailable(
         reason: VerificationUnavailableReason.needsPhone,
       ) =>
         'On your phone',
+      VerificationUnavailable(
+        reason: VerificationUnavailableReason.needsSetup,
+      ) =>
+        'Set up this phone first',
       VerificationUnavailable() => 'Not available yet',
       VerificationFailed() => 'Couldn’t check',
     };

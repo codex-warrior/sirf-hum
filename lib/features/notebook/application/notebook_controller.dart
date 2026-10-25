@@ -56,6 +56,7 @@ class NotebookController extends Notifier<NotebookState> {
       return switch (ref.watch(privateServicesStatusProvider)) {
         PrivateServicesStatus.starting => const NotebookLoading(),
         PrivateServicesStatus.failed => const NotebookFailed(null),
+        PrivateServicesStatus.needsSetup => const NotebookBlocked(),
         _ => _initial(NotebookUnavailableReason.notYetAvailable),
       };
     }

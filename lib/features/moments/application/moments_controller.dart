@@ -84,6 +84,7 @@ class MomentsController extends Notifier<MomentsState> {
       return switch (ref.watch(privateServicesStatusProvider)) {
         PrivateServicesStatus.starting => const MomentsLoading(),
         PrivateServicesStatus.failed => const MomentsFailed(null),
+        PrivateServicesStatus.needsSetup => const MomentsBlocked(),
         _ => _initial(MomentsUnavailableReason.notYetAvailable),
       };
     }

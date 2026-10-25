@@ -8,11 +8,13 @@ import 'package:sirf_hum/features/moments/application/moments_controller.dart';
 import 'package:sirf_hum/features/moments/domain/moments_state.dart';
 import 'package:sirf_hum/features/notebook/application/notebook_controller.dart';
 import 'package:sirf_hum/features/notebook/domain/notebook_state.dart';
+import 'package:sirf_hum/features/phone_setup/presentation/phone_setup_screen.dart';
 import 'package:sirf_hum/security/couple/couple_profiles.dart';
 import 'package:sirf_hum/security/moments/moment.dart';
 import 'package:sirf_hum/security/moments/moment_payload.dart';
 import 'package:sirf_hum/security/notebook/notebook.dart';
 import 'package:sirf_hum/security/notebook/notebook_payload.dart';
+import 'package:sirf_hum/session/private_services.dart';
 import 'package:sirf_hum/session/session_controller.dart';
 
 /// The couple's front door (PRODUCT-CONSTITUTION §4; visual identity v1,
@@ -47,6 +49,9 @@ class HomeScreen extends ConsumerWidget {
 
     final now = ref.watch(homeClockProvider)();
     final privateHere = ref.watch(privateContentAvailableProvider);
+    final needsSetup =
+        ref.watch(privateServicesStatusProvider) ==
+        PrivateServicesStatus.needsSetup;
     final moments = ref.watch(momentsProvider);
     final notebook = ref.watch(notebookProvider);
     final ready = notebook is NotebookReady ? notebook : null;
@@ -69,6 +74,10 @@ class HomeScreen extends ConsumerWidget {
         onAddName: onOpenUs,
       ),
       children: [
+        if (needsSetup) ...[
+          const _SetUpPhone(),
+          const SizedBox(height: Spacing.lg),
+        ],
         _SinceCard(since: since, today: now, onOpen: onOpenUs),
         const SizedBox(height: Spacing.lg),
         _Activities(onOpen: onOpenTogether),
@@ -153,6 +162,45 @@ class _Header extends StatelessWidget {
             label: const Text('Add your name'),
           ),
       ],
+    );
+  }
+}
+
+/// This phone must be set up again (D-159): the one thing to do first.
+class _SetUpPhone extends StatelessWidget {
+  const _SetUpPhone();
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: context.colors.surface,
+        borderRadius: BorderRadius.circular(Radii.lg),
+        border: Border.all(color: context.colors.accent),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(Spacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Set up this phone', style: textTheme.titleMedium),
+            const SizedBox(height: Spacing.xs),
+            Text(
+              'Sirf Hum was reinstalled here. Set it up again to open your '
+              'memories and plans.',
+              style: textTheme.bodyMedium?.copyWith(
+                color: context.colors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: Spacing.md),
+            OutlinedButton(
+              onPressed: () => openPhoneSetup(context),
+              child: const Text('Set up'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

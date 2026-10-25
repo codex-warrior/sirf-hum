@@ -93,6 +93,21 @@ class PartnerVerification {
 
   final PersonKey _partnerRoot;
 
+  /// The safety number's digits: what "the security code" means on screen
+  /// (D-160). Changes when either person's identity changes.
+  String get code => number.groups.join();
+
+  /// The same view with another status (D-160: "trusted automatically"
+  /// is shown as not yet compared).
+  PartnerVerification withStatus(VerificationStatus status) =>
+      PartnerVerification._(
+        status: status,
+        number: number,
+        partnerResetCount: partnerResetCount,
+        partnerDeviceCount: partnerDeviceCount,
+        partnerRoot: _partnerRoot,
+      );
+
   @override
   String toString() => 'PartnerVerification(${status.name}, <redacted>)';
 }

@@ -4,6 +4,7 @@ import 'package:sirf_hum/design_system/design_system.dart';
 import 'package:sirf_hum/features/verification/application/verification_controller.dart';
 import 'package:sirf_hum/features/verification/domain/verification_state.dart';
 import 'package:sirf_hum/security/verification/partner_verification.dart';
+import 'package:sirf_hum/session/private_services.dart';
 import 'package:sirf_hum/session/session_controller.dart';
 
 /// Verify your partner (D-128): compare a safety number side by side, or
@@ -15,6 +16,13 @@ class VerificationScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Opening this page is seeing the change (D-160); after this frame, so
+    // no provider changes while the page builds.
+    if (ref.watch(partnerCodeChangedProvider)) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => ref.read(partnerCodeChangedProvider.notifier).seen(),
+      );
+    }
     final partner =
         ref.watch(pairedCoupleProvider)?.names.partner ?? 'your partner';
     final state = ref.watch(partnerVerificationProvider);
@@ -81,6 +89,7 @@ class _Unavailable extends StatelessWidget {
       VerificationUnavailableReason.notPaired => 'Pair first',
       VerificationUnavailableReason.notYetAvailable =>
         'Verification is on its way',
+      VerificationUnavailableReason.needsSetup => 'Set up this phone first',
     },
     message: switch (reason) {
       VerificationUnavailableReason.needsPhone =>
@@ -89,6 +98,9 @@ class _Unavailable extends StatelessWidget {
         "Once you're paired, you can check it's really them.",
       VerificationUnavailableReason.notYetAvailable =>
         'It opens here once your phones are set up for each other.',
+      VerificationUnavailableReason.needsSetup =>
+        'This phone has new keys since Sirf Hum was reinstalled. Set it up '
+            'again from Moments, Future or Us, then compare.',
     },
   );
 }
@@ -134,15 +146,13 @@ class _Ready extends StatelessWidget {
         const SizedBox(height: Spacing.md),
         Text(switch (state.status) {
           VerificationStatus.verified =>
-            'You compared this number with $partner. Phones they add '
-                'later are approved by a phone you verified, so they stay '
-                "verified. If $partner's number ever changes, this page "
-                'will say Not verified again.',
+            'You compared this code with $partner. If it ever changes '
+                '(a new phone or a reinstall), Sirf Hum tells you.',
           VerificationStatus.notVerified =>
-            "Compare this number with the one on $partner's phone — side "
-                'by side, or on a call you started. If every digit matches, '
-                "you know this phone is talking to $partner's phones and "
-                'nobody in between.',
+            'Everything between you and $partner is end-to-end encrypted. '
+                'To be extra sure nobody is in between, compare this code '
+                "with the one on $partner's phone — side by side, or on a "
+                'call. This is optional.',
           VerificationStatus.changed =>
             "Something about $partner's identity doesn't match what you "
                 "verified. Don't share anything private until you compare "
@@ -153,8 +163,8 @@ class _Ready extends StatelessWidget {
           Notice(
             icon: Icons.restart_alt,
             message:
-                '$partner set Sirf Hum up again, so their number changed. '
-                'Compare it again.',
+                '$partner set Sirf Hum up again, so their security code '
+                'changed. You can compare it again if you like.',
           ),
         ],
         const SizedBox(height: Spacing.xl),
@@ -238,13 +248,13 @@ class _Ready extends StatelessWidget {
         ),
         VerificationNotice.scanMismatch => (
           Icons.error_outline,
-          "That code isn't your safety number with $partner. Nothing was "
-              'trusted. Make sure you scanned their phone, here, now.',
+          "That code isn't your security code with $partner. Make sure you "
+              'scanned their phone, here, now.',
         ),
         VerificationNotice.reportedMismatch => (
           Icons.error_outline,
-          "Nothing was trusted. Don't share anything private on Sirf Hum "
-              'until the numbers match — someone may be between you.',
+          "The codes don't match. Check with $partner in person before "
+              'sharing anything private — someone may be between you.',
         ),
         VerificationNotice.changedWhileShown => (
           Icons.info_outline,

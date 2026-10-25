@@ -127,10 +127,14 @@ void main() {
       final backend = FakeMomentsBackend([fakeMoment(1, caption: 'ours')])
         ..refreshError = const MomentException(MomentFailure.deviceNotTrusted);
       await pumpMoments(tester, backend: backend);
-      expect(text('Moments aren’t available on this phone.'), findsOneWidget);
+      expect(text('Set up this phone to open Moments.'), findsOneWidget);
       expect(text('ours'), findsNothing);
       expect(find.byType(MomentPhotoView), findsNothing);
-      expect(find.byType(FilledButton), findsNothing);
+      // The one button left is the way forward: set the phone up again.
+      expect(
+        find.widgetWithText(FilledButton, 'Set up this phone'),
+        findsOneWidget,
+      );
       expectNoHandles(tester);
     });
 

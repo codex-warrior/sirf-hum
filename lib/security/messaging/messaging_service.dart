@@ -263,7 +263,19 @@ class MessagingService {
         await publishKeyPackage();
       }
     }
-    return sync();
+    final report = await sync();
+    // Bring in the partner's (or this account's) newly trusted devices and
+    // drop revoked ones, e.g. a phone set up again after a reset (D-159).
+    // Changes resolve on the next sync; a refusal here changes nothing.
+    if (_hasGroup) {
+      try {
+        await reconcileMembership();
+        return await sync();
+      } on MessagingException catch (e) {
+        _log('messaging_reconcile_skipped', e.failure.name);
+      }
+    }
+    return report;
   }
 
   // ------------------------------------------------------------------- sync

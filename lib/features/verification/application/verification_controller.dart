@@ -65,6 +65,9 @@ class PartnerVerificationController extends Notifier<VerificationViewState> {
     if (backend == null) {
       return switch (ref.watch(privateServicesStatusProvider)) {
         PrivateServicesStatus.starting => const VerificationLoading(),
+        PrivateServicesStatus.needsSetup => const VerificationUnavailable(
+          VerificationUnavailableReason.needsSetup,
+        ),
         PrivateServicesStatus.failed => const VerificationFailed(
           VerificationFailedReason.unknown,
         ),

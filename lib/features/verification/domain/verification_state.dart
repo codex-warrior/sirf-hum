@@ -17,6 +17,9 @@ enum VerificationUnavailableReason {
 
   /// No messaging backend is wired in this build (D-116, D-121).
   notYetAvailable,
+
+  /// This phone must be set up again first (D-159).
+  needsSetup,
 }
 
 final class VerificationUnavailable extends VerificationViewState {
