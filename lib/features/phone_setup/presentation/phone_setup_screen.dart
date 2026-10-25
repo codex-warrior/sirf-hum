@@ -116,10 +116,10 @@ class PhoneSetupScreen extends ConsumerWidget {
       builder: (context) => AlertDialog(
         title: const Text('Start fresh on this phone?'),
         content: Text(
-          'After a short wait, this phone becomes your Sirf Hum again. '
-          'Memories and plans that were only on the old install don’t come '
-          'back here, and $partner will compare safety numbers with you '
-          'again. If another phone of yours still works, it can stop this.',
+          'This phone becomes your Sirf Hum again. Memories and plans that '
+          'were only on the old install don’t come back here, and $partner '
+          'sees that your security code changed. If another phone of yours '
+          'still works, it can stop this.',
         ),
         actions: [
           TextButton(
@@ -221,9 +221,8 @@ class _ChoicesState extends State<_Choices> {
         Text('No backup key?', style: textTheme.titleMedium),
         const SizedBox(height: Spacing.xs),
         Text(
-          'Start fresh. After a short wait this phone becomes your Sirf Hum '
-          'again, and ${widget.partner} compares safety numbers with you once '
-          'more.',
+          'Start fresh. This phone becomes your Sirf Hum again, and '
+          '${widget.partner} sees that your security code changed.',
           style: secondary,
         ),
         const SizedBox(height: Spacing.lg),
@@ -367,9 +366,9 @@ class _Done extends StatelessWidget {
         const SizedBox(height: Spacing.sm),
         Text(
           newIdentity
-              ? 'One more step: open Us › Privacy & Safety on both phones and '
-                    'compare your safety numbers with $partner. Then your '
-                    'new memories and plans are shared again.'
+              ? '$partner will see that your security code changed. New '
+                    'memories and plans are shared again as soon as their '
+                    'phone opens Sirf Hum.'
               : 'Everything you share from now on reaches $partner as before.',
           style: textTheme.bodyLarge?.copyWith(
             color: context.colors.textSecondary,

@@ -145,6 +145,7 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 | D-157 | Future and Us in visual identity v1; dreams with a shared progress (notebook schema 2, dreams only); the reference's Investments/Savings tiles replaced by Goals/Plans/Places/To try — Our Money stays out of V1 | Accepted (owner choice) | 2026-10-24 |
 | D-158 | Calmer type scale (display 28, hero 22, title 20, heading 16, body 15, secondary 14, label 13; explicit letter spacing); people set their own display name (Our Profile, Home prompt) | Accepted (owner feedback) | 2026-10-24 |
 | D-159 | "Set up this phone" after a reinstall (recovery key or identity reset) instead of "no longer trusted"; production identity-reset delay 1 hour for the friends beta (temporary, launch-gate item) | Accepted (owner decision) | 2026-10-25 |
+| D-160 | WhatsApp-style trust: partners trusted on first use (comparing safety numbers optional), a reinstalled phone re-registers at sign-in with no wait, a changed code is announced; still end-to-end encrypted | Accepted (owner decision) | 2026-10-25 |
 
 ---
 
@@ -1560,3 +1561,16 @@ Statuses: **Accepted** · **Proposed** (needs owner confirmation) ·
 - **Correction recorded:** the recovery key restores trust only, not history (D-076, "no history recovery"). Memories from before a reinstall stay on the partner's phone. An encrypted history backup unlocked by the recovery key is the next piece of work (D-047's open question).
 - **Tests:** `reset_delay.test.mjs` (bounds, env files), `phone_setup_test.dart` (Home banner, blocked views, start fresh end to end with reopen, recovery key wrong then right, guidelines), updated blocked-state tests.
 - **Status:** Accepted (owner decision) · 2026-10-25. Deploy: Functions to production through the Deploy workflow after merge.
+
+### D-160 — WhatsApp-style trust: trust on first use, instant re-registration (owner decision; amends D-128, D-082, D-159)
+- **Context:** after a reinstall needed a 7-day reset, the owner said signing in should be enough. Asked whether to drop end-to-end encryption for an Instagram-style model, they chose **WhatsApp**: end-to-end encrypted, but simple.
+- **Decision:**
+  - **Trust on first use (amends D-128):** each phone trusts the partner's current identity automatically (`PrivateServices._trustPartner`, before every connect), so the couple's MLS group forms with no comparison. Comparing the safety number ("security code") stays available and optional; the page says "verified" only for a code the person compared (remembered on the phone, `PartnerCodeMemory`, in the account slot).
+  - **Code changes are announced:** when the partner's code differs from the one this phone trusted before (their reinstall or new phone), the new identity is trusted and Us shows "<name>'s security code changed" until the person opens the page. An identity the core refuses, or a server view that contradicts this phone (`changed`), is still never trusted.
+  - **Instant re-registration (amends D-082 for production, supersedes D-159's 1-hour beta value):** `SH_IDENTITY_RESET_DELAY_HOURS=0`. When a signed-in phone is not an active device, the app runs the reset itself (register → re-register → finish), erases the retired local identity and enrolls a new one, with no screen and no wait. The "Set up this phone" page remains for environments with a delay.
+  - `MessagingService.connect` reconciles membership, so the partner's phone adds the new device and drops the old one.
+- **Still end-to-end encrypted:** keys stay on the phones; the server stores ciphertext only; nothing about content, crypto, rules or the ABI changed.
+- **Accepted risk (as WhatsApp):** whoever controls the account's Google sign-in can register a new phone at once. Their messages from then on reach the partner, who sees "security code changed". Previous history is not exposed (it never left the old phone's keys). Mitigations to decide before public launch: an optional registration PIN (WhatsApp two-step) and push alerts for code changes. Recorded in PRODUCTION-LAUNCH-GATE as an accepted risk.
+- **History after a reinstall:** the new phone starts fresh (D-076: no history recovery). The partner's phone keeps everything. An encrypted backup is the next feature.
+- **Tests:** `private_services_tofu_test.dart` (native: two phones that never compared form the group and exchange a message; the page shows "not compared" until compared; a changed code is announced once), `reset_delay.test.mjs` (0–168, production 0), phone-setup and copy tests.
+- **Status:** Accepted (owner decision) · 2026-10-25. Deploy Functions to production after merge.

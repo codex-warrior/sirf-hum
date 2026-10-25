@@ -13,7 +13,9 @@ import 'package:sirf_hum/security/messaging/conversation_transport.dart';
 import 'package:sirf_hum/security/messaging/messaging_service.dart';
 import 'package:sirf_hum/security/moments/moments_service.dart';
 import 'package:sirf_hum/security/notebook/notebook_service.dart';
+import 'package:sirf_hum/security/verification/partner_code_memory.dart';
 import 'package:sirf_hum/security/verification/partner_verification.dart';
+import 'package:sirf_hum/session/phone_setup.dart';
 import 'package:sirf_hum/session/session_controller.dart';
 import 'package:sirf_hum/session/session_state.dart';
 import 'package:sirf_hum_crypto/sirf_hum_crypto.dart';
@@ -23,40 +25,53 @@ import 'package:sirf_hum_crypto/sirf_hum_crypto.dart';
 /// that share it — Moments, the notebook (Future + Us) and partner
 /// verification. Lives while the session is paired; closing it closes the
 /// core.
+///
+/// Trust is WhatsApp-style (D-160): the partner's identity is trusted the
+/// first time it is seen and again whenever it changes, and a change is
+/// announced ("security code changed"). Comparing safety numbers stays
+/// available, and only a comparison makes the partner "verified".
 class PrivateServices {
   PrivateServices({
     required CryptoCore core,
     required this.messaging,
     required AccountId partner,
     required DeviceRegistry registry,
+    PartnerCodeMemory? codes,
   }) : _core = core,
+       _codes = codes ?? InMemoryPartnerCodeMemory(),
        moments = MomentsService(messaging: messaging),
        notebook = NotebookService(messaging: messaging) {
-    verification = _ConnectingVerification(
-      PartnerVerificationService(
-        core: core,
-        account: messaging.account,
-        partner: partner,
-        registry: registry,
-      ),
-      this,
+    _partnerTrust = PartnerVerificationService(
+      core: core,
+      account: messaging.account,
+      partner: partner,
+      registry: registry,
     );
+    verification = _ConnectingVerification(_partnerTrust, this);
   }
 
   final CryptoCore _core;
+  final PartnerCodeMemory _codes;
   final MessagingService messaging;
   final MomentsService moments;
   final NotebookService notebook;
+  late final PartnerVerificationService _partnerTrust;
   late final PartnerVerificationBackend verification;
+
+  /// Called when the partner's security code differs from the one this
+  /// phone trusted before (a reinstall or a new phone on their side).
+  void Function()? onPartnerCodeChanged;
 
   bool _closed = false;
 
-  /// Joins (or creates) the couple's group when both sides have verified
-  /// each other; otherwise just makes this phone reachable. Never throws:
-  /// the features report their own state on their next refresh.
+  /// Trusts the partner as they are now (first use, or after their code
+  /// changed), then joins or creates the couple's group and brings in
+  /// newly trusted devices. Never throws: the features report their own
+  /// state on their next refresh.
   Future<void> connect() async {
     if (_closed) return;
     try {
+      await messaging.exclusive(_trustPartner);
       final report = await messaging.exclusive(messaging.connect);
       AppLogger.info(
         'private_services_connected',
@@ -67,6 +82,32 @@ class PrivateServices {
     }
   }
 
+  /// Trust on first use (D-160). A partner who has no identity yet, or an
+  /// identity that contradicts what this phone holds ("changed"), is left
+  /// as it is: nothing is trusted that the core would refuse.
+  Future<void> _trustPartner() async {
+    PartnerVerification shown;
+    try {
+      shown = await _partnerTrust.load();
+      if (shown.status == VerificationStatus.notVerified) {
+        shown = await _partnerTrust.confirmCompared(shown);
+      }
+    } on VerificationException catch (e) {
+      AppLogger.info(
+        'partner_trust_skipped',
+        fields: {'reason': SafeLogString(e.failure.name)},
+      );
+      return;
+    }
+    if (shown.status != VerificationStatus.verified) return;
+    final before = await _codes.lastTrusted();
+    if (before != null && before != shown.code) {
+      AppLogger.info('partner_code_changed');
+      onPartnerCodeChanged?.call();
+    }
+    await _codes.setLastTrusted(shown.code);
+  }
+
   void close() {
     if (_closed) return;
     _closed = true;
@@ -74,10 +115,11 @@ class PrivateServices {
   }
 }
 
-/// Verification that reconnects after trust changes, so the group forms as
-/// soon as the second partner confirms the number. Every step runs in the
-/// conversation's exclusive lane: trust never changes in the middle of a
-/// sync.
+/// What the safety-number page sees (D-128, D-160). The partner is trusted
+/// automatically, but shown as "verified" only once the person compared
+/// this exact code; a comparison is remembered on this phone. Every step
+/// runs in the conversation's exclusive lane: trust never changes in the
+/// middle of a sync.
 class _ConnectingVerification implements PartnerVerificationBackend {
   _ConnectingVerification(this._inner, this._services);
 
@@ -85,27 +127,35 @@ class _ConnectingVerification implements PartnerVerificationBackend {
   final PrivateServices _services;
 
   @override
-  Future<PartnerVerification> load() =>
-      _services.messaging.exclusive(_inner.load);
+  Future<PartnerVerification> load() async =>
+      _asCompared(await _services.messaging.exclusive(_inner.load));
 
   @override
   Future<PartnerVerification> confirmCompared(PartnerVerification shown) =>
-      _thenConnect(() => _inner.confirmCompared(shown));
+      _confirm(() => _inner.confirmCompared(shown));
 
   @override
   Future<PartnerVerification> confirmScanned(
     PartnerVerification shown,
     Uint8List scanned,
-  ) => _thenConnect(() => _inner.confirmScanned(shown, scanned));
+  ) => _confirm(() => _inner.confirmScanned(shown, scanned));
 
-  Future<PartnerVerification> _thenConnect(
+  Future<PartnerVerification> _confirm(
     Future<PartnerVerification> Function() action,
   ) async {
     final after = await _services.messaging.exclusive(action);
     if (after.status == VerificationStatus.verified) {
+      await _services._codes.setCompared(after.code);
       unawaited(_services.connect());
     }
-    return after;
+    return _asCompared(after);
+  }
+
+  Future<PartnerVerification> _asCompared(PartnerVerification v) async {
+    if (v.status != VerificationStatus.verified) return v;
+    return await _services._codes.compared() == v.code
+        ? v
+        : v.withStatus(VerificationStatus.notVerified);
   }
 }
 
@@ -152,13 +202,17 @@ class LocalPrivateServicesOpener implements PrivateServicesOpener {
     required MediaStorage storage,
     required MediaFiles files,
     required Future<String> Function(AccountId account) mediaDirectory,
+    PhoneSetup Function(AccountId account)? setup,
+    Future<PartnerCodeMemory> Function(AccountId account)? partnerCodes,
   }) : _identities = identities,
        _locator = locator,
        _registry = registry,
        _transport = transport,
        _storage = storage,
        _files = files,
-       _mediaDirectory = mediaDirectory;
+       _mediaDirectory = mediaDirectory,
+       _setup = setup,
+       _partnerCodes = partnerCodes;
 
   final LocalDeviceIdentityService _identities;
   final CoupleConversationLocator _locator;
@@ -167,6 +221,8 @@ class LocalPrivateServicesOpener implements PrivateServicesOpener {
   final MediaStorage _storage;
   final MediaFiles _files;
   final Future<String> Function(AccountId account) _mediaDirectory;
+  final PhoneSetup Function(AccountId account)? _setup;
+  final Future<PartnerCodeMemory> Function(AccountId account)? _partnerCodes;
 
   @override
   Future<PrivateServices> open(AccountId account) async {
@@ -174,23 +230,20 @@ class LocalPrivateServicesOpener implements PrivateServicesOpener {
     if (couple == null) {
       throw const PrivateServicesException(PrivateServicesProblem.notPaired);
     }
-    final CryptoCore core;
-    switch (await _identities.open(account)) {
-      case LocalIdentityUnavailable():
-        throw const PrivateServicesException(PrivateServicesProblem.needsPhone);
-      case LocalIdentityCorrupted():
-        throw const PrivateServicesException(PrivateServicesProblem.unreadable);
-      case LocalIdentityReady(core: final ready):
-        core = ready;
-    }
+    var core = await _openIdentity(account);
     try {
-      // Only an active device opens private services. Anything else is
-      // "set this phone up again", never "you are no longer trusted".
-      final own = PendingDeviceRegistration.hexOf(
-        core.publicIdentity().deviceId,
-      );
-      if (await _registry.status(account, own) != DeviceStatus.active) {
-        throw const PrivateServicesException(PrivateServicesProblem.needsSetup);
+      // Only an active device opens private services. A phone that is not
+      // (reinstalled, data cleared) re-registers itself, WhatsApp-style
+      // (D-160); only a configured wait leaves "Set up this phone".
+      if (!await _isActive(account, core)) {
+        core.close();
+        await _registerAgain(account);
+        core = await _openIdentity(account);
+        if (!await _isActive(account, core)) {
+          throw const PrivateServicesException(
+            PrivateServicesProblem.needsSetup,
+          );
+        }
       }
       final messaging = MessagingService(
         core: core,
@@ -209,10 +262,60 @@ class LocalPrivateServicesOpener implements PrivateServicesOpener {
         messaging: messaging,
         partner: couple.partner,
         registry: _registry,
+        codes: await _partnerCodes?.call(account),
       );
     } on Object {
       core.close();
       rethrow;
+    }
+  }
+
+  Future<CryptoCore> _openIdentity(AccountId account) async {
+    switch (await _identities.open(account)) {
+      case LocalIdentityUnavailable():
+        throw const PrivateServicesException(PrivateServicesProblem.needsPhone);
+      case LocalIdentityCorrupted():
+        throw const PrivateServicesException(PrivateServicesProblem.unreadable);
+      case LocalIdentityReady(:final core):
+        return core;
+    }
+  }
+
+  Future<bool> _isActive(AccountId account, CryptoCore core) async =>
+      await _registry.status(
+        account,
+        PendingDeviceRegistration.hexOf(core.publicIdentity().deviceId),
+      ) ==
+      DeviceStatus.active;
+
+  /// Runs "set this phone up" by itself: register, re-register the account
+  /// on this phone if it holds another identity, finish. Stops (leaving the
+  /// page to the person) when a wait is configured or a step fails.
+  Future<void> _registerAgain(AccountId account) async {
+    final factory = _setup;
+    if (factory == null) {
+      throw const PrivateServicesException(PrivateServicesProblem.needsSetup);
+    }
+    final setup = factory(account);
+    try {
+      var step = await setup.check();
+      if (step is PhoneSetupNeedsApproval) step = await setup.requestReset();
+      if (step is PhoneSetupResetReady) step = await setup.finishReset();
+      if (step is! PhoneSetupDone) {
+        throw const PrivateServicesException(PrivateServicesProblem.needsSetup);
+      }
+      AppLogger.info(
+        'phone_registered_again',
+        fields: {'new_identity': step.newIdentity},
+      );
+    } on PhoneSetupException catch (e) {
+      AppLogger.warning(
+        'phone_register_again_failed',
+        fields: {'reason': SafeLogString(e.failure.name)},
+      );
+      throw const PrivateServicesException(PrivateServicesProblem.needsSetup);
+    } finally {
+      setup.close();
     }
   }
 }
@@ -256,6 +359,9 @@ final privateServicesProvider = FutureProvider<PrivateServices?>((ref) async {
     return null;
   }
   opened = services;
+  services.onPartnerCodeChanged = () {
+    if (!disposed) ref.read(partnerCodeChangedProvider.notifier).changed();
+  };
   AppLogger.info(
     'private_services_opened',
     fields: {'state': const SafeLogString('ready')},
@@ -273,6 +379,25 @@ final currentPrivateServicesProvider = Provider<PrivateServices?>((ref) {
   if (services.isLoading || services.hasError) return null;
   return services.value;
 });
+
+/// The partner's security code changed since this phone last trusted it
+/// (D-160), until the person opens the safety-number page.
+final partnerCodeChangedProvider = NotifierProvider<PartnerCodeChanged, bool>(
+  PartnerCodeChanged.new,
+);
+
+class PartnerCodeChanged extends Notifier<bool> {
+  @override
+  bool build() {
+    // A different session (account, couple) starts with nothing to say.
+    ref.watch(sessionProvider.select((s) => s is SessionPaired));
+    return false;
+  }
+
+  void changed() => state = true;
+
+  void seen() => state = false;
+}
 
 enum PrivateServicesStatus {
   /// Nothing private is wired here (web, no backend, not paired).

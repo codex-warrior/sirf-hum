@@ -310,7 +310,7 @@ void main() {
       extra: [partnerVerificationBackendProvider.overrideWithValue(backend)],
     );
     await tester.scrollUntilVisible(find.text('Privacy & Safety'), 200);
-    expect(find.text('Compare your safety number'), findsOneWidget);
+    expect(find.text('Encrypted · verify (optional)'), findsOneWidget);
     await tester.tap(find.text('Privacy & Safety'));
     await tester.pumpAndSettle();
     expect(find.text('Verify Ravi'), findsOneWidget);

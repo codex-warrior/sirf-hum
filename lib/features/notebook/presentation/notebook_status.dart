@@ -98,8 +98,8 @@ class NotebookNotices extends StatelessWidget {
                   'Couldn’t check for changes. You’re seeing what’s on this '
                       'phone.',
                 NotebookNotice.connecting =>
-                  'Your phones aren’t connected yet. You both compare your '
-                      'safety number in Us › Safety; then changes are shared.',
+                  'Your phones are still connecting. Changes appear once both '
+                      'of you have opened Sirf Hum.',
               },
             ),
             if (notice == NotebookNotice.offline)

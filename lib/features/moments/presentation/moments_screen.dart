@@ -696,8 +696,8 @@ class _NoticeLine extends StatelessWidget {
               'Couldn’t check for new memories. You’re seeing what’s on '
                   'this phone.',
             MomentsNotice.connecting =>
-              'Your phones aren’t connected yet. You both compare your '
-                  'safety number in Us › Safety; then memories are shared.',
+              'Your phones are still connecting. New memories appear once '
+                  'both of you have opened Sirf Hum.',
           },
         ),
         if (notice == MomentsNotice.offline)

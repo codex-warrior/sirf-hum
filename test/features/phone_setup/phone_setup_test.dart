@@ -152,7 +152,7 @@ void main() {
     expect(setup.calls, ['check', 'reset', 'check', 'finish']);
     expect(setup.closed, isTrue, reason: 'keys closed before reopening');
     expect(text('This phone is set up.'), findsOneWidget);
-    expect(find.textContaining('compare your safety numbers'), findsOneWidget);
+    expect(find.textContaining('security code changed'), findsOneWidget);
     // Back on Home (visible again), the private services open afresh.
     await tester.tap(find.widgetWithText(FilledButton, 'Done'));
     for (var i = 0; i < 10; i++) {

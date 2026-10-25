@@ -30,6 +30,7 @@ import 'package:sirf_hum/infrastructure/firebase/firestore_couple_conversation_l
 import 'package:sirf_hum/infrastructure/firebase/firestore_couple_profiles.dart';
 import 'package:sirf_hum/infrastructure/firebase/firestore_device_registry.dart';
 import 'package:sirf_hum/platform/io_media_files.dart';
+import 'package:sirf_hum/platform/io_partner_code_memory.dart';
 import 'package:sirf_hum/platform/secure_key_store.dart';
 import 'package:sirf_hum/platform/text_share.dart';
 import 'package:sirf_hum/security/account/account_session.dart';
@@ -39,6 +40,7 @@ import 'package:sirf_hum/session/phone_setup.dart';
 import 'package:sirf_hum/session/private_services.dart';
 import 'package:sirf_hum/session/session_controller.dart';
 import 'package:sirf_hum/session/sign_in_controller.dart';
+import 'package:sirf_hum_crypto/sirf_hum_crypto.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -129,16 +131,7 @@ List<Override> sessionPortOverrides(FirebaseStatus status) => switch (status) {
         ),
       ),
       textShareProvider.overrideWithValue(const PlatformTextShare()),
-      phoneSetupFactoryProvider.overrideWithValue(
-        (account) => LocalPhoneSetup(
-          account: account,
-          identities: LocalDeviceIdentityService(
-            keyStore: const PlatformSecureKeyStore(),
-          ),
-          registry: FirestoreDeviceRegistry(),
-          platform: DevicePlatform.android,
-        ),
-      ),
+      phoneSetupFactoryProvider.overrideWithValue(_phoneSetup),
       privateServicesOpenerProvider.overrideWithValue(
         LocalPrivateServicesOpener(
           identities: LocalDeviceIdentityService(
@@ -150,6 +143,13 @@ List<Override> sessionPortOverrides(FirebaseStatus status) => switch (status) {
           storage: FirebaseMediaStorage(),
           files: const IoMediaFiles(),
           mediaDirectory: (account) async => IoMediaFiles.mediaDirectoryOf(
+            await const PlatformSecureKeyStore().slotDirectory(
+              LocalDeviceIdentityService.slotFor(account),
+            ),
+          ),
+          // A reinstalled phone re-registers itself (D-160).
+          setup: _phoneSetup,
+          partnerCodes: (account) async => IoPartnerCodeMemory(
             await const PlatformSecureKeyStore().slotDirectory(
               LocalDeviceIdentityService.slotFor(account),
             ),
@@ -188,3 +188,13 @@ List<Override> signInOverrides(FirebaseStatus status, AppConfig config) {
       ),
   ];
 }
+
+/// Setting a phone up again for [account] (D-159, D-160).
+PhoneSetup _phoneSetup(AccountId account) => LocalPhoneSetup(
+  account: account,
+  identities: LocalDeviceIdentityService(
+    keyStore: const PlatformSecureKeyStore(),
+  ),
+  registry: FirestoreDeviceRegistry(),
+  platform: DevicePlatform.android,
+);
